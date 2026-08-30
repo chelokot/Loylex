@@ -1,9 +1,10 @@
+import { ADMIN_TELEGRAM_ID } from "../shared/operator-exec.ts";
 import type {
   JsonObject,
   JsonValue,
-  TelegramBotUser,
   TelegramMessage,
   TelegramUpdate,
+  TelegramUser,
 } from "../shared/types.ts";
 
 type TelegramResponse<T> = {
@@ -52,8 +53,8 @@ export class TelegramClient {
     return payload.result;
   }
 
-  getMe(): Promise<TelegramBotUser> {
-    return this.call<TelegramBotUser>("getMe");
+  getMe(): Promise<TelegramUser> {
+    return this.call<TelegramUser>("getMe");
   }
 
   getUpdates(offset: number, timeout: number): Promise<TelegramUpdate[]> {
@@ -142,13 +143,6 @@ export class TelegramClient {
     }
   }
 
-  deleteMessage(chatId: number, messageId: number): Promise<boolean> {
-    return this.call<boolean>("deleteMessage", {
-      chat_id: chatId,
-      message_id: messageId,
-    });
-  }
-
   sendTyping(chatId: number, threadId: number | null = null): Promise<boolean> {
     const body: JsonObject = { chat_id: chatId, action: "typing" };
     if (threadId !== null) {
@@ -166,14 +160,19 @@ export class TelegramClient {
   }
 
   setCommands(): Promise<boolean> {
-    return this.call<boolean>("setMyCommands", {
-      commands: [
-        { command: "start", description: "Как обратиться к Loylex" },
-        { command: "help", description: "Возможности и синтаксис" },
-        { command: "stop", description: "Остановить работу" },
-        { command: "tasks", description: "Показать последние задачи" },
-        { command: "resume", description: "Продолжить задачу по ID" },
-      ] as JsonValue[],
+    const commands = [
+      { command: "start", description: "Как обратиться к Loylex" },
+      { command: "help", description: "Возможности и синтаксис" },
+      { command: "stop", description: "Остановить работу" },
+      { command: "tasks", description: "Показать последние задачи" },
+      { command: "resume", description: "Продолжить задачу по ID" },
+    ] as JsonValue[];
+    return this.call<boolean>("setMyCommands", { commands }).then(async () => {
+      await this.call<boolean>("setMyCommands", {
+        scope: { type: "chat", chat_id: ADMIN_TELEGRAM_ID },
+        commands: [...commands, { command: "exec", description: "Команда в агент-контейнере" }],
+      });
+      return true;
     });
   }
 

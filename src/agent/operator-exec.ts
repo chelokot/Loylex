@@ -92,7 +92,6 @@ async function captureOutput(
 export async function executeOperatorCommand(
   command: string,
   cwd = process.cwd(),
-  externalSignal?: AbortSignal,
 ): Promise<OperatorExecResult> {
   const normalizedCommand = command.trim();
   if (!normalizedCommand) {
@@ -104,7 +103,7 @@ export async function executeOperatorCommand(
 
   const startedAt = performance.now();
   const stopController = new AbortController();
-  let stopReason: "timeout" | "output_limit" | "cancelled" | undefined;
+  let stopReason: "timeout" | "output_limit" | undefined;
   let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
   const environment = safeEnvironment();
   const child = Bun.spawn(
@@ -126,7 +125,7 @@ export async function executeOperatorCommand(
     },
   );
 
-  const stop = (reason: "timeout" | "output_limit" | "cancelled"): void => {
+  const stop = (reason: "timeout" | "output_limit"): void => {
     if (stopReason !== undefined) {
       return;
     }
@@ -136,11 +135,6 @@ export async function executeOperatorCommand(
     forceKillTimer = setTimeout(() => child.kill("SIGKILL"), 1_000);
   };
 
-  const abortHandler = (): void => stop("cancelled");
-  externalSignal?.addEventListener("abort", abortHandler, { once: true });
-  if (externalSignal?.aborted) {
-    stop("cancelled");
-  }
   const timeout = setTimeout(() => stop("timeout"), ADMIN_EXEC_TIMEOUT_MS);
   const [stdout, stderr, exitCode] = await Promise.all([
     captureOutput(child.stdout, stopController.signal, () => stop("output_limit")),
@@ -148,7 +142,6 @@ export async function executeOperatorCommand(
     child.exited,
   ]);
   clearTimeout(timeout);
-  externalSignal?.removeEventListener("abort", abortHandler);
   if (forceKillTimer !== undefined) {
     clearTimeout(forceKillTimer);
   }

@@ -1,9 +1,8 @@
-import { telegramUserIdWithoutForward } from "./telegram-identity.ts";
 import type { TelegramMessage } from "./types.ts";
 
-// Keep authorization in source so it cannot be changed by a Telegram message,
-// environment variable, or agent-controlled setting.
-export const ADMIN_TELEGRAM_ID = 426043802;
+// This is deliberately a source-level allowlist. It is not read from an
+// environment variable, a Telegram message, or an agent-controlled setting.
+export const ADMIN_TELEGRAM_ID = 849670500;
 export const ADMIN_EXEC_MAX_COMMAND_LENGTH = 8_192;
 
 const execPattern = /^\/exec(?:@([a-z0-9_]+))?(?:[ \t]+([\s\S]*))?$/iu;
@@ -15,7 +14,9 @@ export type OperatorExecDecision = {
 
 export function isOperatorExecContext(message: TelegramMessage): boolean {
   return (
-    telegramUserIdWithoutForward(message) === ADMIN_TELEGRAM_ID && message.from?.is_bot === false
+    message.chat.type === "private" &&
+    message.chat.id === ADMIN_TELEGRAM_ID &&
+    message.from?.id === ADMIN_TELEGRAM_ID
   );
 }
 

@@ -1,3 +1,8 @@
 {
-  "buckets": []
+  "buckets": [
+    {
+      "file": "agents-first.md",
+      "always": true
+    }
+  ]
 }

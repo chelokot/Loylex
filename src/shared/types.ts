@@ -2,15 +2,11 @@ export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = boolean | JsonObject | JsonValue[] | null | number | string;
 
 export type TelegramUser = {
-  id: number | null;
+  id: number;
   is_bot: boolean;
   first_name: string;
   last_name?: string;
   username?: string;
-};
-
-export type TelegramBotUser = Omit<TelegramUser, "id"> & {
-  id: number;
 };
 
 export type TelegramChat = {
@@ -18,11 +14,6 @@ export type TelegramChat = {
   type: "channel" | "group" | "private" | "supergroup";
   title?: string;
   username?: string;
-};
-
-export type TelegramMessageOrigin = {
-  sender_user?: TelegramUser;
-  [key: string]: unknown;
 };
 
 export type TelegramMessage = {
@@ -36,7 +27,6 @@ export type TelegramMessage = {
   text?: string;
   caption?: string;
   media_group_id?: string;
-  forward_origin?: TelegramMessageOrigin;
   reply_to_message?: TelegramMessage;
   photo?: JsonValue[];
   document?: JsonObject;

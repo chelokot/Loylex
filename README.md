@@ -96,15 +96,20 @@ receives only archived messages since its previous turn because the saved Codex 
 already contains the earlier prompt and context.
 
 While Codex works, terminal and reasoning events create or edit one persistent Rich Message
-with a collapsed `<details>` history in every chat. Completion sends a new Rich Markdown reply
-containing the collapsed history and final answer, then removes the temporary progress message.
-This keeps the final reply at the bottom of the chat and mentions the user through the reply to
-their request.
+with a collapsed, fictional medieval chronicle in every chat; internal steps are never exposed.
+Completion replaces that same message with the chronicle, kingdom banner, and final Rich Markdown.
 Rich API errors are surfaced instead of silently sending the same document as unformatted text.
 Replying `/stop` to any Loylex message belonging to an active job cancels that Codex thread,
 and Loylex replies with the cancellation result; the command is consumed and is not submitted
 as a new prompt. `/tasks` shows the five latest jobs in the current chat with their status,
 timestamps, and a link to the related Loylex message.
+The private operator chat with Telegram ID `849670500` also has `/exec <command>` in its
+command menu. The gateway consumes that command before trigger routing, verifies both the
+Telegram user ID and private chat ID against the source-level constant, and sends it to the
+agent worker without involving Codex. The command runs in the agent container with empty
+stdin, a bounded 120-second lifetime, capped stdout/stderr, and filtered environment variables;
+`loylex system ...` therefore still goes through the narrow supervisor API and cannot become a
+general host shell.
 The agent runs up to 50 jobs concurrently by default; the durable SQLite job queue remains as
 backpressure and restart recovery for work beyond that limit. Jobs that resume the same Codex
 thread are serialized to avoid concurrent writers, while unrelated threads still run in parallel.

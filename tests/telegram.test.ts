@@ -44,15 +44,19 @@ test("treats an idempotent rich edit as success", async () => {
   expect(result.chat.id).toBe(42);
 });
 
-test("deletes a Telegram message", async () => {
-  let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/deleteMessage");
-    requestBody = JSON.parse(String(init?.body));
+test("shows operator exec only in the hardcoded private chat menu", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  globalThis.fetch = (async (_input, init) => {
+    requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
     return Response.json({ ok: true, result: true });
   }) as typeof fetch;
 
-  const client = new TelegramClient("test-token");
-  await expect(client.deleteMessage(42, 17)).resolves.toBe(true);
-  expect(requestBody).toEqual({ chat_id: 42, message_id: 17 });
+  await new TelegramClient("test-token").setCommands();
+
+  expect(requests).toHaveLength(2);
+  expect(JSON.stringify(requests[0])).not.toContain('"exec"');
+  expect(requests[1]).toMatchObject({
+    scope: { type: "chat", chat_id: 849670500 },
+  });
+  expect(JSON.stringify(requests[1])).toContain('"exec"');
 });

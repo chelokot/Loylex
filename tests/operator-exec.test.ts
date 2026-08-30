@@ -28,50 +28,31 @@ function message(
   };
 }
 
-test("operator exec requires the exact sender id and works in groups", () => {
-  const authorized = message(426043802, -10042, "group", "/exec pwd");
+test("operator exec requires the hardcoded private chat and user id", () => {
+  const authorized = message(849670500, 849670500, "private", "/exec pwd");
   expect(isOperatorExecContext(authorized)).toBe(true);
   expect(parseOperatorExecCommand(authorized, "LoylexBot")).toEqual({
     authorized: true,
     command: "pwd",
   });
-  expect(parseOperatorExecCommand(message(1, -10042, "group", "/exec pwd"))).toEqual({
+  expect(parseOperatorExecCommand(message(1, 849670500, "private", "/exec pwd"))).toEqual({
+    authorized: false,
+    command: "",
+  });
+  expect(parseOperatorExecCommand(message(849670500, 849670500, "group", "/exec pwd"))).toEqual({
     authorized: false,
     command: "",
   });
   expect(
     parseOperatorExecCommand(
-      message(426043802, -10042, "group", "/exec@AnotherBot pwd"),
+      message(849670500, 849670500, "private", "/exec@AnotherBot pwd"),
       "LoylexBot",
     ),
   ).toEqual({
     authorized: false,
     command: "",
   });
-  expect(parseOperatorExecCommand(message(426043802, -10042, "group", "not exec"))).toBeNull();
-});
-
-test("operator exec uses numeric last name but ignores forwarded origin", () => {
-  const numericFallback = message(7, -10042, "group", "/exec pwd");
-  numericFallback.from = {
-    id: 7,
-    is_bot: false,
-    first_name: "Operator",
-    last_name: "426043802",
-  };
-  numericFallback.forward_origin = {
-    sender_user: { id: 426043802, is_bot: false, first_name: "Operator" },
-  };
-
-  expect(isOperatorExecContext(numericFallback)).toBe(true);
-  expect(parseOperatorExecCommand(numericFallback)).toEqual({ authorized: true, command: "pwd" });
-
-  const forwardedOnly = message(7, -10042, "group", "/exec pwd");
-  forwardedOnly.forward_origin = {
-    sender_user: { id: 426043802, is_bot: false, first_name: "Operator" },
-  };
-  expect(isOperatorExecContext(forwardedOnly)).toBe(false);
-  expect(parseOperatorExecCommand(forwardedOnly)).toEqual({ authorized: false, command: "" });
+  expect(parseOperatorExecCommand(message(849670500, 849670500, "private", "not exec"))).toBeNull();
 });
 
 test("operator exec captures stdout and stderr without secret environment values", async () => {

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { GatewayConfig } from "../src/gateway/config.ts";
 import type { LoylexDatabase } from "../src/gateway/database.ts";
+import { chronicleActions } from "../src/gateway/presentation.ts";
 import { GatewayServer } from "../src/gateway/server.ts";
 import type { TelegramClient } from "../src/gateway/telegram.ts";
 import type { AgentCompletion, TelegramMessage } from "../src/shared/types.ts";
@@ -69,22 +70,20 @@ test("starts progress as a persistent rich details message", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
 
   expect(sent).toHaveLength(1);
-  expect(sent[0]).toEqual({
-    chatId: -10042,
-    markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
-    options: { replyTo: 10, threadId: null },
-  });
+  expect(sent[0]?.chatId).toBe(-10042);
+  expect(sent[0]?.options).toEqual({ replyTo: 10, threadId: null });
+  expect(sent[0]?.markdown).toContain(
+    "<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>",
+  );
+  expect(sent[0]?.markdown).not.toContain("Проверяю код");
+  expect(chronicleActions.some((action) => sent[0]?.markdown.includes(action))).toBe(true);
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
-test("sends a new final reply and removes the temporary progress message", async () => {
-  const sent: Array<{
-    chatId: number;
-    markdown: string;
-    options: { replyTo?: number; threadId?: number | null };
-  }> = [];
-  const deleted: Array<{ chatId: number; messageId: number }> = [];
-  const calls: string[] = [];
+test("edits the existing group progress message even when newer chat messages exist", async () => {
+  const sent: string[] = [];
+  const edited: string[] = [];
+  let hasMessagesAfterCalls = 0;
   let completed: { jobId: number; messageId: number; threadId: string } | null = null;
 
   const database = {
@@ -97,6 +96,10 @@ test("sends a new final reply and removes the temporary progress message", async
     thinkingMessage: () => 11,
     isJobCancelled: () => false,
     appendStatus: () => "status: Готово",
+    hasMessagesAfter: () => {
+      hasMessagesAfterCalls += 1;
+      return true;
+    },
     recordOutboundMessage: () => {},
     complete: (jobId: number, messageId: number, threadId: string) => {
       completed = { jobId, messageId, threadId };
@@ -104,19 +107,13 @@ test("sends a new final reply and removes the temporary progress message", async
   } as unknown as LoylexDatabase;
 
   const telegram = {
-    sendRich: async (
-      chatId: number,
-      markdown: string,
-      options: { replyTo?: number; threadId?: number | null },
-    ) => {
-      calls.push("send");
-      sent.push({ chatId, markdown, options });
+    sendRich: async (_chatId: number, markdown: string) => {
+      sent.push(markdown);
       return botMessage(12);
     },
-    deleteMessage: async (chatId: number, messageId: number) => {
-      calls.push("delete");
-      deleted.push({ chatId, messageId });
-      return true;
+    editRich: async (_chatId: number, _messageId: number, markdown: string) => {
+      edited.push(markdown);
+      return botMessage(11);
     },
   } as unknown as TelegramClient;
 
@@ -129,28 +126,25 @@ test("sends a new final reply and removes the temporary progress message", async
 
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
-  expect(calls).toEqual(["send", "delete"]);
-  expect(sent).toEqual([
-    {
-      chatId: -10042,
-      markdown: "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>\n\nОтвет",
-      options: { replyTo: 10, threadId: null },
-    },
-  ]);
-  expect(deleted).toEqual([{ chatId: -10042, messageId: 11 }]);
+  expect(hasMessagesAfterCalls).toBe(0);
+  expect(sent).toEqual([]);
+  expect(edited).toHaveLength(1);
+  expect(edited[0]).toContain("Ответ");
+  expect(edited[0]).toContain("<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>");
+  expect(edited[0]).toContain('<tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji> Ответ');
+  expect(edited[0]).not.toContain("tg-spoiler");
   expect(completed as { jobId: number; messageId: number; threadId: string } | null).toEqual({
     jobId: 7,
-    messageId: 12,
+    messageId: 11,
     threadId: "thread-1",
   });
 });
 
-test("uses the same replace-with-reply flow in private chats", async () => {
+test("uses the same editable details flow in private chats", async () => {
   const sent: string[] = [];
-  const deleted: Array<{ chatId: number; messageId: number }> = [];
+  const edited: string[] = [];
   let thinkingMessageId: number | null = null;
   let completedMessageId: number | null = null;
-  let status = "";
 
   const database = {
     jobAddress: () => ({
@@ -161,10 +155,7 @@ test("uses the same replace-with-reply flow in private chats", async () => {
     }),
     thinkingMessage: () => thinkingMessageId,
     isJobCancelled: () => false,
-    appendStatus: (_jobId: number, line: string) => {
-      status = status ? `${status}\n\n${line}` : line;
-      return status;
-    },
+    appendStatus: (_jobId: number, line: string) => line,
     setThinkingMessage: (_jobId: number, messageId: number) => {
       thinkingMessageId = messageId;
     },
@@ -177,11 +168,11 @@ test("uses the same replace-with-reply flow in private chats", async () => {
   const telegram = {
     sendRich: async (_chatId: number, markdown: string) => {
       sent.push(markdown);
-      return botMessage(sent.length === 1 ? 21 : 22);
+      return botMessage(21);
     },
-    deleteMessage: async (chatId: number, messageId: number) => {
-      deleted.push({ chatId, messageId });
-      return true;
+    editRich: async (_chatId: number, _messageId: number, markdown: string) => {
+      edited.push(markdown);
+      return botMessage(21);
     },
   } as unknown as TelegramClient;
 
@@ -198,13 +189,17 @@ test("uses the same replace-with-reply flow in private chats", async () => {
   ).complete;
 
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
-  await event.call(server, 7, { kind: "commentary", text: "Запускаю тесты" });
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
-  expect(sent).toEqual([
-    "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
-    "<details><summary>Ход работы</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет",
-  ]);
-  expect(deleted).toEqual([{ chatId: 42, messageId: 21 }]);
-  expect(completedMessageId as number | null).toBe(22);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain("<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>");
+  expect(sent[0]).not.toContain("Проверяю код");
+  expect(edited).toHaveLength(1);
+  expect(edited[0]).toContain(
+    '<tg-emoji emoji-id="5861926791857311729">⚜️</tg-emoji> <tg-emoji emoji-id="5852921692841580896">👑</tg-emoji> The Floodoncelocal Kingdom',
+  );
+  expect(edited[0]).toContain(
+    '<tg-emoji emoji-id="5935947980518460257">📜</tg-emoji> <tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji> Ответ',
+  );
+  expect(completedMessageId as number | null).toBe(21);
 });

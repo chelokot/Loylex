@@ -39,22 +39,6 @@ function botMessage(id: number, text: string): TelegramMessage {
   };
 }
 
-function forwardedMessage(id: number, text: string): TelegramMessage {
-  return {
-    ...message(id, text),
-    forward_origin: {
-      type: "user",
-      date: 1_700_000_500,
-      sender_user: {
-        id: 42,
-        is_bot: false,
-        first_name: "Chelokot",
-        username: "chelokot",
-      },
-    },
-  };
-}
-
 describe("LoylexDatabase", () => {
   test("archives, indexes, claims, and resumes a thread", () => {
     const database = setup();
@@ -79,75 +63,6 @@ describe("LoylexDatabase", () => {
 
     database.complete(job?.id ?? 0, 99, "thread-123");
     expect(database.resumeThread(-10042, 99)).toBe("thread-123");
-    database.close();
-  });
-
-  test("uses the forwarded user's ID for the agent without changing the job schema", () => {
-    const database = setup();
-    const forwarded = forwardedMessage(1, "Лойлекс, проверь это");
-    database.archiveMessage(forwarded, "bot_api");
-    database.enqueue(55, forwarded, "проверь это", null);
-
-    const job = database.claimNext(10);
-    expect(job?.userId).toBe(42);
-    database.close();
-  });
-
-  test("uses a numeric last name as the agent user ID before forward origin", () => {
-    const database = setup();
-    const forwarded = {
-      ...forwardedMessage(1, "Лойлекс, проверь это"),
-      from: {
-        id: 7,
-        is_bot: false,
-        first_name: "Andrii",
-        last_name: "426043802",
-        username: "chelokot",
-      },
-    } satisfies TelegramMessage;
-    database.archiveMessage(forwarded, "bot_api");
-    database.enqueue(55, forwarded, "проверь это", null);
-
-    const job = database.claimNext(10);
-    expect(job?.userId).toBe(426043802);
-    expect(database.recent(-10042, 1)[0]).toMatchObject({
-      userId: 426043802,
-      author: "Andrii (@chelokot)",
-    });
-    database.close();
-  });
-
-  test("ignores a nonnumeric last name and uses the forward origin", () => {
-    const database = setup();
-    const forwarded = {
-      ...forwardedMessage(1, "Лойлекс, проверь это"),
-      from: {
-        id: 7,
-        is_bot: false,
-        first_name: "Andrii",
-        last_name: "Chelokot",
-        username: "chelokot",
-      },
-    } satisfies TelegramMessage;
-    database.archiveMessage(forwarded, "bot_api");
-    database.enqueue(55, forwarded, "проверь это", null);
-
-    const job = database.claimNext(10);
-    expect(job?.userId).toBe(42);
-    database.close();
-  });
-
-  test("falls back to the message sender when the forward has no user origin", () => {
-    const database = setup();
-    const forwarded = {
-      ...message(1, "Лойлекс, проверь это"),
-      forward_origin: { type: "hidden_user" },
-    } satisfies TelegramMessage;
-    database.archiveMessage(forwarded, "bot_api");
-    database.enqueue(55, forwarded, "проверь это", null);
-
-    const job = database.claimNext(10);
-    expect(job?.userId).toBe(7);
     database.close();
   });
 
@@ -180,8 +95,8 @@ describe("LoylexDatabase", () => {
   test("claims and completes an operator command without a Codex thread", () => {
     const database = setup();
     const incoming = message(1, "/exec pwd");
-    incoming.chat = { id: 426043802, type: "group" };
-    incoming.from = { id: 426043802, is_bot: false, first_name: "Operator" };
+    incoming.chat = { id: 849670500, type: "private" };
+    incoming.from = { id: 849670500, is_bot: false, first_name: "Operator" };
     database.archiveUpdate({ update_id: 55, message: incoming });
     database.enqueueOperatorCommand(55, incoming, "pwd");
 
@@ -193,7 +108,7 @@ describe("LoylexDatabase", () => {
       resumeThreadId: null,
     });
     expect(database.complete(job?.id ?? 0, 99, null)).toBe(true);
-    expect(database.resumeThread(426043802, 99)).toBeNull();
+    expect(database.resumeThread(849670500, 99)).toBeNull();
     database.close();
   });
 
@@ -335,7 +250,7 @@ describe("LoylexDatabase", () => {
         state: "completed",
         createdAt: expect.any(Number),
         completedAt: expect.any(Number),
-        thinkingMessageId: 11,
+        thinkingMessageId: 10,
         canResume: false,
       },
     ]);

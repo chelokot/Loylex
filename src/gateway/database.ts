@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite";
-import { telegramUserId } from "../shared/telegram-identity.ts";
 import type {
   AgentContextMode,
   AgentJob,
@@ -120,17 +119,6 @@ function stringField(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function visibleLastName(value: unknown): string | null {
-  const lastName = stringField(value);
-  return lastName !== null && Number.isNaN(Number(lastName)) ? lastName : null;
-}
-
-function userDisplayName(firstName: unknown, lastName: unknown): string {
-  return [stringField(firstName), visibleLastName(lastName)]
-    .filter((part): part is string => part !== null)
-    .join(" ");
-}
-
 function parseObject(value: string): UnknownRecord {
   try {
     return object(JSON.parse(value)) ?? {};
@@ -145,7 +133,9 @@ function nestedAuthor(message: UnknownRecord): string {
     return "unknown";
   }
   const username = stringField(sender.username);
-  const name = userDisplayName(sender.first_name, sender.last_name);
+  const name = [stringField(sender.first_name), stringField(sender.last_name)]
+    .filter((part): part is string => part !== null)
+    .join(" ");
   return username ? `${name || username} (@${username})` : name || "unknown";
 }
 
@@ -184,7 +174,9 @@ function rawRelations(rawJson: string): string {
       forward;
     const originName =
       stringField(origin.username) ??
-      (userDisplayName(origin.first_name, origin.last_name) ||
+      ([stringField(origin.first_name), stringField(origin.last_name)]
+        .filter((part): part is string => part !== null)
+        .join(" ") ||
         stringField(origin.type) ||
         "unknown");
     relations.push(`forwarded_from=${JSON.stringify(originName)}`);
@@ -198,7 +190,7 @@ function eventType(update: TelegramUpdate): string {
 
 function displayName(message: TelegramMessage): string | null {
   if (message.from) {
-    return userDisplayName(message.from.first_name, message.from.last_name);
+    return [message.from.first_name, message.from.last_name].filter(Boolean).join(" ");
   }
   return message.sender_chat?.title ?? null;
 }
@@ -422,7 +414,7 @@ export class LoylexDatabase {
         message.chat.title ?? null,
         message.date,
         message.edit_date ?? null,
-        telegramUserId(message),
+        message.from?.id ?? null,
         message.from?.username ?? null,
         displayName(message),
         text,
@@ -468,7 +460,7 @@ export class LoylexDatabase {
         message.chat.type,
         message.message_id,
         message.message_thread_id ?? null,
-        telegramUserId(message),
+        message.from?.id ?? null,
         prompt,
         kind,
         command,
@@ -1239,11 +1231,11 @@ export class LoylexDatabase {
       const result = this.connection
         .query(`
           UPDATE jobs
-          SET state = 'completed', completed_at = ?, codex_thread_id = ?, thinking_message_id = ?
+          SET state = 'completed', completed_at = ?, codex_thread_id = ?
           WHERE id = ? AND state = 'running'
             AND (? IS NULL OR worker_id = ?)
         `)
-        .run(Date.now(), codexThreadId, answerMessageId, jobId, workerId ?? null, workerId ?? null);
+        .run(Date.now(), codexThreadId, jobId, workerId ?? null, workerId ?? null);
       if (result.changes === 0) {
         return false;
       }
