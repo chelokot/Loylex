@@ -39,6 +39,22 @@ function botMessage(id: number, text: string): TelegramMessage {
   };
 }
 
+function forwardedMessage(id: number, text: string): TelegramMessage {
+  return {
+    ...message(id, text),
+    forward_origin: {
+      type: "user",
+      date: 1_700_000_500,
+      sender_user: {
+        id: 42,
+        is_bot: false,
+        first_name: "Chelokot",
+        username: "chelokot",
+      },
+    },
+  };
+}
+
 describe("LoylexDatabase", () => {
   test("archives, indexes, claims, and resumes a thread", () => {
     const database = setup();
@@ -63,6 +79,31 @@ describe("LoylexDatabase", () => {
 
     database.complete(job?.id ?? 0, 99, "thread-123");
     expect(database.resumeThread(-10042, 99)).toBe("thread-123");
+    database.close();
+  });
+
+  test("uses the forwarded user's ID for the agent without changing the job schema", () => {
+    const database = setup();
+    const forwarded = forwardedMessage(1, "Лойлекс, проверь это");
+    database.archiveMessage(forwarded, "bot_api");
+    database.enqueue(55, forwarded, "проверь это", null);
+
+    const job = database.claimNext(10);
+    expect(job?.userId).toBe(42);
+    database.close();
+  });
+
+  test("falls back to the message sender when the forward has no user origin", () => {
+    const database = setup();
+    const forwarded = {
+      ...message(1, "Лойлекс, проверь это"),
+      forward_origin: { type: "hidden_user" },
+    } satisfies TelegramMessage;
+    database.archiveMessage(forwarded, "bot_api");
+    database.enqueue(55, forwarded, "проверь это", null);
+
+    const job = database.claimNext(10);
+    expect(job?.userId).toBe(7);
     database.close();
   });
 

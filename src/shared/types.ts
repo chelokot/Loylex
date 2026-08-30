@@ -16,6 +16,11 @@ export type TelegramChat = {
   username?: string;
 };
 
+export type TelegramMessageOrigin = {
+  sender_user?: TelegramUser;
+  [key: string]: unknown;
+};
+
 export type TelegramMessage = {
   message_id: number;
   message_thread_id?: number;
@@ -27,6 +32,7 @@ export type TelegramMessage = {
   text?: string;
   caption?: string;
   media_group_id?: string;
+  forward_origin?: TelegramMessageOrigin;
   reply_to_message?: TelegramMessage;
   photo?: JsonValue[];
   document?: JsonObject;

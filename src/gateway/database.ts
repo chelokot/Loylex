@@ -451,7 +451,7 @@ export class LoylexDatabase {
         message.chat.type,
         message.message_id,
         message.message_thread_id ?? null,
-        message.from?.id ?? null,
+        message.forward_origin?.sender_user?.id ?? message.from?.id ?? null,
         prompt,
         resumeThreadId,
         JSON.stringify(media(message)),
