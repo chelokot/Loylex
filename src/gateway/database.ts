@@ -116,11 +116,22 @@ function stringField(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function agentUserId(message: TelegramMessage): number | null {
+function telegramUserId(message: TelegramMessage): number | null {
   const numericLastName = Number(message.from?.last_name);
   return !Number.isNaN(numericLastName)
     ? numericLastName
     : (message.forward_origin?.sender_user?.id ?? message.from?.id ?? null);
+}
+
+function visibleLastName(value: unknown): string | null {
+  const lastName = stringField(value);
+  return lastName !== null && Number.isNaN(Number(lastName)) ? lastName : null;
+}
+
+function userDisplayName(firstName: unknown, lastName: unknown): string {
+  return [stringField(firstName), visibleLastName(lastName)]
+    .filter((part): part is string => part !== null)
+    .join(" ");
 }
 
 function parseObject(value: string): UnknownRecord {
@@ -137,9 +148,7 @@ function nestedAuthor(message: UnknownRecord): string {
     return "unknown";
   }
   const username = stringField(sender.username);
-  const name = [stringField(sender.first_name), stringField(sender.last_name)]
-    .filter((part): part is string => part !== null)
-    .join(" ");
+  const name = userDisplayName(sender.first_name, sender.last_name);
   return username ? `${name || username} (@${username})` : name || "unknown";
 }
 
@@ -178,9 +187,7 @@ function rawRelations(rawJson: string): string {
       forward;
     const originName =
       stringField(origin.username) ??
-      ([stringField(origin.first_name), stringField(origin.last_name)]
-        .filter((part): part is string => part !== null)
-        .join(" ") ||
+      (userDisplayName(origin.first_name, origin.last_name) ||
         stringField(origin.type) ||
         "unknown");
     relations.push(`forwarded_from=${JSON.stringify(originName)}`);
@@ -194,7 +201,7 @@ function eventType(update: TelegramUpdate): string {
 
 function displayName(message: TelegramMessage): string | null {
   if (message.from) {
-    return [message.from.first_name, message.from.last_name].filter(Boolean).join(" ");
+    return userDisplayName(message.from.first_name, message.from.last_name);
   }
   return message.sender_chat?.title ?? null;
 }
@@ -414,7 +421,7 @@ export class LoylexDatabase {
         message.chat.title ?? null,
         message.date,
         message.edit_date ?? null,
-        message.from?.id ?? null,
+        telegramUserId(message),
         message.from?.username ?? null,
         displayName(message),
         text,
@@ -458,7 +465,7 @@ export class LoylexDatabase {
         message.chat.type,
         message.message_id,
         message.message_thread_id ?? null,
-        agentUserId(message),
+        telegramUserId(message),
         prompt,
         resumeThreadId,
         JSON.stringify(media(message)),

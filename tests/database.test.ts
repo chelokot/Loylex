@@ -110,6 +110,10 @@ describe("LoylexDatabase", () => {
 
     const job = database.claimNext(10);
     expect(job?.userId).toBe(426043802);
+    expect(database.recent(-10042, 1)[0]).toMatchObject({
+      userId: 426043802,
+      author: "Andrii (@chelokot)",
+    });
     database.close();
   });
 
