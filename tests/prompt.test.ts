@@ -25,6 +25,7 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
 test("builds a full initial prompt with the current request separate from history", () => {
   const prompt = buildPrompt(job(), "## Memory bucket: profile.md\n\nI am Loylex");
 
+  expect(prompt.indexOf("Before doing anything for any request—including answering")).toBe(0);
   expect(prompt).toContain("Recent Telegram context:");
   expect(prompt).toContain("Current request:\n\nпроверь задачу");
   expect(prompt).toContain('"telegram_user_id": 7');
@@ -56,6 +57,7 @@ test("builds an additive follow-up prompt instead of replaying the initial wrapp
   );
 
   expect(prompt).toContain("Continue the existing Codex thread");
+  expect(prompt).toContain("Before doing anything for any request—including answering");
   expect(prompt).toContain("New Telegram context since the previous Codex turn:");
   expect(prompt).toContain("#11");
   expect(prompt).not.toContain("You received a Telegram request through Loylex.");
