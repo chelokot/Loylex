@@ -1,9 +1,5 @@
 .env
-.idea/
-.vscode/
-data/
 node_modules/
-result.json
+*.db
 *.sqlite
-*.sqlite-shm
-*.sqlite-wal
+*.sqlite-*
