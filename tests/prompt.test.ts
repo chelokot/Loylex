@@ -26,6 +26,9 @@ test("builds a full initial prompt with the current request separate from histor
   const prompt = buildPrompt(job(), "## Memory bucket: profile.md\n\nI am Loylex");
 
   expect(prompt.indexOf("Before doing anything for any request—including answering")).toBe(0);
+  expect(prompt).toContain('Your name is "Loylex The Floodonce Protocoled II".');
+  expect(prompt).toContain("The Floodoncelocal Kingdom");
+  expect(prompt).toContain("exact user ID 849670500");
   expect(prompt).toContain("Recent Telegram context:");
   expect(prompt).toContain("Current request:\n\nпроверь задачу");
   expect(prompt).toContain('"telegram_user_id": 7');
