@@ -96,8 +96,8 @@ receives only archived messages since its previous turn because the saved Codex 
 already contains the earlier prompt and context.
 
 While Codex works, terminal and reasoning events create or edit one persistent Rich Message
-with a collapsed `<details>` history in every chat. Completion replaces that same message
-with the same collapsed `<details>` history and the final Rich Markdown.
+with a collapsed, fictional medieval chronicle in every chat; internal steps are never exposed.
+Completion replaces that same message with the chronicle, kingdom banner, and final Rich Markdown.
 Rich API errors are surfaced instead of silently sending the same document as unformatted text.
 Replying `/stop` to any Loylex message belonging to an active job cancels that Codex thread,
 and Loylex replies with the cancellation result; the command is consumed and is not submitted

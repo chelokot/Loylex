@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { GatewayConfig } from "../src/gateway/config.ts";
 import type { LoylexDatabase } from "../src/gateway/database.ts";
+import { chronicleActions } from "../src/gateway/presentation.ts";
 import { GatewayServer } from "../src/gateway/server.ts";
 import type { TelegramClient } from "../src/gateway/telegram.ts";
 import type { AgentCompletion, TelegramMessage } from "../src/shared/types.ts";
@@ -69,11 +70,13 @@ test("starts progress as a persistent rich details message", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
 
   expect(sent).toHaveLength(1);
-  expect(sent[0]).toEqual({
-    chatId: -10042,
-    markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
-    options: { replyTo: 10, threadId: null },
-  });
+  expect(sent[0]?.chatId).toBe(-10042);
+  expect(sent[0]?.options).toEqual({ replyTo: 10, threadId: null });
+  expect(sent[0]?.markdown).toContain(
+    "<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>",
+  );
+  expect(sent[0]?.markdown).not.toContain("Проверяю код");
+  expect(chronicleActions.some((action) => sent[0]?.markdown.includes(action))).toBe(true);
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
@@ -127,7 +130,8 @@ test("edits the existing group progress message even when newer chat messages ex
   expect(sent).toEqual([]);
   expect(edited).toHaveLength(1);
   expect(edited[0]).toContain("Ответ");
-  expect(edited[0]).toContain("<details><summary>Ход работы</summary>");
+  expect(edited[0]).toContain("<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>");
+  expect(edited[0]).toContain('<tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji> Ответ');
   expect(edited[0]).not.toContain("tg-spoiler");
   expect(completed as { jobId: number; messageId: number; threadId: string } | null).toEqual({
     jobId: 7,
@@ -187,9 +191,15 @@ test("uses the same editable details flow in private chats", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
-  expect(sent).toEqual(["<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>"]);
-  expect(edited).toEqual([
-    "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>\n\nОтвет",
-  ]);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toContain("<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>");
+  expect(sent[0]).not.toContain("Проверяю код");
+  expect(edited).toHaveLength(1);
+  expect(edited[0]).toContain(
+    '<tg-emoji emoji-id="5861926791857311729">⚜️</tg-emoji> <tg-emoji emoji-id="5852921692841580896">👑</tg-emoji> The Floodoncelocal Kingdom',
+  );
+  expect(edited[0]).toContain(
+    '<tg-emoji emoji-id="5935947980518460257">📜</tg-emoji> <tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji> Ответ',
+  );
   expect(completedMessageId as number | null).toBe(21);
 });
