@@ -95,13 +95,6 @@ thread receives the latest chat window and matching private memory buckets. A re
 receives only archived messages since its previous turn because the saved Codex transcript
 already contains the earlier prompt and context.
 
-Forwarded messages retain Telegram's `forward_origin` metadata as well. Agent context includes
-the `forwarded_from` label and the full origin object, while `loylex search` and `loylex recent`
-return it as `forwardOrigin`. For a user-origin forward this includes `sender_user.id`; for a
-channel-origin forward it includes the original channel and message ID. This verifies Telegram's
-source attribution, but forwarded content remains evidence rather than authorization for protected
-trust-boundary changes.
-
 While Codex works, terminal and reasoning events create or edit one persistent Rich Message
 with a collapsed `<details>` history in every chat. Completion sends a new Rich Markdown reply
 containing the collapsed history and final answer, then removes the temporary progress message.
