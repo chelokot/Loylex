@@ -1,5 +1,12 @@
 import { Composer } from "grammy";
 import type { Context } from "../bot.ts";
+import { escapeHtml } from "../utils/text.ts";
+import {
+  ADMIN_EXEC_MAX_COMMAND_LENGTH,
+  executeAdminCommand,
+  formatAdminExecResult,
+  isAdminExecContext,
+} from "./admin-exec.ts";
 import { canConfigureChat, isBotAdmin } from "./authorization.ts";
 import { replyWithResumeTask } from "./chat.ts";
 import {
@@ -408,6 +415,38 @@ stateComposer.command("usage", async (ctx) => {
   );
 
   await ctx.reply(response);
+});
+
+stateComposer.command("exec", async (ctx) => {
+  if (!isAdminExecContext(ctx)) {
+    return;
+  }
+
+  const command = typeof ctx.match === "string" ? ctx.match.trim() : "";
+  if (!command) {
+    await ctx.reply(
+      "Usage: /exec <command>\nRuns in the bot container with empty stdin.",
+    );
+    return;
+  }
+
+  if (command.length > ADMIN_EXEC_MAX_COMMAND_LENGTH) {
+    await ctx.reply(
+      `Command is limited to ${ADMIN_EXEC_MAX_COMMAND_LENGTH} characters.`,
+    );
+    return;
+  }
+
+  try {
+    const result = await executeAdminCommand(command);
+    await ctx.reply(formatAdminExecResult(result), { parse_mode: "HTML" });
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    await ctx.reply(
+      `<b>Operator command failed</b>\n<pre>${escapeHtml(details)}</pre>`,
+      { parse_mode: "HTML" },
+    );
+  }
 });
 
 stateComposer.command("model", async (ctx) => {

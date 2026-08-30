@@ -5,6 +5,7 @@ command-packs-description = List emoji packs
 command-tasks-description = Show recent tasks
 command-schedule-description = Show upcoming messages
 command-usage-description = Show usage limits
+command-exec-description = Run an operator command
 
 settings-model-usage = Try: /model {$options} DEPLOYMENT_NAME
 settings-debug-usage = Try: /debug on|off

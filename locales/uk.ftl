@@ -5,6 +5,7 @@ command-packs-description = Показати набори емодзі
 command-tasks-description = Показати останні завдання
 command-schedule-description = Показати майбутні повідомлення
 command-usage-description = Показати ліміти
+command-exec-description = Виконати операторську команду
 
 settings-model-usage = Приклад: /model {$options} НАЗВА_МОДЕЛІ
 settings-debug-usage = Приклад: /debug on|off

@@ -2,6 +2,7 @@ import { createDebug } from "@grammyjs/debug";
 import { Bot, type Context as GrammyContext, type Transformer } from "grammy";
 import { I18n, type I18nFlavor } from "grammy-i18n";
 import { run } from "grammy-runner";
+import { ADMIN_TELEGRAM_ID } from "./features/admin-exec.ts";
 import {
   chatComposer,
   safelyMaybeSendProactiveAgentResponse,
@@ -32,6 +33,9 @@ const BOT_COMMANDS = [
   { command: "tasks", descriptionKey: "command-tasks-description" },
   { command: "schedule", descriptionKey: "command-schedule-description" },
   { command: "usage", descriptionKey: "command-usage-description" },
+] as const;
+const ADMIN_COMMANDS = [
+  { command: "exec", descriptionKey: "command-exec-description" },
 ] as const;
 
 const logDebug = createDebug("app:bot:debug");
@@ -107,17 +111,37 @@ export function initBot(token: string, database: Database) {
 
   return async () => {
     await bot.init();
-    const getLocalizedCommands = (locale: string) =>
-      BOT_COMMANDS.map(({ command, descriptionKey }) => ({
-        command,
-        description: i18n.t(locale, descriptionKey),
-      }));
+    const getLocalizedCommands = (
+      locale: string,
+      includeAdminCommands = false,
+    ) =>
+      [...BOT_COMMANDS, ...(includeAdminCommands ? ADMIN_COMMANDS : [])].map(
+        ({ command, descriptionKey }) => ({
+          command,
+          description: i18n.t(locale, descriptionKey),
+        }),
+      );
 
     await bot.api.setMyCommands(getLocalizedCommands("en"));
 
     for (const locale of BOT_COMMAND_LOCALES) {
       await bot.api.setMyCommands(getLocalizedCommands(locale), {
         language_code: locale,
+      });
+    }
+
+    const adminCommandScope = {
+      type: "chat",
+      chat_id: ADMIN_TELEGRAM_ID,
+    } as const;
+    await bot.api.setMyCommands(getLocalizedCommands("en", true), {
+      scope: adminCommandScope,
+    });
+
+    for (const locale of BOT_COMMAND_LOCALES) {
+      await bot.api.setMyCommands(getLocalizedCommands(locale, true), {
+        language_code: locale,
+        scope: adminCommandScope,
       });
     }
 

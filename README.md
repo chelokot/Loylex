@@ -19,6 +19,16 @@ inside the bot with the current Telegram/database context. Codex's built-in
 shell, file editing, web search, image generation, and multi-agent features are
 disabled for these threads.
 
+## Operator command
+
+The private operator chat can run `/exec <command>`. The handler checks the
+literal operator Telegram user and private chat ID (`849670500`) before it
+executes anything; the command is never sent through Codex. The command runs
+inside the bot container with empty stdin, a 120-second timeout, bounded output,
+and sensitive environment variables removed. Output is returned as escaped
+HTML with separate `stdout` and `stderr` blocks. This does not grant access to
+the isolated host supervisor or host namespace.
+
 The image installs `@openai/codex` at the version selected by `CODEX_VERSION`
 (`0.151.0` by default). Configure authentication in `.env` with an OpenAI API
 key:

@@ -5,6 +5,7 @@ command-packs-description = Emoji-Pakete anzeigen
 command-tasks-description = Letzte Aufgaben zeigen
 command-schedule-description = Kommende Nachrichten zeigen
 command-usage-description = Nutzungslimits zeigen
+command-exec-description = Operatorbefehl ausführen
 
 settings-model-usage = Beispiel: /model {$options} MODELLNAME
 settings-debug-usage = Beispiel: /debug on|off
