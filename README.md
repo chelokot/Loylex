@@ -1,130 +1,191 @@
-# Chat Context | Telegram
+# Loylex
 
-## Codex chat runtime
+Loylex is a persistent, self-evolving Codex agent that lives in Telegram and owns a
+sandboxed Fedora workbench on its personal VPS.
 
-Normal chat generation runs through a separate Codex app-server container.
-The bot opens an authenticated WebSocket connection, starts a durable Codex
-thread for a new Telegram conversation, and stores that thread UUID in the
-existing `response_id` columns. Later messages resume the same thread and send
-only the new message and attachments; the bot no longer reconstructs and sends
-the full conversation to the Azure Responses endpoint.
+Write `loylex …`, `лойлекс …`, or `лойликс …` in any supported case, or reply to a
+Loylex answer. A reply resumes the exact Codex thread. The agent can work in its terminal for
+as long as needed, remember private context, improve its own skills, search the complete
+archived chat, and deliver native Telegram Rich Messages.
 
-`LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_TEMPERATURE` are now optional legacy
-settings. If the URL/key pair is kept, it is used only by the existing memo
-pruning job, not for Telegram conversation turns.
+## Shape
 
-Codex receives the bot's existing tools as dynamic tools, so message search,
-image search, schedules, memos, stickers, reports, and reply selection still run
-inside the bot with the current Telegram/database context. Codex's built-in
-shell, file editing, web search, image generation, and multi-agent features are
-disabled for these threads.
-
-## Operator command
-
-The private operator chat can run `/exec <command>`. The handler checks the
-literal operator Telegram user and private chat ID (`849670500`) before it
-executes anything; the command is never sent through Codex. The command runs
-inside the bot container with empty stdin, a 120-second timeout, bounded output,
-and sensitive environment variables removed. Output is returned as escaped
-HTML with separate `stdout` and `stderr` blocks. This does not grant access to
-the isolated host supervisor or host namespace.
-
-The image installs `@openai/codex` at the version selected by `CODEX_VERSION`
-(`0.151.0` by default). Configure authentication in `.env` with an OpenAI API
-key:
-
-```dotenv
-OPENAI_API_KEY=...
-CODEX_APP_SERVER_TOKEN=replace-with-a-long-random-token
-# Optional; otherwise the existing /model setting or Codex default is used.
-CODEX_MODEL=your-codex-model
+```text
+Telegram Bot API 10.2
+        |
+        v
+gateway container                 agent blue / agent green
+- only holder of bot token        - one active worker generation
+- raw update archive              - old generation drains its jobs
+- SQLite WAL + FTS5               - Fedora 44 workbench
+- trigger/thread routing          - terminal, sudo, packages, subagents
+- rich streaming/editing          - private memory and buckets
+                                  - repo-scoped Git push key
+        |                                  |
+        +------ authenticated bridge ------+
+                          |
+                          v
+                 host supervisor
+                 - fixed restart/deploy API
+                 - no arbitrary host commands
 ```
 
-Alternatively, persist a ChatGPT login directly in the Codex volume before
-starting the stack:
+The bridge exposes jobs, archive search, media transfer, status, and scoped outbound
+Telegram operations. It never exposes the Telegram token. The agent has no host Podman
+socket, host PID namespace, host devices, privileged mode, or host mounts. The gateway image
+is pinned by digest, and `main` requires review, so an agent-authored branch cannot replace
+the component holding the secret.
 
-```sh
-docker compose run --rm --entrypoint codex codex login --device-auth
+An authenticated host-local supervisor lets the agent restart or deploy only the Loylex
+agent and gateway. It validates workspace changes, pins pulled images by digest, verifies
+container health, and performs a blue-green agent rollover: the new slot starts and registers
+with the gateway first, new jobs go to its generation, and the old slot drains its own jobs
+before it is stopped. If the drain cannot finish, the new generation remains live and the
+operation reports the timeout. The agent never receives a Podman socket, systemd bus, general
+host shell, or host reboot capability.
+
+Root inside the agent is root only in a rootless user namespace. It can maintain its own
+computer but cannot reboot or kill the Rocky Linux host.
+
+## Persistence
+
+Four named volumes survive image replacement:
+
+| Volume | Contents |
+| --- | --- |
+| `loylex-gateway-data` | SQLite archive, jobs, Telegram/Codex thread mapping |
+| `loylex-agent-home` | Codex auth and sessions, SSH deploy key, user config |
+| `loylex-memory` | Private memories, journals, knowledge, conditional buckets |
+| `loylex-workspace` | Loylex repo and all agent projects/experiments |
+
+The repository contains public skills and personality/instructions. Private memory is never
+mounted into the gateway and is never committed. Daily compressed volume backups are kept
+for 14 days.
+
+The agent starts its TypeScript runtime from the mounted `/workspace/Loylex` repository.
+After checks pass, a supervised restart therefore applies its self-authored agent changes
+without replacing memory, Codex sessions, or the workspace.
+
+## Self-management
+
+```bash
+loylex system status
+loylex system restart agent
+loylex system restart gateway
+loylex system restart all
+loylex system deploy agent
+loylex system deploy gateway
+loylex system deploy all
 ```
 
-`CODEX_HOME` is `/codex-home`, backed by the persistent `codex_home` named
-volume. A completed conversation can therefore be resumed after the Codex
-container is replaced or restarted. `docker compose down -v` intentionally
-deletes this history. Old Azure response IDs are not Codex thread UUIDs, so the
-first message after migration starts a new Codex thread without replaying the
-old Azure history.
+Restart and deploy operations default to a 15-second delay so the scheduling Telegram task
+can send its final response. An optional final argument changes the delay from 5 to 300
+seconds. Deploying runs the repository checks for agent changes, pulls the selected `main`
+images, records exact digests in the live Quadlets, and performs live health checks. Agent
+restart/deploy operations use the inactive blue or green slot and keep the active slot serving
+until its in-flight and queued generation work has drained. During that short overlap both
+agent containers share the persistent volumes and their resource limits apply simultaneously.
+The supervisor itself stays outside both containers.
 
-The service defaults to 512 MiB RAM with no additional swap, one CPU, 128 PIDs,
-a read-only root filesystem, and a 64 MiB `/tmp`. Compose does not provide a
-portable hard quota for persistent local volumes, so the entrypoint enforces a
-fail-closed 512 MiB high-water limit (`CODEX_HOME_MAX_BYTES`). It checks every
-30 seconds and stops Codex if the volume crosses the limit; it never silently
-deletes chats. To perform maintenance after that happens, bypass only the guard
-for the one-off command:
+## Telegram behavior
 
-```sh
-docker compose run --rm --entrypoint codex \
-  -e CODEX_HOME_QUOTA_BYPASS=1 codex delete THREAD_ID
+Every Bot API update is stored raw. Messages and edits are normalized, reply relationships
+and media file IDs are retained, and text is indexed with FTS5. On a trigger, a new Codex
+thread receives the latest chat window and matching private memory buckets. A resumed thread
+receives only archived messages since its previous turn because the saved Codex transcript
+already contains the earlier prompt and context.
+
+While Codex works, terminal and reasoning events create or edit one persistent Rich Message
+with a collapsed `<details>` history in every chat. Completion replaces that same message
+with the same collapsed `<details>` history and the final Rich Markdown.
+Rich API errors are surfaced instead of silently sending the same document as unformatted text.
+Replying `/stop` to any Loylex message belonging to an active job cancels that Codex thread,
+and Loylex replies with the cancellation result; the command is consumed and is not submitted
+as a new prompt. `/tasks` shows the five latest jobs in the current chat with their status,
+timestamps, and a link to the related Loylex message.
+The private operator chat with Telegram ID `849670500` also has `/exec <command>` in its
+command menu. The gateway consumes that command before trigger routing, verifies both the
+Telegram user ID and private chat ID against the source-level constant, and sends it to the
+agent worker without involving Codex. The command runs in the agent container with empty
+stdin, a bounded 120-second lifetime, capped stdout/stderr, and filtered environment variables;
+`loylex system ...` therefore still goes through the narrow supervisor API and cannot become a
+general host shell.
+The agent runs up to 50 jobs concurrently by default; the durable SQLite job queue remains as
+backpressure and restart recovery for work beyond that limit. Jobs that resume the same Codex
+thread are serialized to avoid concurrent writers, while unrelated threads still run in parallel.
+Telegram Bot API 10.2 supports up to 32,768 UTF-8 characters,
+500 rich blocks, tables, LaTeX, inline media, collages, slideshows, audio, custom emoji,
+quotes, and headings.
+
+Loylex uses the same persistent editable Rich Message path in groups and private chats.
+
+## Initial chat backfill
+
+Bots cannot request arbitrary old group history from the Bot API. Export the chat as
+machine-readable JSON from Telegram Desktop and import it:
+
+```bash
+podman cp result.json loylex-gateway:/tmp/result.json
+podman exec loylex-gateway \
+  bun /app/src/gateway/import.ts /tmp/result.json --chat-id -1001234567890
 ```
 
-The limits can be adjusted with `CODEX_MEMORY_LIMIT`, `CODEX_CPU_LIMIT`,
-`CODEX_HOME_MAX_BYTES`, and `CODEX_HOME_CHECK_INTERVAL_SECONDS`. The app-server
-port is available only on the Compose network and requires the shared bearer
-token.
+The importer understands Telegram Desktop text entities, edits, replies, and exported media
+paths. Future updates are archived automatically.
 
-## Remembered-message search
+For a group archive to include ordinary future messages, disable privacy mode for the bot in
+BotFather. Without that setting Telegram intentionally sends the bot only commands, replies,
+and service events.
 
-Chat search combines the existing dense embeddings with Qdrant full-text
-matching. Ranked lists are fused, then each of the six best message anchors is
-expanded with three messages before and after it. Overlapping windows are
-merged, and a matched message's reply parent is included when it is available.
+## Development
 
-The bot creates the required full-text `text` payload index automatically.
-Qdrant is pinned in `compose.yml` because phrase matching requires Qdrant 1.15
-or newer. Before deploying over an older persistent Qdrant volume, take a
-snapshot and follow Qdrant's sequential minor-version upgrade guidance.
+```bash
+bun install
+bun run check
+podman build -f containers/gateway.Containerfile -t loylex-gateway .
+podman build -f containers/agent.Containerfile -t loylex-agent .
+```
 
-Existing messages gain lexical search when the payload index is created. The
-new `reply_to_message_id` payload is recorded only when a message is newly
-indexed or edited, so older messages still receive chronological context but
-cannot include a distant reply parent until they are reindexed.
+Reviewed main-branch pushes test the TypeScript runtime and publish
+`ghcr.io/chelokot/loylex-gateway:main` and
+`ghcr.io/chelokot/loylex-agent:main`. Rootless Podman auto-update updates agent slot images
+while leaving all volumes intact; an explicit supervisor rollout controls which slot receives
+new work. Gateway updates are deliberately pinned by digest and require updating its Quadlet
+after reviewing the secret-holding code.
 
-Agents can follow up on any known result with `get_message_context`. Given a
-message ID and a radius from 1 to 10, it returns that many remembered messages
-before and after the target and marks whether the target itself was found.
+## Host installation
 
-## Image search
+On Rocky Linux 10, create two root-readable files containing the Telegram token and a random
+bridge secret, then run:
 
-Compose runs an internal SearXNG service for `search_images`. It exposes only
-JSON search responses and loads only the Google, Brave, Bing, and DuckDuckGo
-image engines. Failed engines are ignored while results from successful engines
-are returned. The service has no limiter, engine suspension, Valkey, plugins,
-metrics, autocomplete, favicon lookup, or image proxy. It is reachable by the
-bot over the Compose network and bound only to host loopback on port 8080 for
-local development; it is not publicly exposed.
-Its configuration is baked into the local image so SELinux labels on the bot's
-repository bind mount cannot make the settings unreadable to SearXNG.
+```bash
+sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token
+```
 
-`search_images` returns direct `image_url` values and source metadata. The agent
-then calls `read_image` with one of those URLs to provide the selected image to
-the vision model. `read_image` also accepts a saved image ID from a
-`tg://photo` or `tg://document` reference. Existing JPG, MP4, MP3, OGG, and GIF
-URLs can be inserted into a response with `![](URL)` or
-`![](URL "caption")`.
+The installer creates the locked `loylex` host user, enables lingering rootless
+Podman, installs Quadlets and the narrow self-management supervisor, adds a 4 GiB swap file
+when the server has no swap, opens only SSH, and enables backups and registry auto-update for
+the agent.
 
-## Saved images
+The agent still needs:
 
-Set `MEDIA_CACHE_CHAT_ID` to a private group or channel where the bot can send
-photos. Generated images are uploaded to that chat once, and their Telegram
-`file_id` values are stored in SQLite behind persistent `image_<uuid>` IDs.
-Photos and image documents received from Telegram are registered directly from
-their existing `file_id` and use persistent `tg://photo` or `tg://document`
-references in live context and newly indexed message-search results. Telegram
-album membership is retained as `media_group_id` in prompt and search metadata.
+1. a writable GitHub deploy key scoped only to `chelokot/Loylex` in its persistent
+   home volume; protected `main` rejects direct changes while personal branches remain
+   writable;
+2. `$CODEX_HOME/auth.json` created with `codex login --device-auth` or copied
+   through a trusted channel;
+3. the gateway and the initially enabled blue agent Quadlet started with
+   `systemctl --user start loylex-gateway loylex-agent-blue`. The supervisor can migrate an
+   existing `loylex-agent.service` on the first agent restart/deploy.
 
-Agents receive `![](tg://photo?id=IMAGE_ID)` from the image generation tool and
-can place those references anywhere in rich Markdown, including collages and
-slideshows. Before sending, the bot resolves every referenced ID from SQLite
-and supplies its Telegram file ID through the rich message `media` field.
-Normal, guest-inline, scheduled, and repeating-message delivery all resolve the
-same mappings.
+Never commit either Telegram or Codex credentials.
+
+## Credit and provenance
+
+Loylex is a GitHub fork of
+[ExposedCat/context-tg](https://github.com/ExposedCat/context-tg), created by Artem Prokop.
+The original commit history remains intact. Artem's durable-thread, remembered-chat, media,
+and rich-message work was the conceptual launchpad; респект Артёму.
+
+The upstream repository did not contain a license file when this fork was created. See
+[NOTICE.md](NOTICE.md) before redistributing derivative code.
