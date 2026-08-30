@@ -1,3 +1,4 @@
+import { telegramSenderId } from "./telegram-identity.ts";
 import type { TelegramMessage } from "./types.ts";
 
 // Keep authorization in source so it cannot be changed by a Telegram message,
@@ -13,7 +14,7 @@ export type OperatorExecDecision = {
 };
 
 export function isOperatorExecContext(message: TelegramMessage): boolean {
-  return message.from?.id === ADMIN_TELEGRAM_ID && message.from.is_bot === false;
+  return telegramSenderId(message) === ADMIN_TELEGRAM_ID && message.from?.is_bot === false;
 }
 
 export function parseOperatorExecCommand(

@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { telegramUserId } from "../shared/telegram-identity.ts";
 import type {
   AgentContextMode,
   AgentJob,
@@ -117,13 +118,6 @@ function numberField(value: unknown): number | null {
 
 function stringField(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function telegramUserId(message: TelegramMessage): number | null {
-  const numericLastName = Number(message.from?.last_name);
-  return !Number.isNaN(numericLastName)
-    ? numericLastName
-    : (message.forward_origin?.sender_user?.id ?? message.from?.id ?? null);
 }
 
 function visibleLastName(value: unknown): string | null {

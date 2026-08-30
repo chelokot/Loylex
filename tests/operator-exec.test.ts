@@ -51,6 +51,22 @@ test("operator exec requires the exact sender id and works in groups", () => {
   expect(parseOperatorExecCommand(message(426043802, -10042, "group", "not exec"))).toBeNull();
 });
 
+test("operator exec does not authorize a matching forwarded or display-name id", () => {
+  const spoofed = message(7, -10042, "group", "/exec pwd");
+  spoofed.from = {
+    id: 7,
+    is_bot: false,
+    first_name: "Operator",
+    last_name: "426043802",
+  };
+  spoofed.forward_origin = {
+    sender_user: { id: 426043802, is_bot: false, first_name: "Operator" },
+  };
+
+  expect(isOperatorExecContext(spoofed)).toBe(false);
+  expect(parseOperatorExecCommand(spoofed)).toEqual({ authorized: false, command: "" });
+});
+
 test("operator exec captures stdout and stderr without secret environment values", async () => {
   process.env.ADMIN_EXEC_TEST_TOKEN = "must-not-be-inherited";
   const result = await executeOperatorCommand(
