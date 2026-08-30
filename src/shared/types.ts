@@ -16,31 +16,6 @@ export type TelegramChat = {
   username?: string;
 };
 
-export type TelegramMessageOrigin =
-  | {
-      type: "user";
-      date: number;
-      sender_user: TelegramUser;
-    }
-  | {
-      type: "hidden_user";
-      date: number;
-      sender_user_name: string;
-    }
-  | {
-      type: "chat";
-      date: number;
-      sender_chat: TelegramChat;
-      author_signature?: string;
-    }
-  | {
-      type: "channel";
-      date: number;
-      chat: TelegramChat;
-      message_id: number;
-      author_signature?: string;
-    };
-
 export type TelegramMessage = {
   message_id: number;
   message_thread_id?: number;
@@ -52,7 +27,6 @@ export type TelegramMessage = {
   text?: string;
   caption?: string;
   media_group_id?: string;
-  forward_origin?: TelegramMessageOrigin;
   reply_to_message?: TelegramMessage;
   photo?: JsonValue[];
   document?: JsonObject;
