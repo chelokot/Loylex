@@ -58,6 +58,8 @@ export type TelegramUpdate = {
 
 export type AgentContextMode = "full" | "delta";
 
+export type AgentJobKind = "codex" | "operator_exec";
+
 export type AgentJob = {
   id: number;
   updateId: number;
@@ -67,6 +69,8 @@ export type AgentJob = {
   messageThreadId: number | null;
   userId: number | null;
   prompt: string;
+  kind: AgentJobKind;
+  command: string | null;
   resumeThreadId: string | null;
   context: string;
   contextMode: AgentContextMode;
@@ -82,7 +86,7 @@ export type AgentEvent = {
 
 export type AgentCompletion = {
   answer: string;
-  threadId: string;
+  threadId: string | null;
 };
 
 export type WorkerRegistration = {

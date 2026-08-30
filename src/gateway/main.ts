@@ -1,3 +1,7 @@
+import {
+  ADMIN_EXEC_MAX_COMMAND_LENGTH,
+  parseOperatorExecCommand,
+} from "../shared/operator-exec.ts";
 import type { TelegramMessage } from "../shared/types.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { LoylexDatabase } from "./database.ts";
@@ -57,6 +61,31 @@ async function poll(): Promise<void> {
         const message = database.archiveUpdate(update);
         offset = update.update_id + 1;
         if (!message || message.from?.is_bot) {
+          continue;
+        }
+        const operatorExec = parseOperatorExecCommand(message, bot.username);
+        if (operatorExec !== null) {
+          if (!operatorExec.authorized) {
+            continue;
+          }
+          if (!operatorExec.command) {
+            await telegram.sendRich(
+              message.chat.id,
+              "Использование: `/exec <command>`\n\nКоманда выполняется в агент-контейнере с пустым stdin.",
+              { replyTo: message.message_id, threadId: message.message_thread_id ?? null },
+            );
+            continue;
+          }
+          if (operatorExec.command.length > ADMIN_EXEC_MAX_COMMAND_LENGTH) {
+            await telegram.sendRich(
+              message.chat.id,
+              `Команда ограничена ${ADMIN_EXEC_MAX_COMMAND_LENGTH} символами.`,
+              { replyTo: message.message_id, threadId: message.message_thread_id ?? null },
+            );
+            continue;
+          }
+          acknowledgeWork(message);
+          database.enqueueOperatorCommand(update.update_id, message, operatorExec.command);
           continue;
         }
         const cancelledMessageId = cancelTaskMessageId(message, bot.username);

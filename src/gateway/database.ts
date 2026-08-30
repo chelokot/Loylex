@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import type {
   AgentContextMode,
   AgentJob,
+  AgentJobKind,
   JsonValue,
   TelegramMessage,
   TelegramUpdate,
@@ -35,6 +36,8 @@ type JobRow = {
   message_thread_id: number | null;
   user_id: number | null;
   prompt: string;
+  kind: AgentJobKind;
+  command: string | null;
   resume_thread_id: string | null;
   attachments_json: string;
   worker_generation: number;
@@ -303,6 +306,8 @@ export class LoylexDatabase {
         message_thread_id INTEGER,
         user_id INTEGER,
         prompt TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'codex',
+        command TEXT,
         resume_thread_id TEXT,
         attachments_json TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending',
@@ -355,6 +360,8 @@ export class LoylexDatabase {
     this.ensureJobColumn("worker_id", "TEXT");
     this.ensureJobColumn("lease_expires_at", "INTEGER");
     this.ensureJobColumn("worker_generation", "INTEGER NOT NULL DEFAULT 1");
+    this.ensureJobColumn("kind", "TEXT NOT NULL DEFAULT 'codex'");
+    this.ensureJobColumn("command", "TEXT");
     this.connection.exec(
       "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id)",
     );
@@ -366,7 +373,7 @@ export class LoylexDatabase {
   }
 
   private ensureJobColumn(
-    name: "worker_id" | "lease_expires_at" | "worker_generation",
+    name: "worker_id" | "lease_expires_at" | "worker_generation" | "kind" | "command",
     definition: string,
   ): void {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -450,14 +457,16 @@ export class LoylexDatabase {
     message: TelegramMessage,
     prompt: string,
     resumeThreadId: string | null,
+    kind: AgentJobKind = "codex",
+    command: string | null = null,
   ): void {
     const generation = this.activeWorkerGeneration();
     this.connection
       .query(`
         INSERT OR IGNORE INTO jobs (
           update_id, chat_id, chat_type, message_id, message_thread_id, user_id, prompt,
-          resume_thread_id, attachments_json, worker_generation, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          kind, command, resume_thread_id, attachments_json, worker_generation, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         updateId,
@@ -467,11 +476,17 @@ export class LoylexDatabase {
         message.message_thread_id ?? null,
         telegramUserId(message),
         prompt,
+        kind,
+        command,
         resumeThreadId,
         JSON.stringify(media(message)),
         generation,
         Date.now(),
       );
+  }
+
+  enqueueOperatorCommand(updateId: number, message: TelegramMessage, command: string): void {
+    this.enqueue(updateId, message, `/exec ${command}`, null, "operator_exec", command);
   }
 
   private activeWorkerGeneration(): number {
@@ -769,6 +784,8 @@ export class LoylexDatabase {
       messageThreadId: row.message_thread_id,
       userId: row.user_id,
       prompt: row.prompt,
+      kind: row.kind,
+      command: row.command,
       resumeThreadId: row.resume_thread_id,
       context: context.text,
       contextMode: context.mode,
@@ -1007,7 +1024,7 @@ export class LoylexDatabase {
   appendStatus(
     jobId: number,
     text: string,
-    threadId: string | undefined,
+    threadId: string | null | undefined,
     workerId?: string,
   ): string | null {
     const result = this.connection
@@ -1220,7 +1237,7 @@ export class LoylexDatabase {
   complete(
     jobId: number,
     answerMessageId: number,
-    codexThreadId: string,
+    codexThreadId: string | null,
     workerId?: string,
   ): boolean {
     const address = this.jobAddress(jobId);

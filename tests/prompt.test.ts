@@ -12,6 +12,8 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
     messageThreadId: null,
     userId: 7,
     prompt: "проверь задачу",
+    kind: "codex",
+    command: null,
     resumeThreadId: null,
     context: "[2026-08-30T00:00:00.000Z] #9 Andrii: старое сообщение",
     contextMode: "full",

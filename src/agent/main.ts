@@ -5,6 +5,7 @@ import { loadBuckets } from "./buckets.ts";
 import { runCodex } from "./codex.ts";
 import { loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
+import { executeOperatorCommand, formatOperatorExecResult } from "./operator-exec.ts";
 import { buildPrompt } from "./prompt.ts";
 
 const config = loadAgentConfig();
@@ -62,6 +63,21 @@ async function processJob(job: AgentJob): Promise<void> {
   let stagedAttachments: Awaited<ReturnType<typeof stageAttachments>> | null = null;
   try {
     if (await cancellationRequested(job.id, cancellation)) {
+      return;
+    }
+    if (job.kind === "operator_exec") {
+      const result = await executeOperatorCommand(
+        job.command ?? "",
+        config.repositoryPath,
+        cancellation.signal,
+      );
+      if (await cancellationRequested(job.id, cancellation)) {
+        return;
+      }
+      await gateway.complete(job.id, {
+        answer: formatOperatorExecResult(result),
+        threadId: null,
+      });
       return;
     }
     stagedAttachments = await stageAttachments(gateway, job);

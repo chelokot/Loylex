@@ -177,6 +177,26 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("claims and completes an operator command without a Codex thread", () => {
+    const database = setup();
+    const incoming = message(1, "/exec pwd");
+    incoming.chat = { id: 426043802, type: "group" };
+    incoming.from = { id: 426043802, is_bot: false, first_name: "Operator" };
+    database.archiveUpdate({ update_id: 55, message: incoming });
+    database.enqueueOperatorCommand(55, incoming, "pwd");
+
+    const job = database.claimNext(10);
+    expect(job).toMatchObject({
+      kind: "operator_exec",
+      command: "pwd",
+      prompt: "/exec pwd",
+      resumeThreadId: null,
+    });
+    expect(database.complete(job?.id ?? 0, 99, null)).toBe(true);
+    expect(database.resumeThread(426043802, 99)).toBeNull();
+    database.close();
+  });
+
   test("serializes jobs for one Codex thread without blocking unrelated threads", () => {
     const database = setup();
     const first = message(1, "первая задача");
