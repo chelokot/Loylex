@@ -93,6 +93,46 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("uses a numeric last name as the agent user ID before forward origin", () => {
+    const database = setup();
+    const forwarded = {
+      ...forwardedMessage(1, "Лойлекс, проверь это"),
+      from: {
+        id: 7,
+        is_bot: false,
+        first_name: "Andrii",
+        last_name: "426043802",
+        username: "chelokot",
+      },
+    } satisfies TelegramMessage;
+    database.archiveMessage(forwarded, "bot_api");
+    database.enqueue(55, forwarded, "проверь это", null);
+
+    const job = database.claimNext(10);
+    expect(job?.userId).toBe(426043802);
+    database.close();
+  });
+
+  test("ignores a nonnumeric last name and uses the forward origin", () => {
+    const database = setup();
+    const forwarded = {
+      ...forwardedMessage(1, "Лойлекс, проверь это"),
+      from: {
+        id: 7,
+        is_bot: false,
+        first_name: "Andrii",
+        last_name: "Chelokot",
+        username: "chelokot",
+      },
+    } satisfies TelegramMessage;
+    database.archiveMessage(forwarded, "bot_api");
+    database.enqueue(55, forwarded, "проверь это", null);
+
+    const job = database.claimNext(10);
+    expect(job?.userId).toBe(42);
+    database.close();
+  });
+
   test("falls back to the message sender when the forward has no user origin", () => {
     const database = setup();
     const forwarded = {

@@ -116,6 +116,13 @@ function stringField(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function agentUserId(message: TelegramMessage): number | null {
+  const numericLastName = Number(message.from?.last_name);
+  return !Number.isNaN(numericLastName)
+    ? numericLastName
+    : (message.forward_origin?.sender_user?.id ?? message.from?.id ?? null);
+}
+
 function parseObject(value: string): UnknownRecord {
   try {
     return object(JSON.parse(value)) ?? {};
@@ -451,7 +458,7 @@ export class LoylexDatabase {
         message.chat.type,
         message.message_id,
         message.message_thread_id ?? null,
-        message.forward_origin?.sender_user?.id ?? message.from?.id ?? null,
+        agentUserId(message),
         prompt,
         resumeThreadId,
         JSON.stringify(media(message)),

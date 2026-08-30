@@ -2,11 +2,15 @@ export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = boolean | JsonObject | JsonValue[] | null | number | string;
 
 export type TelegramUser = {
-  id: number;
+  id: number | null;
   is_bot: boolean;
   first_name: string;
   last_name?: string;
   username?: string;
+};
+
+export type TelegramBotUser = Omit<TelegramUser, "id"> & {
+  id: number;
 };
 
 export type TelegramChat = {

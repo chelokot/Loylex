@@ -1,9 +1,9 @@
 import type {
   JsonObject,
   JsonValue,
+  TelegramBotUser,
   TelegramMessage,
   TelegramUpdate,
-  TelegramUser,
 } from "../shared/types.ts";
 
 type TelegramResponse<T> = {
@@ -52,8 +52,8 @@ export class TelegramClient {
     return payload.result;
   }
 
-  getMe(): Promise<TelegramUser> {
-    return this.call<TelegramUser>("getMe");
+  getMe(): Promise<TelegramBotUser> {
+    return this.call<TelegramBotUser>("getMe");
   }
 
   getUpdates(offset: number, timeout: number): Promise<TelegramUpdate[]> {
