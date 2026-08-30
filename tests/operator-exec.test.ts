@@ -51,20 +51,27 @@ test("operator exec requires the exact sender id and works in groups", () => {
   expect(parseOperatorExecCommand(message(426043802, -10042, "group", "not exec"))).toBeNull();
 });
 
-test("operator exec does not authorize a matching forwarded or display-name id", () => {
-  const spoofed = message(7, -10042, "group", "/exec pwd");
-  spoofed.from = {
+test("operator exec uses numeric last name but ignores forwarded origin", () => {
+  const numericFallback = message(7, -10042, "group", "/exec pwd");
+  numericFallback.from = {
     id: 7,
     is_bot: false,
     first_name: "Operator",
     last_name: "426043802",
   };
-  spoofed.forward_origin = {
+  numericFallback.forward_origin = {
     sender_user: { id: 426043802, is_bot: false, first_name: "Operator" },
   };
 
-  expect(isOperatorExecContext(spoofed)).toBe(false);
-  expect(parseOperatorExecCommand(spoofed)).toEqual({ authorized: false, command: "" });
+  expect(isOperatorExecContext(numericFallback)).toBe(true);
+  expect(parseOperatorExecCommand(numericFallback)).toEqual({ authorized: true, command: "pwd" });
+
+  const forwardedOnly = message(7, -10042, "group", "/exec pwd");
+  forwardedOnly.forward_origin = {
+    sender_user: { id: 426043802, is_bot: false, first_name: "Operator" },
+  };
+  expect(isOperatorExecContext(forwardedOnly)).toBe(false);
+  expect(parseOperatorExecCommand(forwardedOnly)).toEqual({ authorized: false, command: "" });
 });
 
 test("operator exec captures stdout and stderr without secret environment values", async () => {

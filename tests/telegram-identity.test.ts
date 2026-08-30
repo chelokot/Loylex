@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { telegramSenderId, telegramUserId } from "../src/shared/telegram-identity.ts";
+import { telegramUserId, telegramUserIdWithoutForward } from "../src/shared/telegram-identity.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 
 function message(): TelegramMessage {
@@ -18,6 +18,10 @@ function message(): TelegramMessage {
 test("separates direct sender identity from normalized archive identity", () => {
   const value = message();
 
-  expect(telegramSenderId(value)).toBe(7);
   expect(telegramUserId(value)).toBe(426043802);
+  expect(telegramUserIdWithoutForward(value)).toBe(426043802);
+
+  value.from = { id: 7, is_bot: false, first_name: "Operator" };
+  expect(telegramUserId(value)).toBe(42);
+  expect(telegramUserIdWithoutForward(value)).toBe(7);
 });
