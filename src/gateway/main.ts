@@ -25,7 +25,7 @@ const telegram = new TelegramClient(config.botToken);
 const bot = await telegram.getMe();
 const server = new GatewayServer(config, database, telegram);
 
-await telegram.call("deleteWebhook", { drop_pending_updates: false });
+await telegram.deleteWebhook({ drop_pending_updates: false });
 await telegram.setCommands();
 server.start();
 

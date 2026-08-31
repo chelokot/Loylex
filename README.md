@@ -153,6 +153,11 @@ For a group archive to include ordinary future messages, disable privacy mode fo
 BotFather. Without that setting Telegram intentionally sends the bot only commands, replies,
 and service events.
 
+The gateway imports its Telegram API client directly from the pinned, vendored bundle in
+[`vendor/telegram-bot-api`](vendor/telegram-bot-api/README.md); it does not add a Telegram npm
+dependency or build the bundle. The gateway keeps ownership of polling and uses the bundle's
+`Api` and `InputFile` classes.
+
 ## Development
 
 ```bash

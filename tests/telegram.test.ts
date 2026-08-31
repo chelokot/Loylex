@@ -7,6 +7,10 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+async function requestBodyText(body: RequestInit["body"]): Promise<string> {
+  return body === null || body === undefined ? "" : new Response(body).text();
+}
+
 test("does not downgrade a rejected rich send to an unformatted message", async () => {
   const requests: string[] = [];
   globalThis.fetch = (async (input) => {
@@ -100,10 +104,12 @@ test("sets a custom emoji reaction on a Telegram message", async () => {
 });
 
 test("sends a photo album with a caption on the first photo", async () => {
-  let requestBody: FormData | undefined;
+  let requestBody: string | undefined;
+  let contentType = "";
   globalThis.fetch = (async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
-    requestBody = init?.body as FormData;
+    contentType = new Headers(init?.headers).get("content-type") ?? "";
+    requestBody = await requestBodyText(init?.body);
     return Response.json({
       ok: true,
       result: [
@@ -123,20 +129,22 @@ test("sends a photo album with a caption on the first photo", async () => {
   ).resolves.toHaveLength(2);
 
   expect(requestBody).toBeDefined();
-  expect(requestBody?.get("chat_id")).toBe("42");
-  expect(JSON.parse(String(requestBody?.get("media")))).toEqual([
-    { type: "photo", media: "attach://file0", caption: "Графики" },
-    { type: "photo", media: "attach://file1" },
-  ]);
-  expect((requestBody?.get("file0") as File).name).toBe("one.png");
-  expect((requestBody?.get("file1") as File).name).toBe("two.png");
+  expect(contentType).toContain("multipart/form-data; boundary=");
+  expect(requestBody).toContain('content-disposition:form-data;name="chat_id"\r\n\r\n42');
+  expect(requestBody).toMatch(/"type":"photo","media":"attach:\/\/[^"]+","caption":"Графики"/);
+  expect(requestBody).toMatch(/filename=one\.png/);
+  expect(requestBody).toMatch(/filename=two\.png/);
+  expect(requestBody).toContain("one");
+  expect(requestBody).toContain("two");
 });
 
 test("sends video files as video media in an album", async () => {
-  let requestBody: FormData | undefined;
+  let requestBody: string | undefined;
+  let contentType = "";
   globalThis.fetch = (async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
-    requestBody = init?.body as FormData;
+    contentType = new Headers(init?.headers).get("content-type") ?? "";
+    requestBody = await requestBodyText(init?.body);
     return Response.json({
       ok: true,
       result: [
@@ -156,8 +164,8 @@ test("sends video files as video media in an album", async () => {
   ).resolves.toHaveLength(2);
 
   expect(requestBody).toBeDefined();
-  expect(JSON.parse(String(requestBody?.get("media")))).toEqual([
-    { type: "video", media: "attach://file0", caption: "Видео" },
-    { type: "video", media: "attach://file1" },
-  ]);
+  expect(contentType).toContain("multipart/form-data; boundary=");
+  expect(requestBody).toMatch(/"type":"video","media":"attach:\/\/[^"]+","caption":"Видео"/);
+  expect(requestBody).toMatch(/filename=one\.mp4/);
+  expect(requestBody).toMatch(/filename=two\.mp4/);
 });
