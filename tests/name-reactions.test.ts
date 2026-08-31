@@ -17,11 +17,18 @@ function message(text: string, userId = DANYA_TELEGRAM_USER_ID): TelegramMessage
 }
 
 test("keeps all misspellings found in the recent Telegram window", () => {
-  expect(WRONG_LOYLEX_NAME_VARIANTS).toEqual(["лейло", "лейлоекс", "лейлодекс", "лойдекс"]);
+  expect(WRONG_LOYLEX_NAME_VARIANTS).toEqual([
+    "лейло",
+    "лейлик",
+    "лейлоекс",
+    "лейлодекс",
+    "лойдекс",
+  ]);
 });
 
 test.each([
   "Лейло",
+  "ЛЕЙЛИК",
   "ЛЕЙЛОЕКС",
   "ЛейлоДекс",
   "лОйДеКс",
