@@ -27,6 +27,12 @@ gateway container                 agent blue / agent green
         +------ authenticated bridge ------+
                           |
                           v
+                 PM3 + Podman Compose
+                 - gateway project
+                 - one enabled worker project
+                 - inactive blue/green project
+                           |
+                           v
                  host supervisor
                  - fixed restart/deploy API
                  - no arbitrary host commands
@@ -38,13 +44,15 @@ socket, host PID namespace, host devices, privileged mode, or host mounts. The g
 is pinned by digest, and `main` requires review, so an agent-authored branch cannot replace
 the component holding the secret.
 
-An authenticated host-local supervisor lets the agent restart or deploy only the Loylex
-agent and gateway. It validates workspace changes, pins pulled images by digest, verifies
-container health, and performs a blue-green agent rollover: the new slot starts and registers
-with the gateway first, new jobs go to its generation, and the old slot drains its own jobs
-before it is stopped. If the drain cannot finish, the new generation remains live and the
-operation reports the timeout. The agent never receives a Podman socket, systemd bus, general
-host shell, or host reboot capability.
+PM3 runs the host's rootless Podman Compose projects as a user service. The gateway and both
+worker slots have separate PM3 registrations, while only one worker registration is enabled
+at a time. An authenticated host-local supervisor lets the agent restart or deploy only the
+Loylex agent and gateway. It validates workspace changes, pins pulled images by digest,
+verifies container health, and performs a blue-green agent rollover: the new slot starts and
+registers with the gateway first, new jobs go to its generation, and the old slot drains its
+own jobs before it is stopped. If the drain cannot finish, the new generation remains live
+and the operation reports the timeout. The agent never receives a Podman socket, systemd bus,
+general host shell, or host reboot capability.
 
 Root inside the agent is root only in a rootless user namespace. It can maintain its own
 computer but cannot reboot or kill the Rocky Linux host.
@@ -83,11 +91,11 @@ loylex system deploy all
 Restart and deploy operations default to a 15-second delay so the scheduling Telegram task
 can send its final response. An optional final argument changes the delay from 5 to 300
 seconds. Deploying runs the repository checks for agent changes, pulls the selected `main`
-images, records exact digests in the live Quadlets, and performs live health checks. Agent
-restart/deploy operations use the inactive blue or green slot and keep the active slot serving
-until its in-flight and queued generation work has drained. During that short overlap both
-agent containers share the persistent volumes and their resource limits apply simultaneously.
-The supervisor itself stays outside both containers.
+images, records exact digests in the active Compose file, and performs live health checks.
+Agent restart/deploy operations use the inactive blue or green PM3 project and keep the active
+slot serving until its in-flight and queued generation work has drained. During that short
+overlap both agent containers share the persistent volumes and their resource limits apply
+simultaneously. The supervisor itself stays outside both containers.
 
 ## Telegram behavior
 
@@ -156,24 +164,25 @@ podman build -f containers/agent.Containerfile -t loylex-agent .
 
 Reviewed main-branch pushes test the TypeScript runtime and publish
 `ghcr.io/chelokot/loylex-gateway:main` and
-`ghcr.io/chelokot/loylex-agent:main`. Rootless Podman auto-update updates agent slot images
-while leaving all volumes intact; an explicit supervisor rollout controls which slot receives
-new work. Gateway updates are deliberately pinned by digest and require updating its Quadlet
-after reviewing the secret-holding code.
+`ghcr.io/chelokot/loylex-agent:main`. PM3 owns the rootless Compose projects while leaving all
+volumes intact; an explicit supervisor rollout controls which slot receives new work. Gateway
+updates are deliberately pinned by digest after reviewing the secret-holding code.
 
 ## Host installation
 
-On Rocky Linux 10, create two root-readable files containing the Telegram token and a random
-bridge secret, then run:
+On Fedora 44, or on the existing Rocky Linux host using the pinned upstream PM3 RPM fallback,
+create two root-readable files containing the Telegram token and a random bridge secret, then
+run:
 
 ```bash
 sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token
 ```
 
-The installer creates the locked `loylex` host user, enables lingering rootless
-Podman, installs Quadlets and the narrow self-management supervisor, adds a 4 GiB swap file
-when the server has no swap, opens only SSH, and enables backups and registry auto-update for
-the agent.
+The installer creates the locked `loylex` host user, enables lingering rootless Podman, installs
+Podman Compose and PM3 (from the `exposedcat/pm3` COPR on Fedora), adds a 4 GiB swap file when
+the server has no swap, opens only SSH, and enables backups plus the narrow self-management
+supervisor. Existing Quadlet units and exact old container names are stopped during migration;
+the four named volumes are preserved.
 
 The agent still needs:
 
@@ -182,9 +191,9 @@ The agent still needs:
    writable;
 2. `$CODEX_HOME/auth.json` created with `codex login --device-auth` or copied
    through a trusted channel;
-3. the gateway and the initially enabled blue agent Quadlet started with
-   `systemctl --user start loylex-gateway loylex-agent-blue`. The supervisor can migrate an
-   existing `loylex-agent.service` on the first agent restart/deploy.
+3. the PM3 projects registered by the installer: `loylex-gateway`,
+   `loylex-worker-blue`, and `loylex-worker-green`. Only the active worker project is enabled;
+   the supervisor uses the inactive one for the next rollover.
 
 Never commit either Telegram or Codex credentials.
 

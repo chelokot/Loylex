@@ -1,6 +1,6 @@
 [Unit]
 Description=Loylex self-management supervisor
-After=default.target
+After=default.target pm3.service
 
 [Service]
 Type=simple

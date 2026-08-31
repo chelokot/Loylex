@@ -1,0 +1,174 @@
+name: loylex
+
+x-pm3:
+  loylex-gateway:
+    required_services:
+      - gateway
+    gateway:
+      health:
+        check_at: always
+  loylex-worker-blue:
+    required_services:
+      - agent-blue
+    agent-blue:
+      health:
+        check_at: always
+  loylex-worker-green:
+    required_services:
+      - agent-green
+    agent-green:
+      health:
+        check_at: always
+
+services:
+  gateway:
+    profiles:
+      - gateway
+    image: ghcr.io/chelokot/loylex-gateway@sha256:1c874c1b4dfccf70e443898c3c992059bbff06a3c3a9e8150191e3a20b38b083
+    container_name: loylex-gateway
+    networks:
+      - loylex
+    volumes:
+      - gateway-data:/data:Z,U
+    secrets:
+      - source: loylex-telegram-token
+        target: telegram_token
+      - source: loylex-bridge-token
+        target: bridge_token
+    environment:
+      TELEGRAM_BOT_TOKEN_FILE: /run/secrets/telegram_token
+      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      LOYLEX_DATABASE_PATH: /data/loylex.sqlite
+      LOYLEX_CONTEXT_MESSAGES: "80"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,nodev,nosuid,noexec,size=128m
+    cpus: 1.0
+    mem_limit: 768m
+    pids_limit: 256
+    pull_policy: missing
+    restart: always
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - /app/src/gateway/health.ts
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  agent-blue:
+    profiles:
+      - blue
+    image: ghcr.io/chelokot/loylex-agent:main
+    container_name: loylex-agent-blue
+    networks:
+      - loylex
+    volumes:
+      - agent-home:/home/loylex
+      - memory:/memory
+      - workspace:/workspace
+    secrets:
+      - source: loylex-bridge-token
+        target: bridge_token
+      - source: loylex-supervisor-token
+        target: supervisor_token
+    environment:
+      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
+      LOYLEX_SUPERVISOR_URL: http://host.containers.internal:8790
+      LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_token
+      LOYLEX_WORKER_SLOT: blue
+      CODEX_MODEL: gpt-5.6-luna
+      CODEX_REASONING_EFFORT: max
+      LOYLEX_MAX_CONCURRENT_JOBS: "50"
+    cpus: 5.5
+    mem_limit: 9g
+    memswap_limit: 13g
+    pids_limit: 4096
+    pull_policy: missing
+    restart: on-failure
+    healthcheck:
+      test:
+        - CMD
+        - /usr/bin/test
+        - -s
+        - /tmp/loylex-worker-ready
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
+
+  agent-green:
+    profiles:
+      - green
+    image: ghcr.io/chelokot/loylex-agent:main
+    container_name: loylex-agent-green
+    networks:
+      - loylex
+    volumes:
+      - agent-home:/home/loylex
+      - memory:/memory
+      - workspace:/workspace
+    secrets:
+      - source: loylex-bridge-token
+        target: bridge_token
+      - source: loylex-supervisor-token
+        target: supervisor_token
+    environment:
+      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
+      LOYLEX_SUPERVISOR_URL: http://host.containers.internal:8790
+      LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_token
+      LOYLEX_WORKER_SLOT: green
+      CODEX_MODEL: gpt-5.6-luna
+      CODEX_REASONING_EFFORT: max
+      LOYLEX_MAX_CONCURRENT_JOBS: "50"
+    cpus: 5.5
+    mem_limit: 9g
+    memswap_limit: 13g
+    pids_limit: 4096
+    pull_policy: missing
+    restart: on-failure
+    healthcheck:
+      test:
+        - CMD
+        - /usr/bin/test
+        - -s
+        - /tmp/loylex-worker-ready
+      interval: 60s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
+
+volumes:
+  gateway-data:
+    name: loylex-gateway-data
+    external: true
+  agent-home:
+    name: loylex-agent-home
+    external: true
+  memory:
+    name: loylex-memory
+    external: true
+  workspace:
+    name: loylex-workspace
+    external: true
+
+networks:
+  loylex:
+    name: loylex
+    external: true
+
+secrets:
+  loylex-telegram-token:
+    external: true
+  loylex-bridge-token:
+    external: true
+  loylex-supervisor-token:
+    external: true
