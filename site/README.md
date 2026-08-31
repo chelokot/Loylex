@@ -6,4 +6,5 @@ reader and My News controls make the page usable beyond the reference viewport.
 
 Run it with bun install and bun run dev from this directory.
 
-The GitHub Pages build uses /Loylex/ as its base path.
+The build uses relative asset paths, so it works at the project GitHub Pages path and at a
+temporary static host without a second configuration.
