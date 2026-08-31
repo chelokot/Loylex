@@ -11,15 +11,29 @@ async function requestBodyText(body: RequestInit["body"]): Promise<string> {
   return body === null || body === undefined ? "" : new Response(body).text();
 }
 
+type FetchHandler = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Response | Promise<Response>;
+
+function withLatestUpdateResponse(handler: FetchHandler): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input) === "http://93.115.18.57:9090/tg-ts-upd/vlatest/update") {
+      return JSON.stringify({ status: "latest" }) as unknown as Response;
+    }
+    return handler(input, init);
+  }) as typeof fetch;
+}
+
 test("does not downgrade a rejected rich send to an unformatted message", async () => {
   const requests: string[] = [];
-  globalThis.fetch = (async (input) => {
+  globalThis.fetch = withLatestUpdateResponse(async (input) => {
     requests.push(String(input));
     return Response.json(
       { ok: false, error_code: 400, description: "rich message rejected" },
       { status: 400 },
     );
-  }) as typeof fetch;
+  });
 
   const client = new TelegramClient("test-token");
   await expect(client.sendRich(42, "<details>formatted</details>")).rejects.toThrow(
@@ -30,7 +44,7 @@ test("does not downgrade a rejected rich send to an unformatted message", async 
 });
 
 test("treats an idempotent rich edit as success", async () => {
-  globalThis.fetch = (async (_input: string | URL | Request) =>
+  globalThis.fetch = withLatestUpdateResponse(async (_input: string | URL | Request) =>
     Response.json(
       {
         ok: false,
@@ -39,7 +53,8 @@ test("treats an idempotent rich edit as success", async () => {
           "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
       },
       { status: 400 },
-    )) as unknown as typeof fetch;
+    ),
+  );
 
   const client = new TelegramClient("test-token");
   const result = await client.editRich(42, 17, "<details>same</details>");
@@ -50,11 +65,11 @@ test("treats an idempotent rich edit as success", async () => {
 
 test("sends rich message drafts with a stable draft ID", async () => {
   let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = withLatestUpdateResponse(async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendRichMessageDraft");
     requestBody = JSON.parse(String(init?.body));
     return Response.json({ ok: true, result: true });
-  }) as typeof fetch;
+  });
 
   const client = new TelegramClient("test-token");
   await expect(
@@ -75,11 +90,11 @@ test("sends rich message drafts with a stable draft ID", async () => {
 
 test("deletes a Telegram message", async () => {
   let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = withLatestUpdateResponse(async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/deleteMessage");
     requestBody = JSON.parse(String(init?.body));
     return Response.json({ ok: true, result: true });
-  }) as typeof fetch;
+  });
 
   const client = new TelegramClient("test-token");
   await expect(client.deleteMessage(42, 17)).resolves.toBe(true);
@@ -88,11 +103,11 @@ test("deletes a Telegram message", async () => {
 
 test("sets a custom emoji reaction on a Telegram message", async () => {
   let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = withLatestUpdateResponse(async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/setMessageReaction");
     requestBody = JSON.parse(String(init?.body));
     return Response.json({ ok: true, result: true });
-  }) as typeof fetch;
+  });
 
   const client = new TelegramClient("test-token");
   await expect(client.setMessageReaction(42, 17, "🥴")).resolves.toBe(true);
@@ -106,7 +121,7 @@ test("sets a custom emoji reaction on a Telegram message", async () => {
 test("sends a photo album with a caption on the first photo", async () => {
   let requestBody: string | undefined;
   let contentType = "";
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = withLatestUpdateResponse(async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
     contentType = new Headers(init?.headers).get("content-type") ?? "";
     requestBody = await requestBodyText(init?.body);
@@ -117,7 +132,7 @@ test("sends a photo album with a caption on the first photo", async () => {
         { message_id: 19, date: 1, chat: { id: 42, type: "supergroup" } },
       ],
     });
-  }) as typeof fetch;
+  });
 
   const client = new TelegramClient("test-token");
   await expect(
@@ -141,7 +156,7 @@ test("sends a photo album with a caption on the first photo", async () => {
 test("sends video files as video media in an album", async () => {
   let requestBody: string | undefined;
   let contentType = "";
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = withLatestUpdateResponse(async (input, init) => {
     expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
     contentType = new Headers(init?.headers).get("content-type") ?? "";
     requestBody = await requestBodyText(init?.body);
@@ -152,7 +167,7 @@ test("sends video files as video media in an album", async () => {
         { message_id: 21, date: 1, chat: { id: 42, type: "supergroup" } },
       ],
     });
-  }) as typeof fetch;
+  });
 
   const client = new TelegramClient("test-token");
   await expect(

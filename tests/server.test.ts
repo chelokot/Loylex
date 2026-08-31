@@ -145,12 +145,7 @@ test("sends a new final reply and removes the temporary progress message", async
   });
 });
 
-test("uses ephemeral rich drafts in private chats", async () => {
-  const drafts: Array<{
-    chatId: number;
-    markdown: string;
-    options: { draftId: number; threadId?: number | null; canStop?: boolean };
-  }> = [];
+test("keeps private progress as a regular message", async () => {
   const sent: Array<{
     markdown: string;
     options: { replyTo?: number; threadId?: number | null };
@@ -179,14 +174,6 @@ test("uses ephemeral rich drafts in private chats", async () => {
   } as unknown as LoylexDatabase;
 
   const telegram = {
-    sendRichMessageDraft: async (
-      chatId: number,
-      markdown: string,
-      options: { draftId: number; threadId?: number | null; canStop?: boolean },
-    ) => {
-      drafts.push({ chatId, markdown, options });
-      return true;
-    },
     sendRich: async (
       _chatId: number,
       markdown: string,
@@ -216,14 +203,11 @@ test("uses ephemeral rich drafts in private chats", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
-  expect(drafts).toEqual([
-    {
-      chatId: 42,
-      markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
-      options: { draftId: 7, threadId: null, canStop: true },
-    },
-  ]);
   expect(sent).toEqual([
+    {
+      markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
+      options: { threadId: null },
+    },
     {
       markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
       options: { threadId: null },
