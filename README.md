@@ -182,7 +182,7 @@ sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bri
 ```
 
 The installer creates the locked `loylex` host user, enables lingering rootless Podman, installs
-Podman Compose and the exact pinned PM3 RPM (from the `exposedcat/pm3` COPR on Fedora),
+Podman Compose (from EPEL on Rocky) and the exact pinned PM3 RPM (from the `exposedcat/pm3` COPR on Fedora),
 adds a 4 GiB swap file when
 the server has no swap, opens only SSH, and enables backups plus the narrow self-management
 supervisor. Existing Quadlet units and exact old container names are stopped during migration;

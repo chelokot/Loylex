@@ -100,6 +100,9 @@ fi
 # container deliberately has no Podman socket or host systemd bus. Fedora uses
 # the maintainer's COPR, but downloads the exact build recorded in versions.env.
 # Rocky has no matching COPR chroot, so it uses the exact upstream RPM instead.
+if [[ -f /etc/rocky-release ]]; then
+  "${dnf_cmd[@]}" install -y epel-release
+fi
 "${dnf_cmd[@]}" install -y \
   curl \
   firewalld \
