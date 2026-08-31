@@ -3,6 +3,7 @@
 .vscode/
 data/
 node_modules/
+site/dist/
 result.json
 *.sqlite
 *.sqlite-shm
