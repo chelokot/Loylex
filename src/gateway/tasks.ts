@@ -1,6 +1,5 @@
 import type { TelegramMessage } from "../shared/types.ts";
 import type { JobSummary, LoylexDatabase } from "./database.ts";
-import { responseOptions } from "./message-options.ts";
 import type { TelegramClient } from "./telegram.ts";
 
 const recentTasksLimit = 5;
@@ -101,7 +100,8 @@ export async function sendTasks(
 ): Promise<void> {
   const tasks = database.listRecentJobs(message.chat.id, recentTasksLimit);
   await telegram.sendRich(message.chat.id, formatTasksDocument(tasks), {
-    ...responseOptions(message.chat.type, message.message_id, message.message_thread_id ?? null),
+    replyTo: message.message_id,
+    threadId: message.message_thread_id ?? null,
     disableLinkPreview: true,
   });
 }

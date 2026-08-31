@@ -1,9 +1,8 @@
 import type { Server } from "bun";
-import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
+import type { AgentCompletion, AgentEvent } from "../shared/types.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
-import { responseOptions } from "./message-options.ts";
-import { completedDocuments, failedDocument, workDocument } from "./presentation.ts";
+import { completedDocuments, failureMessage, workDocument } from "./presentation.ts";
 import type { TelegramClient } from "./telegram.ts";
 
 function json(value: unknown, status = 200): Response {
@@ -18,27 +17,6 @@ function bearer(request: Request): string | null {
 function workerId(request: Request): string | undefined {
   const value = request.headers.get("x-loylex-worker-id")?.trim();
   return value || undefined;
-}
-
-function importMessage(value: unknown): value is TelegramMessage {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const message = value as { message_id?: unknown; date?: unknown; chat?: unknown };
-  if (!Number.isSafeInteger(message.message_id) || !Number.isSafeInteger(message.date)) {
-    return false;
-  }
-  if (typeof message.chat !== "object" || message.chat === null || Array.isArray(message.chat)) {
-    return false;
-  }
-  const chat = message.chat as { id?: unknown; type?: unknown };
-  return (
-    Number.isSafeInteger(chat.id) &&
-    (chat.type === "channel" ||
-      chat.type === "group" ||
-      chat.type === "private" ||
-      chat.type === "supergroup")
-  );
 }
 
 async function body<T>(request: Request): Promise<T> {
@@ -164,83 +142,9 @@ export class GatewayServer {
         const chat = url.searchParams.get("chat");
         const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "20", 10);
         const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(parsedLimit, 1), 100);
-        const parsedOffset = Number.parseInt(url.searchParams.get("offset") ?? "0", 10);
-        if (!Number.isInteger(parsedOffset) || parsedOffset < 0) {
-          return json({ error: "offset must be a non-negative integer" }, 400);
-        }
         return json({
-          results: this.database.search(query, chat ? Number(chat) : null, limit, parsedOffset),
+          results: this.database.search(query, chat ? Number(chat) : null, limit),
         });
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/archive/media") {
-        const chat = url.searchParams.get("chat");
-        const chatId = chat === null ? Number.NaN : Number(chat);
-        if (!chat || !Number.isSafeInteger(chatId)) {
-          return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
-        const limit = Number.isNaN(parsedLimit) ? 100 : Math.min(Math.max(parsedLimit, 1), 1000);
-        return json({ results: this.database.archivedMedia(chatId, limit) });
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/archive/message") {
-        const chat = url.searchParams.get("chat");
-        const message = url.searchParams.get("message");
-        const chatId = chat === null ? Number.NaN : Number(chat);
-        const messageId = message === null ? Number.NaN : Number(message);
-        if (
-          !chat ||
-          !Number.isSafeInteger(chatId) ||
-          !message ||
-          !Number.isSafeInteger(messageId)
-        ) {
-          return json({ error: "chat and message must be valid integer IDs" }, 400);
-        }
-        const result = this.database.archivedMessage(chatId, messageId);
-        return result === null ? json({ error: "message not found" }, 404) : json(result);
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/archive/messages") {
-        const chat = url.searchParams.get("chat");
-        const chatId = chat === null ? Number.NaN : Number(chat);
-        if (!chat || !Number.isSafeInteger(chatId)) {
-          return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        const parseBound = (name: string): number | null | "invalid" => {
-          const value = url.searchParams.get(name);
-          if (value === null || value === "") {
-            return null;
-          }
-          const parsed = Number(value);
-          return Number.isSafeInteger(parsed) ? parsed : "invalid";
-        };
-        const after = parseBound("after");
-        const before = parseBound("before");
-        if (after === "invalid" || before === "invalid") {
-          return json({ error: "after and before must be valid integer message IDs" }, 400);
-        }
-        const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
-        const limit = Number.isNaN(parsedLimit) ? 100 : Math.min(Math.max(parsedLimit, 1), 500);
-        return json({ results: this.database.archivedMessages(chatId, after, before, limit) });
-      }
-
-      if (request.method === "POST" && url.pathname === "/v1/archive/import") {
-        const payload = await body<{ messages?: unknown }>(request);
-        if (
-          !Array.isArray(payload.messages) ||
-          payload.messages.length === 0 ||
-          payload.messages.length > 250 ||
-          !payload.messages.every(importMessage)
-        ) {
-          return json({ error: "messages must contain 1-250 valid Telegram messages" }, 400);
-        }
-        const chatIds = new Set(payload.messages.map((message) => message.chat.id));
-        const chatId = payload.messages[0]?.chat.id;
-        if (chatIds.size !== 1 || chatId === undefined || !this.database.chatExists(chatId)) {
-          return json({ error: "unknown or mixed chat" }, 403);
-        }
-        return json({ imported: this.database.archiveExportMessages(payload.messages), chatId });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/archive/recent") {
@@ -291,27 +195,6 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
-      if (request.method === "POST" && url.pathname === "/v1/telegram/upload-album") {
-        const form = await request.formData();
-        const chatId = Number(form.get("chat_id"));
-        const files = form.getAll("file").filter((value) => value instanceof File) as Array<
-          Blob & { readonly name: string }
-        >;
-        const caption = form.get("caption");
-        if (!Number.isSafeInteger(chatId) || !this.database.chatExists(chatId)) {
-          return json({ error: "unknown chat" }, 403);
-        }
-        if (files.length < 2 || files.length > 10) {
-          return json({ error: "album must contain 2-10 files" }, 400);
-        }
-        const messages = await this.telegram.sendMediaGroup(
-          chatId,
-          files,
-          typeof caption === "string" ? caption : null,
-        );
-        return json({ chatId, messageIds: messages.map((message) => message.message_id) });
-      }
-
       if (request.method === "POST" && url.pathname === "/v1/telegram/send") {
         const payload = await body<{
           chatId: number;
@@ -350,25 +233,10 @@ export class GatewayServer {
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const now = Date.now();
     const document = workDocument(status);
-    if (address.chatType === "private") {
-      if (this.#lastStreamDocument.get(jobId) === document) {
-        return;
-      }
-      if (now - (this.#lastStreamEdit.get(jobId) ?? 0) < 1_500) {
-        return;
-      }
-      await this.telegram.sendRich(
-        address.chatId,
-        document,
-        responseOptions(address.chatType, address.messageId, address.threadId),
-      );
-      this.#lastStreamEdit.set(jobId, now);
-      this.#lastStreamDocument.set(jobId, document);
-      return;
-    }
     if (thinkingMessageId === null) {
       const message = await this.telegram.sendRich(address.chatId, document, {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
+        replyTo: address.messageId,
+        threadId: address.threadId,
       });
       this.database.setThinkingMessage(jobId, message.message_id);
       this.#lastStreamEdit.set(jobId, now);
@@ -400,25 +268,19 @@ export class GatewayServer {
       return;
     }
     const documents = completedDocuments(status, completion.answer);
-    let message: TelegramMessage;
-    if (thinkingMessageId === null) {
-      message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
-      });
-    } else {
-      // Keep the final answer at the bottom of the chat. In groups it replies to the user's
-      // request even when other messages arrived while Codex was working; private chats omit
-      // reply markers by design.
-      message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
-      });
-      await this.telegram.deleteMessage(address.chatId, thinkingMessageId);
-    }
+    const message =
+      thinkingMessageId === null
+        ? await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
+            replyTo: address.messageId,
+            threadId: address.threadId,
+          })
+        : await this.telegram.editRich(address.chatId, thinkingMessageId, documents[0] ?? "");
     this.database.recordOutboundMessage(jobId, message.message_id, completion.threadId);
     let replyTo = message.message_id;
     for (const document of documents.slice(1)) {
       const followUp = await this.telegram.sendRich(address.chatId, document, {
-        ...responseOptions(address.chatType, replyTo, address.threadId),
+        replyTo,
+        threadId: address.threadId,
       });
       this.database.recordOutboundMessage(jobId, followUp.message_id, completion.threadId);
       replyTo = followUp.message_id;
@@ -438,11 +300,12 @@ export class GatewayServer {
     const address = this.database.jobAddress(jobId);
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const threadId = this.database.jobThreadId(jobId);
-    const markdown = failedDocument(this.database.statusLog(jobId) ?? "", error);
+    const markdown = failureMessage(error);
     let message: { message_id: number };
     if (thinkingMessageId === null) {
       message = await this.telegram.sendRich(address.chatId, markdown, {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
+        replyTo: address.messageId,
+        threadId: address.threadId,
       });
     } else {
       message = await this.telegram.editRich(address.chatId, thinkingMessageId, markdown);

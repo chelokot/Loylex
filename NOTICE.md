@@ -8,7 +8,7 @@ Loylex was rebuilt from the upstream `codex` branch. Its current runtime is a ne
 implementation, but the upstream work materially informed durable Codex threads, Telegram
 history, media handling, and Rich Message delivery. Thank you, Artem.
 
-At the time of the fork on 2026-08-29, the upstream repository had no `LICENSE` file
+At the time of the fork on 2026-08-29, the upstream repository had no `LICENSE__ file
 and GitHub reported no detected license. No permission or license is invented by this
 notice. Anyone redistributing upstream-derived material must obtain or determine the
 necessary rights from the relevant copyright holders.
