@@ -229,7 +229,7 @@ as_loylex() {
     HOME=/home/loylex \
     XDG_RUNTIME_DIR="$runtime_directory" \
     XDG_DATA_HOME=/home/loylex/.local/share \
-    "$@"
+    sh -c 'cd "$HOME" && exec "$@"' sh "$@"
 }
 
 # Stop the old supervisor and Quadlet units before reusing their exact
