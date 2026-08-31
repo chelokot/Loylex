@@ -65,7 +65,7 @@ services:
   agent-blue:
     profiles:
       - blue
-    image: ghcr.io/chelokot/loylex-agent:main
+    image: ghcr.io/chelokot/loylex-agent@sha256:44dcccd3ff9fdb32e9a731efffc34ffacbe905ca2b995337986a663ae8ef846f
     container_name: loylex-agent-blue
     networks:
       - loylex
@@ -107,7 +107,7 @@ services:
   agent-green:
     profiles:
       - green
-    image: ghcr.io/chelokot/loylex-agent:main
+    image: ghcr.io/chelokot/loylex-agent@sha256:44dcccd3ff9fdb32e9a731efffc34ffacbe905ca2b995337986a663ae8ef846f
     container_name: loylex-agent-green
     networks:
       - loylex

@@ -14,14 +14,94 @@ fi
 telegram_token_file="$(realpath "$1")"
 bridge_token_file="$(realpath "$2")"
 deploy_root="$(realpath "$(dirname "$0")/..")"
+versions_file="$deploy_root/host/versions.env"
+
+if [[ ! -r "$versions_file" ]]; then
+  echo "Missing host dependency pins: $versions_file" >&2
+  exit 1
+fi
+
+read_pin() {
+  local key="$1"
+  local value
+  value="$(awk -F= -v key="$key" '
+    /^[[:space:]]*(#|$)/ { next }
+    $1 == key { count++; value=substr($0, index($0, "=") + 1) }
+    END {
+      if (count != 1) exit 1
+      print value
+    }
+  ' "$versions_file")" || {
+    echo "Invalid or duplicate host dependency pin: $key" >&2
+    exit 1
+  }
+  if [[ -z "$value" || "$value" == *$'\n'* ]]; then
+    echo "Empty host dependency pin: $key" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
+}
+
+pm3_version="$(read_pin PM3_VERSION)"
+pm3_release="$(read_pin PM3_RELEASE)"
+pm3_evr="$(read_pin PM3_EVR)"
+pm3_upstream_commit="$(read_pin PM3_UPSTREAM_COMMIT)"
+pm3_upstream_url="$(read_pin PM3_UPSTREAM_RPM_URL)"
+pm3_upstream_sha256="$(read_pin PM3_UPSTREAM_RPM_SHA256)"
+pm3_copr_owner="$(read_pin PM3_COPR_OWNER)"
+pm3_copr_project="$(read_pin PM3_COPR_PROJECT)"
+
+if [[ ! "$pm3_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$pm3_release" =~ ^[0-9]+$ || "$pm3_evr" != "$pm3_version-$pm3_release" ]]; then
+  echo "Inconsistent PM3 version pins in $versions_file" >&2
+  exit 1
+fi
+if [[ ! "$pm3_upstream_commit" =~ ^[a-f0-9]{40}$ ]]; then
+  echo "Invalid PM3 upstream commit pin" >&2
+  exit 1
+fi
+if [[ ! "$pm3_copr_owner" =~ ^[a-z0-9_-]+$ || ! "$pm3_copr_project" =~ ^[a-z0-9_-]+$ ]]; then
+  echo "Invalid PM3 COPR pin" >&2
+  exit 1
+fi
+if [[ ! "$pm3_upstream_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+  echo "Invalid PM3 upstream SHA-256 pin" >&2
+  exit 1
+fi
+expected_upstream_url="https://github.com/ExposedCat/pm3/releases/download/v${pm3_version}/pm3-${pm3_evr}.x86_64.rpm"
+if [[ "$pm3_upstream_url" != "$expected_upstream_url" ]]; then
+  echo "PM3 upstream URL does not match the pinned release" >&2
+  exit 1
+fi
+
+# Fedora 44 uses DNF5; Rocky's supported installation may use either DNF5 or
+# the DNF4 plugin. Install the matching plugin before touching stack packages.
+dnf_cmd=(dnf)
+dnf_plugins_package=dnf-plugins-core
+if command -v dnf5 >/dev/null 2>&1; then
+  dnf_cmd=(dnf5)
+  dnf_plugins_package=dnf5-plugins
+fi
+"${dnf_cmd[@]}" install -y "$dnf_plugins_package"
+
+versionlock_cmd=()
+if "${dnf_cmd[@]}" versionlock --help >/dev/null 2>&1; then
+  versionlock_cmd=("${dnf_cmd[@]}")
+else
+  echo "The DNF versionlock plugin is required for pinned stack packages" >&2
+  exit 1
+fi
+
+# Running this installer is the explicit PM3 update action. Keep the runtime
+# package locks in place: an update of Podman or podman-compose needs its own
+# review and must not happen as a side effect of a PM3 update.
+"${versionlock_cmd[@]}" versionlock delete pm3 >/dev/null 2>&1 || true
 
 # PM3 is installed on the host, where it can manage rootless Podman; the agent
 # container deliberately has no Podman socket or host systemd bus. Fedora uses
-# the maintainer's COPR. Rocky has no matching COPR chroot, so use the same
-# signed upstream RPM with its release checksum instead.
-dnf install -y \
+# the maintainer's COPR, but downloads the exact build recorded in versions.env.
+# Rocky has no matching COPR chroot, so it uses the exact upstream RPM instead.
+"${dnf_cmd[@]}" install -y \
   curl \
-  dnf-plugins-core \
   firewalld \
   fuse-overlayfs \
   git \
@@ -33,20 +113,70 @@ dnf install -y \
   sqlite \
   zstd
 if [[ -f /etc/fedora-release ]]; then
-  dnf copr enable -y exposedcat/pm3
-  dnf install -y pm3
+  fedora_release="$(awk -F= '$1 == "VERSION_ID" { gsub(/"/, "", $2); print $2 }' /etc/os-release)"
+  case "$fedora_release" in
+    43|44)
+      pm3_rpm_url="$(read_pin "PM3_COPR_FEDORA_${fedora_release}_RPM_URL")"
+      pm3_rpm_sha256="$(read_pin "PM3_COPR_FEDORA_${fedora_release}_RPM_SHA256")"
+      expected_copr_url="https://download.copr.fedorainfracloud.org/results/${pm3_copr_owner}/${pm3_copr_project}/fedora-${fedora_release}-x86_64/Packages/p/pm3-${pm3_evr}.x86_64.rpm"
+      if [[ "$pm3_rpm_url" != "$expected_copr_url" ]]; then
+        echo "PM3 COPR URL does not match Fedora $fedora_release pin" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "No reviewed PM3 COPR pin for Fedora $fedora_release" >&2
+      exit 1
+      ;;
+  esac
+  "${dnf_cmd[@]}" copr enable -y "$pm3_copr_owner/$pm3_copr_project"
 else
-  pm3_version=3.2.3
-  pm3_rpm_sha256=06ea475a4819888ba07b7556b1a772723540a5a5f251dc6e52f0f21466efb6ba
-  pm3_rpm_url="https://github.com/ExposedCat/pm3/releases/download/v${pm3_version}/pm3-${pm3_version}-1.x86_64.rpm"
-  pm3_rpm_file="$(mktemp /tmp/pm3.XXXXXX.rpm)"
-  trap 'rm -f "$pm3_rpm_file"' EXIT
-  curl -fsSL --retry 3 -o "$pm3_rpm_file" "$pm3_rpm_url"
-  printf '%s  %s\n' "$pm3_rpm_sha256" "$pm3_rpm_file" | sha256sum -c -
-  dnf install -y "$pm3_rpm_file"
-  rm -f "$pm3_rpm_file"
-  trap - EXIT
+  pm3_rpm_url="$pm3_upstream_url"
+  pm3_rpm_sha256="$pm3_upstream_sha256"
 fi
+
+if [[ ! "$pm3_rpm_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+  echo "Invalid PM3 RPM SHA-256 pin" >&2
+  exit 1
+fi
+pm3_rpm_file="$(mktemp /tmp/loylex-pm3.XXXXXX.rpm)"
+trap 'rm -f -- "$pm3_rpm_file"' EXIT
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
+  -o "$pm3_rpm_file" "$pm3_rpm_url"
+printf '%s  %s\n' "$pm3_rpm_sha256" "$pm3_rpm_file" | sha256sum -c -
+pm3_rpm_name="$(rpm -qp --qf '%{NAME}' "$pm3_rpm_file")"
+pm3_rpm_version="$(rpm -qp --qf '%{VERSION}' "$pm3_rpm_file")"
+pm3_rpm_release="$(rpm -qp --qf '%{RELEASE}' "$pm3_rpm_file")"
+pm3_rpm_arch="$(rpm -qp --qf '%{ARCH}' "$pm3_rpm_file")"
+if [[ "$pm3_rpm_name" != pm3 || "$pm3_rpm_version-$pm3_rpm_release" != "$pm3_evr" || "$pm3_rpm_arch" != x86_64 ]]; then
+  echo "Downloaded PM3 RPM metadata does not match the pin" >&2
+  exit 1
+fi
+"${dnf_cmd[@]}" install -y "$pm3_rpm_file"
+rm -f -- "$pm3_rpm_file"
+trap - EXIT
+installed_pm3_evr="$(rpm -q --qf '%{VERSION}-%{RELEASE}' pm3)"
+if [[ "$installed_pm3_evr" != "$pm3_evr" ]]; then
+  echo "Installed PM3 version $installed_pm3_evr does not match $pm3_evr" >&2
+  exit 1
+fi
+if ! rpm -V pm3; then
+  echo "Installed PM3 RPM failed rpm verification" >&2
+  exit 1
+fi
+
+# PM3 and the two runtime packages it drives are only changed by an explicit
+# reviewed installer run. DNF still receives normal updates for the rest of
+# the host, while these three package versions remain stable. Do not add a
+# duplicate entry when the runtime package was already locked by an earlier
+# install; preserving that entry is what prevents an incidental PM3 update
+# from changing the runtime underneath it.
+versionlock_entries="$("${versionlock_cmd[@]}" versionlock list 2>/dev/null || true)"
+for stack_package in pm3 podman podman-compose; do
+  if ! grep -Eq "(^|[[:space:]:])${stack_package}-" <<<"$versionlock_entries"; then
+    "${versionlock_cmd[@]}" versionlock add "$stack_package"
+  fi
+done
 
 if ! id loylex >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash loylex

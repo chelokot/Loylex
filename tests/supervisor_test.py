@@ -62,6 +62,12 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn("agent-blue:\n    image: ghcr.io/chelokot/loylex-agent@sha256:new", updated)
         self.assertIn("agent-green:\n    image: ghcr.io/chelokot/loylex-agent:main", updated)
 
+    def test_initial_compose_images_are_immutable(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        self.assertNotIn("ghcr.io/chelokot/loylex-agent:main", compose)
+        self.assertNotIn("ghcr.io/chelokot/loylex-gateway:main", compose)
+        self.assertEqual(compose.count("ghcr.io/chelokot/loylex-agent@sha256:"), 2)
+
     def test_rejects_missing_or_ambiguous_compose_service_image(self) -> None:
         with self.assertRaises(SUPERVISOR.SupervisorError):
             SUPERVISOR.replace_compose_image_line(

@@ -164,25 +164,35 @@ podman build -f containers/agent.Containerfile -t loylex-agent .
 
 Reviewed main-branch pushes test the TypeScript runtime and publish
 `ghcr.io/chelokot/loylex-gateway:main` and
-`ghcr.io/chelokot/loylex-agent:main`. PM3 owns the rootless Compose projects while leaving all
-volumes intact; an explicit supervisor rollout controls which slot receives new work. Gateway
-updates are deliberately pinned by digest after reviewing the secret-holding code.
+`ghcr.io/chelokot/loylex-agent:main`. The deployed gateway and initial agent references are
+immutable digests; an explicit supervisor rollout resolves a requested `:main` update to a new
+digest before changing the active Compose file. PM3 is pinned to the reviewed `3.2.3-1` release
+in [`deploy/host/versions.env`](deploy/host/versions.env), with a verified upstream checksum for
+Rocky and verified Fedora 43/44 COPR checksums. The installer version-locks PM3, Podman Compose,
+and Podman, so they change only during an explicit reviewed installer run.
 
 ## Host installation
 
-On Fedora 44, or on the existing Rocky Linux host using the pinned upstream PM3 RPM fallback,
-create two root-readable files containing the Telegram token and a random bridge secret, then
-run:
+On Fedora 43/44, or on the existing Rocky Linux host using the pinned upstream PM3 RPM fallback,
+create two root-readable files containing the Telegram token and a random bridge secret. From
+the freshly pulled `main` checkout, run this once:
 
 ```bash
 sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token
 ```
 
 The installer creates the locked `loylex` host user, enables lingering rootless Podman, installs
-Podman Compose and PM3 (from the `exposedcat/pm3` COPR on Fedora), adds a 4 GiB swap file when
+Podman Compose and the exact pinned PM3 RPM (from the `exposedcat/pm3` COPR on Fedora),
+adds a 4 GiB swap file when
 the server has no swap, opens only SSH, and enables backups plus the narrow self-management
 supervisor. Existing Quadlet units and exact old container names are stopped during migration;
 the four named volumes are preserved.
+
+Critical dependency updates are deliberate: update [`deploy/host/versions.env`](deploy/host/versions.env)
+only after the due-diligence gate in `AGENTS.md`, then run the installer explicitly on the host.
+The installer replaces only the PM3 lock, preserves the Podman and Podman Compose locks,
+verifies the new PM3 RPM, and never performs a background package update. The isolated agent
+cannot run the host package manager directly.
 
 The agent still needs:
 
