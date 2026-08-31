@@ -977,6 +977,24 @@ export class LoylexDatabase {
     );
   }
 
+  latestContinuableThread(chatId: number): string | null {
+    const threadId = this.latestThread(chatId);
+    if (threadId === null) {
+      return null;
+    }
+    const activeJob = this.connection
+      .query<{ value: number }, [number, string, string]>(`
+        SELECT 1 AS value
+        FROM jobs
+        WHERE chat_id = ?
+          AND state IN ('pending', 'running')
+          AND (resume_thread_id = ? OR codex_thread_id = ?)
+        LIMIT 1
+      `)
+      .get(chatId, threadId, threadId);
+    return activeJob ? null : threadId;
+  }
+
   enqueue(
     updateId: number,
     message: TelegramMessage,

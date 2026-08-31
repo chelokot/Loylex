@@ -208,7 +208,9 @@ async function poll(): Promise<void> {
         );
         const resumeThreadId =
           repliedThreadId ??
-          (message.chat.type === "private" ? database.latestThread(message.chat.id) : null);
+          (message.chat.type === "private"
+            ? database.latestContinuableThread(message.chat.id)
+            : null);
         database.enqueue(update.update_id, message, trigger.prompt, resumeThreadId);
       }
     } catch (error) {
