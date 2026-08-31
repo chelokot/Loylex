@@ -3,10 +3,12 @@
 Loylex is a persistent, self-evolving Codex agent that lives in Telegram and owns a
 sandboxed Fedora workbench on its personal VPS.
 
-Write `loylex …`, `лойлекс …`, or `лойликс …` in any supported case, or reply to a
-Loylex answer. A reply resumes the exact Codex thread. The agent can work in its terminal for
-as long as needed, remember private context, improve its own skills, search the complete
-archived chat, and deliver native Telegram Rich Messages.
+In a private chat, write a normal message to continue the latest Codex thread, reply to an old
+message to use that message's thread, or write `/newchat …` to start a clean thread. In groups,
+write `loylex …`, `лойлекс …`, or `лойликс …` in any supported case, or reply to a Loylex answer.
+A reply resumes the exact Codex thread. The agent can work in its terminal for as long as needed,
+remember private context, improve its own skills, search the complete archived chat, and deliver
+native Telegram Rich Messages.
 
 ## Shape
 
@@ -25,6 +27,12 @@ gateway container                 agent blue / agent green
         +------ authenticated bridge ------+
                           |
                           v
+                 PM3 + Podman Compose
+                 - gateway project
+                 - one enabled worker project
+                 - inactive blue/green project
+                           |
+                           v
                  host supervisor
                  - fixed restart/deploy API
                  - no arbitrary host commands
@@ -36,13 +44,15 @@ socket, host PID namespace, host devices, privileged mode, or host mounts. The g
 is pinned by digest, and `main` requires review, so an agent-authored branch cannot replace
 the component holding the secret.
 
-An authenticated host-local supervisor lets the agent restart or deploy only the Loylex
-agent and gateway. It validates workspace changes, pins pulled images by digest, verifies
-container health, and performs a blue-green agent rollover: the new slot starts and registers
-with the gateway first, new jobs go to its generation, and the old slot drains its own jobs
-before it is stopped. If the drain cannot finish, the new generation remains live and the
-operation reports the timeout. The agent never receives a Podman socket, systemd bus, general
-host shell, or host reboot capability.
+PM3 runs the host's rootless Podman Compose projects as a user service. The gateway and both
+worker slots have separate PM3 registrations, while only one worker registration is enabled
+at a time. An authenticated host-local supervisor lets the agent restart or deploy only the
+Loylex agent and gateway. It validates workspace changes, pins pulled images by digest,
+verifies container health, and performs a blue-green agent rollover: the new slot starts and
+registers with the gateway first, new jobs go to its generation, and the old slot drains its
+own jobs before it is stopped. If the drain cannot finish, the new generation remains live
+and the operation reports the timeout. The agent never receives a Podman socket, systemd bus,
+general host shell, or host reboot capability.
 
 Root inside the agent is root only in a rootless user namespace. It can maintain its own
 computer but cannot reboot or kill the Rocky Linux host.
@@ -81,11 +91,11 @@ loylex system deploy all
 Restart and deploy operations default to a 15-second delay so the scheduling Telegram task
 can send its final response. An optional final argument changes the delay from 5 to 300
 seconds. Deploying runs the repository checks for agent changes, pulls the selected `main`
-images, records exact digests in the live Quadlets, and performs live health checks. Agent
-restart/deploy operations use the inactive blue or green slot and keep the active slot serving
-until its in-flight and queued generation work has drained. During that short overlap both
-agent containers share the persistent volumes and their resource limits apply simultaneously.
-The supervisor itself stays outside both containers.
+images, records exact digests in the active Compose file, and performs live health checks.
+Agent restart/deploy operations use the inactive blue or green PM3 project and keep the active
+slot serving until its in-flight and queued generation work has drained. During that short
+overlap both agent containers share the persistent volumes and their resource limits apply
+simultaneously. The supervisor itself stays outside both containers.
 
 ## Telegram behavior
 
@@ -95,21 +105,20 @@ thread receives the latest chat window and matching private memory buckets. A re
 receives only archived messages since its previous turn because the saved Codex transcript
 already contains the earlier prompt and context.
 
-While Codex works, terminal and reasoning events create or edit one persistent Rich Message
-with a collapsed, fictional medieval chronicle in every chat; internal steps are never exposed.
-Completion replaces that same message with the chronicle, kingdom banner, and final Rich Markdown.
+While Codex works, terminal and reasoning events update an ephemeral rich draft in private chats,
+or create/edit one persistent Rich Message with a collapsed `<details>` history in groups.
+Completion sends a new Rich Markdown message containing the collapsed history and final answer,
+then removes the temporary group progress message. This keeps the final answer at the bottom of
+the chat; group messages reply to the request, while private-chat messages remain ordinary
+unthreaded messages.
 Rich API errors are surfaced instead of silently sending the same document as unformatted text.
+Private-chat responses are sent as ordinary messages without reply markers; group responses keep
+the reply to the triggering message.
 Replying `/stop` to any Loylex message belonging to an active job cancels that Codex thread,
 and Loylex replies with the cancellation result; the command is consumed and is not submitted
 as a new prompt. `/tasks` shows the five latest jobs in the current chat with their status,
 timestamps, and a link to the related Loylex message.
-The private operator chat with Telegram ID `849670500` also has `/exec <command>` in its
-command menu. The gateway consumes that command before trigger routing, verifies both the
-Telegram user ID and private chat ID against the source-level constant, and sends it to the
-agent worker without involving Codex. The command runs in the agent container with empty
-stdin, a bounded 120-second lifetime, capped stdout/stderr, and filtered environment variables;
-`loylex system ...` therefore still goes through the narrow supervisor API and cannot become a
-general host shell.
+Other slash-prefixed messages are ignored and never submitted as prompts.
 The agent runs up to 50 jobs concurrently by default; the durable SQLite job queue remains as
 backpressure and restart recovery for work beyond that limit. Jobs that resume the same Codex
 thread are serialized to avoid concurrent writers, while unrelated threads still run in parallel.
@@ -130,12 +139,24 @@ podman exec loylex-gateway \
   bun /app/src/gateway/import.ts /tmp/result.json --chat-id -1001234567890
 ```
 
+When the JSON is available in the agent workspace, the authenticated agent CLI can import it
+without direct access to the gateway volume:
+
+```bash
+loylex import result.json -1001234567890
+```
+
 The importer understands Telegram Desktop text entities, edits, replies, and exported media
 paths. Future updates are archived automatically.
 
 For a group archive to include ordinary future messages, disable privacy mode for the bot in
 BotFather. Without that setting Telegram intentionally sends the bot only commands, replies,
 and service events.
+
+The gateway imports its Telegram API client directly from the pinned, vendored bundle in
+[`vendor/telegram-bot-api`](vendor/telegram-bot-api/README.md); it does not add a Telegram npm
+dependency or build the bundle. The gateway keeps ownership of polling and uses the bundle's
+`Api` and `InputFile` classes.
 
 ## Development
 
@@ -148,24 +169,35 @@ podman build -f containers/agent.Containerfile -t loylex-agent .
 
 Reviewed main-branch pushes test the TypeScript runtime and publish
 `ghcr.io/chelokot/loylex-gateway:main` and
-`ghcr.io/chelokot/loylex-agent:main`. Rootless Podman auto-update updates agent slot images
-while leaving all volumes intact; an explicit supervisor rollout controls which slot receives
-new work. Gateway updates are deliberately pinned by digest and require updating its Quadlet
-after reviewing the secret-holding code.
+`ghcr.io/chelokot/loylex-agent:main`. The deployed gateway and initial agent references are
+immutable digests; an explicit supervisor rollout resolves a requested `:main` update to a new
+digest before changing the active Compose file. PM3 is pinned to the reviewed `3.2.3-1` release
+in [`deploy/host/versions.env`](deploy/host/versions.env), with a verified upstream checksum for
+Rocky and verified Fedora 43/44 COPR checksums. The installer version-locks PM3, Podman Compose,
+and Podman, so they change only during an explicit reviewed installer run.
 
 ## Host installation
 
-On Rocky Linux 10, create two root-readable files containing the Telegram token and a random
-bridge secret, then run:
+On Fedora 43/44, or on the existing Rocky Linux host using the pinned upstream PM3 RPM fallback,
+create two root-readable files containing the Telegram token and a random bridge secret. From
+the freshly pulled `main` checkout, run this once:
 
 ```bash
 sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token
 ```
 
-The installer creates the locked `loylex` host user, enables lingering rootless
-Podman, installs Quadlets and the narrow self-management supervisor, adds a 4 GiB swap file
-when the server has no swap, opens only SSH, and enables backups and registry auto-update for
-the agent.
+The installer creates the locked `loylex` host user, enables lingering rootless Podman, installs
+Podman Compose (from EPEL on Rocky) and the exact pinned PM3 RPM (from the `exposedcat/pm3` COPR on Fedora),
+adds a 4 GiB swap file when
+the server has no swap, opens only SSH, and enables backups plus the narrow self-management
+supervisor. Existing Quadlet units and exact old container names are stopped during migration;
+the four named volumes are preserved.
+
+Critical dependency updates are deliberate: update [`deploy/host/versions.env`](deploy/host/versions.env)
+only after the due-diligence gate in `AGENTS.md`, then run the installer explicitly on the host.
+The installer replaces only the PM3 lock, preserves the Podman and Podman Compose locks,
+verifies the new PM3 RPM, and never performs a background package update. The isolated agent
+cannot run the host package manager directly.
 
 The agent still needs:
 
@@ -174,9 +206,9 @@ The agent still needs:
    writable;
 2. `$CODEX_HOME/auth.json` created with `codex login --device-auth` or copied
    through a trusted channel;
-3. the gateway and the initially enabled blue agent Quadlet started with
-   `systemctl --user start loylex-gateway loylex-agent-blue`. The supervisor can migrate an
-   existing `loylex-agent.service` on the first agent restart/deploy.
+3. the PM3 projects registered by the installer: `loylex-gateway`,
+   `loylex-worker-blue`, and `loylex-worker-green`. Only the active worker project is enabled;
+   the supervisor uses the inactive one for the next rollover.
 
 Never commit either Telegram or Codex credentials.
 

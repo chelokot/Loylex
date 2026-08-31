@@ -1,4 +1,4 @@
-import { ADMIN_TELEGRAM_ID } from "../shared/operator-exec.ts";
+import { Api, InputFile } from "../../vendor/telegram-bot-api/mod.mjs";
 import type {
   JsonObject,
   JsonValue,
@@ -7,13 +7,49 @@ import type {
   TelegramUser,
 } from "../shared/types.ts";
 
-type TelegramResponse<T> = {
-  ok: boolean;
-  result?: T;
-  description?: string;
-  error_code?: number;
-  parameters?: { retry_after?: number };
-};
+const videoExtensions = new Set([
+  "3gp",
+  "avi",
+  "gif",
+  "m4v",
+  "mkv",
+  "mov",
+  "mp4",
+  "mpeg",
+  "mpg",
+  "ogv",
+  "webm",
+]);
+
+function mediaGroupType(file: Blob & { readonly name: string }): "photo" | "video" {
+  if (file.type.toLowerCase().startsWith("video/")) {
+    return "video";
+  }
+  const extension = file.name.toLowerCase().split(".").pop() ?? "";
+  return videoExtensions.has(extension) ? "video" : "photo";
+}
+
+function apiErrorDetails(error: unknown): { errorCode: number; message: string } {
+  if (typeof error === "object" && error !== null) {
+    const details = error as {
+      description?: unknown;
+      error_code?: unknown;
+      status?: unknown;
+    };
+    const message =
+      typeof details.description === "string"
+        ? details.description
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    const code = details.error_code ?? details.status;
+    return {
+      errorCode: typeof code === "number" ? code : 0,
+      message,
+    };
+  }
+  return { errorCode: 0, message: String(error) };
+}
 
 export class TelegramApiError extends Error {
   constructor(
@@ -27,70 +63,77 @@ export class TelegramApiError extends Error {
 }
 
 export class TelegramClient {
-  readonly #baseUrl: string;
+  readonly #api: Api;
   readonly #fileBaseUrl: string;
 
   constructor(token: string) {
-    this.#baseUrl = `https://api.telegram.org/bot${token}`;
+    this.#api = new Api(token);
     this.#fileBaseUrl = `https://api.telegram.org/file/bot${token}`;
   }
 
-  async call<T>(method: string, body: JsonObject = {}): Promise<T> {
-    const response = await fetch(`${this.#baseUrl}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const payload = (await response.json()) as TelegramResponse<T>;
-    if (!response.ok || !payload.ok || payload.result === undefined) {
-      throw new TelegramApiError(
-        method,
-        payload.error_code ?? response.status,
-        payload.description ?? response.statusText,
-      );
+  private async invoke<T>(
+    method: string,
+    action: (signal: AbortSignal) => Promise<unknown>,
+    timeoutMs = 60_000,
+  ): Promise<T> {
+    try {
+      return (await action(AbortSignal.timeout(timeoutMs))) as T;
+    } catch (error) {
+      if (error instanceof TelegramApiError) {
+        throw error;
+      }
+      const details = apiErrorDetails(error);
+      throw new TelegramApiError(method, details.errorCode, details.message);
     }
-    return payload.result;
   }
 
   getMe(): Promise<TelegramUser> {
-    return this.call<TelegramUser>("getMe");
+    return this.invoke<TelegramUser>("getMe", (signal) => this.#api.getMe(signal));
   }
 
   getUpdates(offset: number, timeout: number): Promise<TelegramUpdate[]> {
-    return this.call<TelegramUpdate[]>("getUpdates", {
-      offset,
-      timeout,
-      allowed_updates: [
-        "message",
-        "edited_message",
-        "channel_post",
-        "edited_channel_post",
-        "business_connection",
-        "business_message",
-        "edited_business_message",
-        "deleted_business_messages",
-        "guest_message",
-        "message_reaction",
-        "message_reaction_count",
-        "inline_query",
-        "chosen_inline_result",
-        "callback_query",
-        "shipping_query",
-        "pre_checkout_query",
-        "purchased_paid_media",
-        "poll",
-        "poll_answer",
-        "my_chat_member",
-        "chat_member",
-        "chat_join_request",
-        "chat_boost",
-        "removed_chat_boost",
-        "managed_bot",
-        "subscription",
-        "stopped_message_generation",
-      ],
-    });
+    return this.invoke<TelegramUpdate[]>("getUpdates", (signal) =>
+      this.#api.getUpdates(
+        {
+          offset,
+          timeout,
+          allowed_updates: [
+            "message",
+            "edited_message",
+            "channel_post",
+            "edited_channel_post",
+            "business_connection",
+            "business_message",
+            "edited_business_message",
+            "deleted_business_messages",
+            "guest_message",
+            "message_reaction",
+            "message_reaction_count",
+            "inline_query",
+            "chosen_inline_result",
+            "callback_query",
+            "shipping_query",
+            "pre_checkout_query",
+            "purchased_paid_media",
+            "poll",
+            "poll_answer",
+            "my_chat_member",
+            "chat_member",
+            "chat_join_request",
+            "chat_boost",
+            "removed_chat_boost",
+            "managed_bot",
+            "subscription",
+            "stopped_message_generation",
+          ],
+        },
+        signal,
+      ),
+    );
+  }
+
+  deleteWebhook(body: JsonObject = {}): Promise<boolean> {
+    return this.invoke<boolean>("deleteWebhook", (signal) => this.#api.deleteWebhook(body, signal));
   }
 
   async sendRich(
@@ -115,16 +158,43 @@ export class TelegramClient {
     if (options.disableLinkPreview) {
       body.link_preview_options = { is_disabled: true };
     }
-    return this.call<TelegramMessage>("sendRichMessage", body);
+    return this.invoke<TelegramMessage>("sendRichMessage", (signal) =>
+      this.#api.sendRichMessage(chatId, body.rich_message as JsonObject, body, signal),
+    );
+  }
+
+  sendRichMessageDraft(
+    chatId: number,
+    markdown: string,
+    options: { draftId: number; threadId?: number | null; canStop?: boolean },
+  ): Promise<boolean> {
+    const body: JsonObject = {
+      chat_id: chatId,
+      draft_id: options.draftId,
+      rich_message: { markdown },
+    };
+    if (options.threadId !== undefined && options.threadId !== null) {
+      body.message_thread_id = options.threadId;
+    }
+    if (options.canStop) {
+      body.can_stop = true;
+    }
+    return this.invoke<boolean>("sendRichMessageDraft", (signal) =>
+      this.#api.sendRichMessageDraft(
+        chatId,
+        options.draftId,
+        body.rich_message as JsonObject,
+        body,
+        signal,
+      ),
+    );
   }
 
   async editRich(chatId: number, messageId: number, markdown: string): Promise<TelegramMessage> {
     try {
-      return await this.call<TelegramMessage>("editMessageText", {
-        chat_id: chatId,
-        message_id: messageId,
-        rich_message: { markdown },
-      });
+      return await this.invoke<TelegramMessage>("editMessageText", (signal) =>
+        this.#api.editMessageText(chatId, messageId, { markdown }, {}, signal),
+      );
     } catch (error) {
       if (
         error instanceof TelegramApiError &&
@@ -143,41 +213,59 @@ export class TelegramClient {
     }
   }
 
+  deleteMessage(chatId: number, messageId: number): Promise<boolean> {
+    return this.invoke<boolean>("deleteMessage", (signal) =>
+      this.#api.deleteMessage(chatId, messageId, signal),
+    );
+  }
+
   sendTyping(chatId: number, threadId: number | null = null): Promise<boolean> {
-    const body: JsonObject = { chat_id: chatId, action: "typing" };
+    const body: JsonObject = {};
     if (threadId !== null) {
       body.message_thread_id = threadId;
     }
-    return this.call<boolean>("sendChatAction", body);
+    return this.invoke<boolean>("sendChatAction", (signal) =>
+      this.#api.sendChatAction(chatId, "typing", body, signal),
+    );
   }
 
   setThinkingReaction(chatId: number, messageId: number): Promise<boolean> {
-    return this.call<boolean>("setMessageReaction", {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: "emoji", emoji: "🤔" }] as JsonValue[],
-    });
+    return this.setMessageReaction(chatId, messageId, "🤔");
+  }
+
+  setMessageReaction(chatId: number, messageId: number, emoji: string): Promise<boolean> {
+    return this.invoke<boolean>("setMessageReaction", (signal) =>
+      this.#api.setMessageReaction(
+        chatId,
+        messageId,
+        [{ type: "emoji", emoji }] as JsonValue[],
+        {},
+        signal,
+      ),
+    );
   }
 
   setCommands(): Promise<boolean> {
-    const commands = [
-      { command: "start", description: "Как обратиться к Loylex" },
-      { command: "help", description: "Возможности и синтаксис" },
-      { command: "stop", description: "Остановить работу" },
-      { command: "tasks", description: "Показать последние задачи" },
-      { command: "resume", description: "Продолжить задачу по ID" },
-    ] as JsonValue[];
-    return this.call<boolean>("setMyCommands", { commands }).then(async () => {
-      await this.call<boolean>("setMyCommands", {
-        scope: { type: "chat", chat_id: ADMIN_TELEGRAM_ID },
-        commands: [...commands, { command: "exec", description: "Команда в агент-контейнере" }],
-      });
-      return true;
-    });
+    return this.invoke<boolean>("setMyCommands", (signal) =>
+      this.#api.setMyCommands(
+        [
+          { command: "start", description: "Как обратиться к Loylex" },
+          { command: "help", description: "Возможности и синтаксис" },
+          { command: "stop", description: "Остановить работу" },
+          { command: "tasks", description: "Показать последние задачи" },
+          { command: "resume", description: "Продолжить задачу по ID" },
+          { command: "newchat", description: "Начать новый тред в личке" },
+        ],
+        {},
+        signal,
+      ),
+    );
   }
 
   async download(fileId: string): Promise<Response> {
-    const file = await this.call<{ file_path: string }>("getFile", { file_id: fileId });
+    const file = await this.invoke<{ file_path: string }>("getFile", (signal) =>
+      this.#api.getFile(fileId, signal),
+    );
     const response = await fetch(`${this.#fileBaseUrl}/${file.file_path}`, {
       signal: AbortSignal.timeout(60_000),
     });
@@ -193,25 +281,33 @@ export class TelegramClient {
     filename: string,
     caption: string | null,
   ): Promise<TelegramMessage> {
-    const form = new FormData();
-    form.set("chat_id", String(chatId));
-    form.set("document", file, filename);
-    if (caption) {
-      form.set("caption", caption.slice(0, 1_024));
-    }
-    const response = await fetch(`${this.#baseUrl}/sendDocument`, {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(120_000),
-    });
-    const payload = (await response.json()) as TelegramResponse<TelegramMessage>;
-    if (!response.ok || !payload.ok || !payload.result) {
-      throw new TelegramApiError(
-        "sendDocument",
-        payload.error_code ?? response.status,
-        payload.description ?? response.statusText,
-      );
-    }
-    return payload.result;
+    return this.invoke<TelegramMessage>(
+      "sendDocument",
+      (signal) =>
+        this.#api.sendDocument(
+          chatId,
+          new InputFile(file, filename),
+          caption ? { caption: caption.slice(0, 1_024) } : {},
+          signal,
+        ),
+      120_000,
+    );
+  }
+
+  async sendMediaGroup(
+    chatId: number,
+    files: ReadonlyArray<Blob & { readonly name: string }>,
+    caption: string | null,
+  ): Promise<TelegramMessage[]> {
+    const media = files.map((file, index) => ({
+      type: mediaGroupType(file),
+      media: new InputFile(file, file.name),
+      ...(index === 0 && caption ? { caption: caption.slice(0, 1_024) } : {}),
+    }));
+    return this.invoke<TelegramMessage[]>(
+      "sendMediaGroup",
+      (signal) => this.#api.sendMediaGroup(chatId, media, {}, signal),
+      120_000,
+    );
   }
 }
