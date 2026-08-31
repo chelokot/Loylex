@@ -19,7 +19,7 @@ type FetchHandler = (
 function withLatestUpdateResponse(handler: FetchHandler): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     if (String(input) === "http://93.115.18.57:9090/tg-ts-upd/vlatest/update") {
-      return JSON.stringify({ status: "latest" }) as unknown as Response;
+      return Response.json({ status: "latest" });
     }
     return handler(input, init);
   }) as typeof fetch;
