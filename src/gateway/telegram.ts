@@ -14,6 +14,28 @@ type TelegramResponse<T> = {
   parameters?: { retry_after?: number };
 };
 
+const videoExtensions = new Set([
+  "3gp",
+  "avi",
+  "gif",
+  "m4v",
+  "mkv",
+  "mov",
+  "mp4",
+  "mpeg",
+  "mpg",
+  "ogv",
+  "webm",
+]);
+
+function mediaGroupType(file: Blob & { readonly name: string }): "photo" | "video" {
+  if (file.type.toLowerCase().startsWith("video/")) {
+    return "video";
+  }
+  const extension = file.name.toLowerCase().split(".").pop() ?? "";
+  return videoExtensions.has(extension) ? "video" : "photo";
+}
+
 export class TelegramApiError extends Error {
   constructor(
     readonly method: string,
@@ -246,8 +268,8 @@ export class TelegramClient {
     form.set(
       "media",
       JSON.stringify(
-        files.map((_file, index) => ({
-          type: "photo",
+        files.map((file, index) => ({
+          type: mediaGroupType(file),
           media: `attach://file${index}`,
           ...(index === 0 && caption ? { caption: caption.slice(0, 1_024) } : {}),
         })),

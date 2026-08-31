@@ -114,3 +114,33 @@ test("sends a photo album with a caption on the first photo", async () => {
   expect((requestBody?.get("file0") as File).name).toBe("one.png");
   expect((requestBody?.get("file1") as File).name).toBe("two.png");
 });
+
+test("sends video files as video media in an album", async () => {
+  let requestBody: FormData | undefined;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
+    requestBody = init?.body as FormData;
+    return Response.json({
+      ok: true,
+      result: [
+        { message_id: 20, date: 1, chat: { id: 42, type: "supergroup" } },
+        { message_id: 21, date: 1, chat: { id: 42, type: "supergroup" } },
+      ],
+    });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(
+    client.sendMediaGroup(
+      42,
+      [new File(["one"], "one.mp4", { type: "video/mp4" }), new File(["two"], "two.mp4")],
+      "Видео",
+    ),
+  ).resolves.toHaveLength(2);
+
+  expect(requestBody).toBeDefined();
+  expect(JSON.parse(String(requestBody?.get("media")))).toEqual([
+    { type: "video", media: "attach://file0", caption: "Видео" },
+    { type: "video", media: "attach://file1" },
+  ]);
+});
