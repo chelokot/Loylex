@@ -199,10 +199,14 @@ export class TelegramClient {
   }
 
   setThinkingReaction(chatId: number, messageId: number): Promise<boolean> {
+    return this.setMessageReaction(chatId, messageId, "🤔");
+  }
+
+  setMessageReaction(chatId: number, messageId: number, emoji: string): Promise<boolean> {
     return this.call<boolean>("setMessageReaction", {
       chat_id: chatId,
       message_id: messageId,
-      reaction: [{ type: "emoji", emoji: "🤔" }] as JsonValue[],
+      reaction: [{ type: "emoji", emoji }] as JsonValue[],
     });
   }
 

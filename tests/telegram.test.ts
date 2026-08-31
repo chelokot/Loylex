@@ -82,6 +82,23 @@ test("deletes a Telegram message", async () => {
   expect(requestBody).toEqual({ chat_id: 42, message_id: 17 });
 });
 
+test("sets a custom emoji reaction on a Telegram message", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/setMessageReaction");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, result: true });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.setMessageReaction(42, 17, "🥴")).resolves.toBe(true);
+  expect(requestBody).toEqual({
+    chat_id: 42,
+    message_id: 17,
+    reaction: [{ type: "emoji", emoji: "🥴" }],
+  });
+});
+
 test("sends a photo album with a caption on the first photo", async () => {
   let requestBody: FormData | undefined;
   globalThis.fetch = (async (input, init) => {
