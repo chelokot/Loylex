@@ -357,11 +357,11 @@ export class GatewayServer {
       if (now - (this.#lastStreamEdit.get(jobId) ?? 0) < 1_500) {
         return;
       }
-      await this.telegram.sendRichMessageDraft(address.chatId, document, {
-        draftId: jobId,
-        threadId: address.threadId,
-        canStop: true,
-      });
+      await this.telegram.sendRich(
+        address.chatId,
+        document,
+        responseOptions(address.chatType, address.messageId, address.threadId),
+      );
       this.#lastStreamEdit.set(jobId, now);
       this.#lastStreamDocument.set(jobId, document);
       return;
