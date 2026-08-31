@@ -1,3 +1,5 @@
+import { $ } from "bun";
+
 const filterQueryCache = new Map();
 function matchFilter(filter) {
     const queries = Array.isArray(filter) ? filter : [
