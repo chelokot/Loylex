@@ -17,18 +17,10 @@ function message(text: string, userId = DANYA_TELEGRAM_USER_ID): TelegramMessage
 }
 
 test("keeps all misspellings found in the recent Telegram window", () => {
-  expect(WRONG_LOYLEX_NAME_VARIANTS).toEqual([
-    "лейло",
-    "лейлик",
-    "лейлоекс",
-    "лейлодекс",
-    "лойдекс",
-  ]);
+  expect(WRONG_LOYLEX_NAME_VARIANTS).toEqual(["лейлоекс", "лейлодекс", "лойдекс"]);
 });
 
 test.each([
-  "Лейло",
-  "ЛЕЙЛИК",
   "ЛЕЙЛОЕКС",
   "ЛейлоДекс",
   "лОйДеКс",
@@ -55,4 +47,8 @@ test("matches a misspelling next to punctuation and in captions", () => {
 
 test("only reacts to Danya's Telegram user ID", () => {
   expect(hasDanyaWrittenLoylexNameMistake(message("Лейло", 849670500))).toBe(false);
+});
+
+test.each(["Лейло", "Лейлик"])("does not react to removed variant: %s", (text) => {
+  expect(hasDanyaWrittenLoylexNameMistake(message(text))).toBe(false);
 });
