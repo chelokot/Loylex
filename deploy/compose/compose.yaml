@@ -31,13 +31,11 @@ services:
     volumes:
       - gateway-data:/data:Z,U
     secrets:
-      - source: loylex-telegram-token
-        target: telegram_token
-      - source: loylex-bridge-token
-        target: bridge_token
+      - loylex-telegram-token
+      - loylex-bridge-token
     environment:
-      TELEGRAM_BOT_TOKEN_FILE: /run/secrets/telegram_token
-      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      TELEGRAM_BOT_TOKEN_FILE: /run/secrets/loylex-telegram-token
+      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_DATABASE_PATH: /data/loylex.sqlite
       LOYLEX_CONTEXT_MESSAGES: "80"
     read_only: true
@@ -74,15 +72,13 @@ services:
       - memory:/memory
       - workspace:/workspace
     secrets:
-      - source: loylex-bridge-token
-        target: bridge_token
-      - source: loylex-supervisor-token
-        target: supervisor_token
+      - loylex-bridge-token
+      - loylex-supervisor-token
     environment:
-      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
       LOYLEX_SUPERVISOR_URL: http://host.containers.internal:8790
-      LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_token
+      LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       LOYLEX_WORKER_SLOT: blue
       CODEX_MODEL: gpt-5.6-luna
       CODEX_REASONING_EFFORT: max
@@ -116,15 +112,13 @@ services:
       - memory:/memory
       - workspace:/workspace
     secrets:
-      - source: loylex-bridge-token
-        target: bridge_token
-      - source: loylex-supervisor-token
-        target: supervisor_token
+      - loylex-bridge-token
+      - loylex-supervisor-token
     environment:
-      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/bridge_token
+      LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
       LOYLEX_SUPERVISOR_URL: http://host.containers.internal:8790
-      LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_token
+      LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       LOYLEX_WORKER_SLOT: green
       CODEX_MODEL: gpt-5.6-luna
       CODEX_REASONING_EFFORT: max

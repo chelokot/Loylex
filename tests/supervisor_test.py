@@ -68,6 +68,13 @@ class SupervisorTest(unittest.TestCase):
         self.assertNotIn("ghcr.io/chelokot/loylex-gateway:main", compose)
         self.assertEqual(compose.count("ghcr.io/chelokot/loylex-agent@sha256:"), 2)
 
+    def test_external_secrets_use_podman_compose_mount_names(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        self.assertNotIn("target:", compose)
+        self.assertIn("/run/secrets/loylex-telegram-token", compose)
+        self.assertEqual(compose.count("/run/secrets/loylex-bridge-token"), 3)
+        self.assertEqual(compose.count("/run/secrets/loylex-supervisor-token"), 2)
+
     def test_rejects_missing_or_ambiguous_compose_service_image(self) -> None:
         with self.assertRaises(SUPERVISOR.SupervisorError):
             SUPERVISOR.replace_compose_image_line(
