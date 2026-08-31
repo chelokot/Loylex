@@ -299,7 +299,12 @@ if ! as_loylex podman network exists loylex; then
 fi
 
 pm3_run() {
-  as_loylex pm3 "$@"
+  as_loylex systemd-run --user --wait --pipe --collect --quiet \
+    --setenv=HOME=/home/loylex \
+    --setenv=XDG_RUNTIME_DIR="$runtime_directory" \
+    --setenv=XDG_DATA_HOME=/home/loylex/.local/share \
+    --setenv=DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+    pm3 "$@"
 }
 
 pm3_database=/home/loylex/.local/share/pm3/pm3.sqlite
