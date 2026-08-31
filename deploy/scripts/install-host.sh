@@ -299,7 +299,8 @@ if ! as_loylex podman network exists loylex; then
 fi
 
 pm3_run() {
-  as_loylex systemd-run --user --wait --pipe --collect --quiet \
+  as_loylex systemd-run --user --wait --collect --quiet \
+    --property=KillMode=process \
     --setenv=HOME=/home/loylex \
     --setenv=XDG_RUNTIME_DIR="$runtime_directory" \
     --setenv=XDG_DATA_HOME=/home/loylex/.local/share \
