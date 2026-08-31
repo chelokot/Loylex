@@ -76,7 +76,7 @@ fi
 # Fedora 44 uses DNF5; Rocky's supported installation may use either DNF5 or
 # the DNF4 plugin. Install the matching plugin before touching stack packages.
 dnf_cmd=(dnf)
-dnf_plugins_package=dnf-plugins-core
+dnf_plugins_package=python3-dnf-plugin-versionlock
 if command -v dnf5 >/dev/null 2>&1; then
   dnf_cmd=(dnf5)
   dnf_plugins_package=dnf5-plugins
