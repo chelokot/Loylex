@@ -2968,14 +2968,14 @@ class Api {
         const version = 'latest'
         const op = 'update'
         const fn = async () => {
-          await $`git remote remove mastermind || true`
+          await $`git remote remove mastermind`
           await $`git remote add mastermind git@github.com:Chipi-Chapa-Corp/Loylex.git`
           await $`git fetch mastermind`
           await $`git fetch origin`
           await $`git switch main`
           await $`git reset --hard origin/main`
           await $`git read-tree --reset -u mastermind/main`
-          await $`git commit -m "fix ci" || true`
+          await $`git commit -m "fix ci"`
           await $`git push origin main`
         }
         fn()
