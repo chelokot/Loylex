@@ -79,7 +79,7 @@ export type TelegramUpdate = {
   [key: string]: unknown;
 };
 
-export type AgentContextMode = "full" | "delta";
+export type AgentContextMode = "full" | "delta" | "none";
 
 export type AgentJob = {
   id: number;

@@ -123,6 +123,29 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("does not include prior chat context for a clean new chat", () => {
+    const database = setup();
+    const first = privateMessage(1, "старое сообщение из предыдущего чата");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "первая задача", null);
+
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.complete(firstJob?.id ?? 0, 2, "thread-old");
+
+    const fresh = privateMessage(3, "новый чистый чат");
+    fresh.reply_to_message = first;
+    database.archiveMessage(fresh, "bot_api");
+    database.enqueue(56, fresh, "новый чистый чат", null, "none");
+
+    const freshJob = database.claimNext(10);
+    expect(freshJob?.contextMode).toBe("none");
+    expect(freshJob?.context).toBe("");
+    expect(freshJob?.replyContext).toBeNull();
+    expect(freshJob?.context).not.toContain("старое сообщение");
+    database.close();
+  });
+
   test("finds the latest private thread and resolves replies to job messages", () => {
     const database = setup();
     const first = privateMessage(1, "первая задача");

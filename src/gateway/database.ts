@@ -37,6 +37,7 @@ type JobRow = {
   user_id: number | null;
   prompt: string;
   resume_thread_id: string | null;
+  context_mode: AgentContextMode;
   attachments_json: string;
   worker_generation: number;
 };
@@ -392,6 +393,7 @@ export class LoylexDatabase {
         user_id INTEGER,
         prompt TEXT NOT NULL,
         resume_thread_id TEXT,
+        context_mode TEXT NOT NULL DEFAULT 'full',
         attachments_json TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending',
         claimed_at INTEGER,
@@ -443,6 +445,7 @@ export class LoylexDatabase {
     this.ensureJobColumn("worker_id", "TEXT");
     this.ensureJobColumn("lease_expires_at", "INTEGER");
     this.ensureJobColumn("worker_generation", "INTEGER NOT NULL DEFAULT 1");
+    this.ensureJobColumn("context_mode", "TEXT NOT NULL DEFAULT 'full'");
     this.connection.exec(
       "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id)",
     );
@@ -454,7 +457,7 @@ export class LoylexDatabase {
   }
 
   private ensureJobColumn(
-    name: "worker_id" | "lease_expires_at" | "worker_generation",
+    name: "worker_id" | "lease_expires_at" | "worker_generation" | "context_mode",
     definition: string,
   ): void {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -641,14 +644,15 @@ export class LoylexDatabase {
     message: TelegramMessage,
     prompt: string,
     resumeThreadId: string | null,
+    contextMode: AgentContextMode = resumeThreadId === null ? "full" : "delta",
   ): void {
     const generation = this.activeWorkerGeneration();
     this.connection
       .query(`
         INSERT OR IGNORE INTO jobs (
           update_id, chat_id, chat_type, message_id, message_thread_id, user_id, prompt,
-          resume_thread_id, attachments_json, worker_generation, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          resume_thread_id, context_mode, attachments_json, worker_generation, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         updateId,
@@ -659,6 +663,7 @@ export class LoylexDatabase {
         message.from?.id ?? null,
         prompt,
         resumeThreadId,
+        contextMode,
         JSON.stringify(jobMedia(message)),
         generation,
         Date.now(),
@@ -950,6 +955,7 @@ export class LoylexDatabase {
       row.message_id,
       contextMessages,
       row.resume_thread_id,
+      row.context_mode,
     );
     return {
       id: row.id,
@@ -963,9 +969,10 @@ export class LoylexDatabase {
       resumeThreadId: row.resume_thread_id,
       context: context.text,
       contextMode: context.mode,
-      replyContext: row.resume_thread_id
-        ? null
-        : this.replyContext(row.chat_id, row.message_id, context.text),
+      replyContext:
+        context.mode === "none" || row.resume_thread_id !== null
+          ? null
+          : this.replyContext(row.chat_id, row.message_id, context.text),
       attachments: JSON.parse(row.attachments_json) as JsonValue[],
     };
   }
@@ -1075,7 +1082,13 @@ export class LoylexDatabase {
     beforeMessageId: number,
     limit: number,
     resumeThreadId: string | null,
+    contextMode: AgentContextMode,
   ): ContextResult {
+    // A null resume ID also represents a normal first turn, so /newchat needs an explicit
+    // mode to prevent that request from falling through to the recent chat history.
+    if (contextMode === "none") {
+      return { mode: "none", text: "" };
+    }
     if (!resumeThreadId) {
       return { mode: "full", text: this.recentContext(chatId, beforeMessageId, limit) };
     }

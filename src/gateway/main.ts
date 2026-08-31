@@ -171,7 +171,7 @@ async function poll(): Promise<void> {
           const prompt = newChatPrompt(message, bot.username);
           if (prompt !== null) {
             acknowledgeWork(message);
-            database.enqueue(update.update_id, message, prompt, null);
+            database.enqueue(update.update_id, message, prompt, null, "none");
           }
           continue;
         }
