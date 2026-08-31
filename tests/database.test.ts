@@ -538,6 +538,27 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("does not update an unchanged archived user", () => {
+    const database = setup();
+    database.archiveMessage(message(1, "первое сообщение"), "bot_api");
+    database.connection.exec(`
+      CREATE TEMP TABLE user_update_audit (updates INTEGER NOT NULL);
+      INSERT INTO user_update_audit VALUES (0);
+      CREATE TEMP TRIGGER users_update_audit AFTER UPDATE ON users BEGIN
+        UPDATE user_update_audit SET updates = updates + 1;
+      END;
+    `);
+
+    database.archiveMessage(message(2, "второе сообщение"), "bot_api");
+
+    expect(
+      database.connection
+        .query<{ updates: number }, []>("SELECT updates FROM user_update_audit")
+        .get()?.updates,
+    ).toBe(0);
+    database.close();
+  });
+
   test("formats chat, channel, and hidden-user forward origins", () => {
     const database = setup();
     const origins = [

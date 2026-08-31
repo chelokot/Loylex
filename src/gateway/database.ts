@@ -597,7 +597,9 @@ export class LoylexDatabase {
         LEFT JOIN users ON users.user_id = new.from_user_id;
       END;
 
-      CREATE TRIGGER users_au AFTER UPDATE OF username, display_name ON users BEGIN
+      CREATE TRIGGER users_au AFTER UPDATE OF username, display_name ON users
+      WHEN old.username IS NOT new.username OR old.display_name IS NOT new.display_name
+      BEGIN
         DELETE FROM messages_fts
         WHERE rowid IN (
           SELECT rowid FROM messages WHERE from_user_id = old.user_id
@@ -706,6 +708,8 @@ export class LoylexDatabase {
         ON CONFLICT(user_id) DO UPDATE SET
           username = COALESCE(excluded.username, users.username),
           display_name = COALESCE(excluded.display_name, users.display_name)
+        WHERE users.username IS NOT COALESCE(excluded.username, users.username)
+           OR users.display_name IS NOT COALESCE(excluded.display_name, users.display_name)
       `)
       .run(user.id, user.username ?? null, displayNameForUser(user));
   }
