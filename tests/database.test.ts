@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,6 +72,207 @@ function forwardedMessage(id: number, text: string): TelegramMessage {
 }
 
 describe("LoylexDatabase", () => {
+  test("normalizes chats and users and archives reaction updates", () => {
+    const database = setup();
+    const target = message(1, "сообщение с реакцией");
+    database.archiveMessage(target, "bot_api");
+
+    expect(
+      database.connection
+        .query<{ chat_id: number; chat_type: string; chat_title: string | null }, [number]>(
+          "SELECT chat_id, chat_type, chat_title FROM chats WHERE chat_id = ?",
+        )
+        .get(-10042),
+    ).toEqual({ chat_id: -10042, chat_type: "supergroup", chat_title: "Test" });
+    expect(
+      database.connection
+        .query<{ user_id: number; username: string | null; display_name: string | null }, [number]>(
+          "SELECT user_id, username, display_name FROM users WHERE user_id = ?",
+        )
+        .get(7),
+    ).toEqual({ user_id: 7, username: "chelokot", display_name: "Andrii" });
+
+    const messageColumns = database.connection
+      .query<{ name: string }, []>("PRAGMA table_info(messages)")
+      .all()
+      .map((column) => column.name);
+    expect(messageColumns).not.toContain("chat_type");
+    expect(messageColumns).not.toContain("chat_title");
+    expect(messageColumns).not.toContain("from_username");
+    expect(messageColumns).not.toContain("from_display_name");
+    expect(
+      database.connection
+        .query<{ table: string; from: string; to: string }, []>("PRAGMA foreign_key_list(messages)")
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ table: "chats", from: "chat_id", to: "chat_id" }),
+        expect.objectContaining({ table: "users", from: "from_user_id", to: "user_id" }),
+      ]),
+    );
+    expect(database.search("chelokot", null, 10).map((result) => result.messageId)).toEqual([1]);
+
+    database.archiveUpdate({
+      update_id: 700,
+      message_reaction: {
+        chat: target.chat,
+        message_id: target.message_id,
+        user: { id: 8, is_bot: false, first_name: "Artem", username: "ExposedCat" },
+        date: 1_700_000_700,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👎" }],
+      },
+    });
+    database.archiveUpdate({
+      update_id: 701,
+      message_reaction_count: {
+        chat: target.chat,
+        message_id: target.message_id,
+        date: 1_700_000_701,
+        reactions: [{ type: { type: "emoji", emoji: "🔥" }, total_count: 3 }],
+      },
+    });
+    database.archiveUpdate({
+      update_id: 702,
+      message_reaction: {
+        chat: target.chat,
+        message_id: 999,
+        user: { id: 8, is_bot: false, first_name: "Artem", username: "ExposedCat" },
+        date: 1_700_000_702,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👎" }],
+      },
+    });
+
+    expect(
+      database.connection
+        .query<{ event_type: string; user_id: number | null; new_reaction_json: string }, [number]>(
+          "SELECT event_type, user_id, new_reaction_json FROM reactions WHERE update_id = ?",
+        )
+        .get(700),
+    ).toEqual({
+      event_type: "message_reaction",
+      user_id: 8,
+      new_reaction_json: '[{"type":"emoji","emoji":"👎"}]',
+    });
+    expect(
+      database.connection
+        .query<{ counts_json: string }, [number]>(
+          "SELECT counts_json FROM reactions WHERE update_id = ?",
+        )
+        .get(701),
+    ).toEqual({ counts_json: '[{"type":{"type":"emoji","emoji":"🔥"},"total_count":3}]' });
+    expect(
+      database.connection
+        .query<{ count: number }, []>("SELECT count(*) AS count FROM reactions")
+        .get()?.count,
+    ).toBe(2);
+    expect(
+      database.connection
+        .query<{ event_type: string; raw_json: string }, [number]>(
+          "SELECT event_type, raw_json FROM updates WHERE update_id = ?",
+        )
+        .get(702),
+    ).toMatchObject({ event_type: "message_reaction" });
+    database.close();
+  });
+
+  test("migrates legacy messages and backfills known reaction updates", () => {
+    const directory = mkdtempSync(join(tmpdir(), "loylex-legacy-"));
+    directories.push(directory);
+    const path = join(directory, "test.sqlite");
+    const legacy = new Database(path);
+    legacy.exec(`
+      CREATE TABLE updates (
+        update_id INTEGER PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        received_at INTEGER NOT NULL,
+        raw_json TEXT NOT NULL
+      );
+      CREATE TABLE messages (
+        chat_id INTEGER NOT NULL,
+        message_id INTEGER NOT NULL,
+        message_thread_id INTEGER,
+        chat_type TEXT NOT NULL,
+        chat_title TEXT,
+        date INTEGER NOT NULL,
+        edit_date INTEGER,
+        from_user_id INTEGER,
+        from_username TEXT,
+        from_display_name TEXT,
+        text TEXT,
+        reply_to_message_id INTEGER,
+        media_group_id TEXT,
+        media_json TEXT NOT NULL,
+        raw_json TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'bot_api',
+        PRIMARY KEY (chat_id, message_id)
+      );
+    `);
+    const legacyMessage: TelegramMessage = {
+      ...message(1, "legacy message"),
+      from: { id: 7, is_bot: false, first_name: "Legacy", username: "legacyuser" },
+    };
+    legacy
+      .query(`
+        INSERT INTO messages (
+          chat_id, message_id, message_thread_id, chat_type, chat_title, date, edit_date,
+          from_user_id, from_username, from_display_name, text, reply_to_message_id,
+          media_group_id, media_json, raw_json, source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        legacyMessage.chat.id,
+        legacyMessage.message_id,
+        null,
+        legacyMessage.chat.type,
+        legacyMessage.chat.title ?? null,
+        legacyMessage.date,
+        null,
+        legacyMessage.from?.id ?? null,
+        legacyMessage.from?.username ?? null,
+        "Legacy",
+        legacyMessage.text ?? null,
+        null,
+        null,
+        "[]",
+        JSON.stringify(legacyMessage),
+        "bot_api",
+      );
+    const reactionUpdate: TelegramUpdate = {
+      update_id: 901,
+      message_reaction: {
+        chat: legacyMessage.chat,
+        message_id: legacyMessage.message_id,
+        user: { id: 8, is_bot: false, first_name: "Reactor" },
+        date: 1_700_000_901,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👎" }],
+      },
+    };
+    legacy
+      .query("INSERT INTO updates VALUES (?, ?, ?, ?)")
+      .run(901, "message_reaction", Date.now(), JSON.stringify(reactionUpdate));
+    legacy.close();
+
+    const database = new LoylexDatabase(path);
+    expect(database.connection.query("SELECT * FROM chats WHERE chat_id = ?").get(-10042)).toEqual({
+      chat_id: -10042,
+      chat_type: "supergroup",
+      chat_title: "Test",
+    });
+    expect(database.connection.query("SELECT * FROM users WHERE user_id = ?").get(7)).toMatchObject(
+      { user_id: 7, username: "legacyuser", display_name: "Legacy" },
+    );
+    expect(database.search("legacyuser", null, 10).map((result) => result.messageId)).toEqual([1]);
+    expect(
+      database.connection
+        .query("SELECT update_id, user_id FROM reactions WHERE update_id = ?")
+        .get(901),
+    ).toEqual({ update_id: 901, user_id: 8 });
+    database.close();
+  });
+
   test("archives, indexes, claims, and resumes a thread", () => {
     const database = setup();
     database.archiveMessage(message(1, "предыдущий контекст"), "bot_api");

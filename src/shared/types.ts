@@ -16,6 +16,33 @@ export type TelegramChat = {
   username?: string;
 };
 
+export type TelegramReactionType =
+  | { type: "emoji"; emoji: string }
+  | { type: "custom_emoji"; custom_emoji_id: string }
+  | { type: "paid" };
+
+export type TelegramReactionCount = {
+  type: TelegramReactionType;
+  total_count: number;
+};
+
+export type TelegramMessageReactionUpdated = {
+  chat: TelegramChat;
+  message_id: number;
+  user?: TelegramUser;
+  actor_chat?: TelegramChat;
+  date: number;
+  old_reaction: TelegramReactionType[];
+  new_reaction: TelegramReactionType[];
+};
+
+export type TelegramMessageReactionCountUpdated = {
+  chat: TelegramChat;
+  message_id: number;
+  date: number;
+  reactions: TelegramReactionCount[];
+};
+
 export type TelegramMessageOrigin =
   | {
       type: "user";
@@ -75,6 +102,8 @@ export type TelegramUpdate = {
   edited_message?: TelegramMessage;
   channel_post?: TelegramMessage;
   edited_channel_post?: TelegramMessage;
+  message_reaction?: TelegramMessageReactionUpdated;
+  message_reaction_count?: TelegramMessageReactionCountUpdated;
   stopped_message_generation?: TelegramMessageGenerationStopped;
   [key: string]: unknown;
 };
