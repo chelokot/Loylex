@@ -62,3 +62,19 @@ test("builds an additive follow-up prompt instead of replaying the initial wrapp
   expect(prompt).not.toContain("You received a Telegram request through Loylex.");
   expect(prompt).toContain("Current request:\n\nпроверь задачу");
 });
+
+test("builds a clean new-chat prompt without archived context", () => {
+  const prompt = buildPrompt(
+    job({
+      context: "",
+      contextMode: "none",
+    }),
+    "",
+  );
+
+  expect(prompt).toContain(
+    "Telegram context for this new chat:\n\n(no prior Telegram messages included)",
+  );
+  expect(prompt).not.toContain("Recent Telegram context:");
+  expect(prompt).toContain("Current request:\n\nпроверь задачу");
+});

@@ -48,9 +48,15 @@ export function buildPrompt(
   const contextTitle =
     job.contextMode === "delta"
       ? "New Telegram context since the previous Codex turn:"
-      : "Recent Telegram context:";
+      : job.contextMode === "none"
+        ? "Telegram context for this new chat:"
+        : "Recent Telegram context:";
   const emptyContext =
-    job.contextMode === "delta" ? "(no new messages archived)" : "(no prior messages archived)";
+    job.contextMode === "delta"
+      ? "(no new messages archived)"
+      : job.contextMode === "none"
+        ? "(no prior Telegram messages included)"
+        : "(no prior messages archived)";
   return [
     ...instructions,
     "Request metadata:",
