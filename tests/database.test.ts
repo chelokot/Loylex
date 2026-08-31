@@ -359,6 +359,7 @@ describe("LoylexDatabase", () => {
     database.complete(firstJob?.id ?? 0, 2, "thread-one");
 
     expect(database.latestThread(42)).toBe("thread-one");
+    expect(database.latestContinuableThread(42)).toBe("thread-one");
     expect(database.resumeThread(42, 2)).toBe("thread-one");
     expect(database.resumeThread(42, 1)).toBe("thread-one");
 
@@ -370,6 +371,33 @@ describe("LoylexDatabase", () => {
     database.complete(secondJob?.id ?? 0, 4, "thread-two");
 
     expect(database.latestThread(42)).toBe("thread-two");
+    database.close();
+  });
+
+  test("starts a separate private thread while the latest thread is busy", () => {
+    const database = setup();
+    const first = privateMessage(1, "долгая задача");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "долгая задача", null);
+
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.appendStatus(firstJob?.id ?? 0, "commentary: работаю", "thread-one");
+    expect(database.latestContinuableThread(42)).toBeNull();
+
+    const parallel = privateMessage(3, "параллельная задача");
+    database.archiveMessage(parallel, "bot_api");
+    const parallelResumeThreadId = database.latestContinuableThread(42);
+    expect(parallelResumeThreadId).toBeNull();
+    database.enqueue(56, parallel, "параллельная задача", parallelResumeThreadId);
+
+    const parallelJob = database.claimNext(10);
+    expect(parallelJob?.messageId).toBe(3);
+    expect(parallelJob?.resumeThreadId).toBeNull();
+    expect(database.complete(parallelJob?.id ?? 0, 4, "thread-two")).toBe(true);
+    expect(database.latestContinuableThread(42)).toBe("thread-two");
+
+    expect(database.complete(firstJob?.id ?? 0, 5, "thread-one")).toBe(true);
     database.close();
   });
 

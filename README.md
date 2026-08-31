@@ -3,8 +3,10 @@
 Loylex is a persistent, self-evolving Codex agent that lives in Telegram and owns a
 sandboxed Fedora workbench on its personal VPS.
 
-In a private chat, write a normal message to continue the latest Codex thread, reply to an old
-message to use that message's thread, or write `/newchat …` to start a clean thread. In groups,
+In a private chat, write a normal message to continue the latest idle Codex thread, reply to an old
+message to use that message's thread, or write `/newchat …` to start a clean thread. If the latest
+thread is still working, a normal message starts an independent thread so both requests can run
+in parallel. In groups,
 write `loylex …`, `лойлекс …`, or `лойликс …` in any supported case, or reply to a Loylex answer.
 A reply resumes the exact Codex thread. The agent can work in its terminal for as long as needed,
 remember private context, improve its own skills, search the complete archived chat, and deliver
@@ -122,6 +124,8 @@ Other slash-prefixed messages are ignored and never submitted as prompts.
 The agent runs up to 50 jobs concurrently by default; the durable SQLite job queue remains as
 backpressure and restart recovery for work beyond that limit. Jobs that resume the same Codex
 thread are serialized to avoid concurrent writers, while unrelated threads still run in parallel.
+In private chats, a normal message automatically uses a separate thread when the latest one is
+busy; replying to a message still targets that message's exact thread.
 Telegram Bot API 10.2 supports up to 32,768 UTF-8 characters,
 500 rich blocks, tables, LaTeX, inline media, collages, slideshows, audio, custom emoji,
 quotes, and headings.
