@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY --chown=bun:bun package.json bun.lock tsconfig.json ./
 COPY --chown=bun:bun src ./src
+COPY --chown=bun:bun vendor/telegram-bot-api ./vendor/telegram-bot-api
 
 USER bun
 
