@@ -229,6 +229,7 @@ as_loylex() {
     HOME=/home/loylex \
     XDG_RUNTIME_DIR="$runtime_directory" \
     XDG_DATA_HOME=/home/loylex/.local/share \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
     sh -c 'cd "$HOME" && exec "$@"' sh "$@"
 }
 

@@ -24,7 +24,7 @@ services:
   gateway:
     profiles:
       - gateway
-    image: ghcr.io/chelokot/loylex-gateway@sha256:1c874c1b4dfccf70e443898c3c992059bbff06a3c3a9e8150191e3a20b38b083
+    image: ghcr.io/chelokot/loylex-gateway@sha256:73c65b5a4592c6e0910151a2ca2ffe5320aa3dd87a94f0f7b050d713e532429b
     container_name: loylex-gateway
     networks:
       - loylex
@@ -68,9 +68,9 @@ services:
     networks:
       - loylex
     volumes:
-      - agent-home:/home/loylex
-      - memory:/memory
-      - workspace:/workspace
+      - agent-home:/home/loylex:Z,U
+      - memory:/memory:Z,U
+      - workspace:/workspace:Z,U
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
@@ -108,9 +108,9 @@ services:
     networks:
       - loylex
     volumes:
-      - agent-home:/home/loylex
-      - memory:/memory
-      - workspace:/workspace
+      - agent-home:/home/loylex:Z,U
+      - memory:/memory:Z,U
+      - workspace:/workspace:Z,U
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
