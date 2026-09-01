@@ -29,12 +29,17 @@ describe("detectTrigger", () => {
     ["Лойлекс — проверь сервер", "проверь сервер"],
     ["Лойликс — проверь сервер", "проверь сервер"],
     ["  лОйЛеКс, привет", "привет"],
+    ["Чмох, проверь сервер", "проверь сервер"],
+    ["ЧИПА: привет", "привет"],
+    ["Сипа — продолжай", "продолжай"],
+    ["  ЛИЛС статус", "статус"],
   ])("accepts case-insensitive prefix %s", (input, expected) => {
     expect(detectTrigger(message(input), 42)).toEqual({ kind: "prefix", prompt: expected });
   });
 
   test("does not match a longer word", () => {
     expect(detectTrigger(message("loylexical"), 42)).toBeNull();
+    expect(detectTrigger(message("чмохов"), 42)).toBeNull();
   });
 
   test("accepts plain messages in private chats", () => {

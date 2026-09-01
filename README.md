@@ -7,7 +7,8 @@ In a private chat, write a normal message to continue the latest idle Codex thre
 message to use that message's thread, or write `/newchat …` to start a clean thread. If the latest
 thread is still working, a normal message starts an independent thread so both requests can run
 in parallel. In groups,
-write `loylex …`, `лойлекс …`, or `лойликс …` in any supported case, or reply to a Loylex answer.
+write `loylex …`, `лойлекс …`, `лойликс …`, `чмох …`, `чипа …`, `сипа …`, or `лилс …` in any
+supported case, or reply to a Loylex answer.
 A reply resumes the exact Codex thread. The agent can work in its terminal for as long as needed,
 remember private context, improve its own skills, search the complete archived chat, and deliver
 native Telegram Rich Messages.
