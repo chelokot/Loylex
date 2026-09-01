@@ -142,6 +142,17 @@ diff looks small or the new version is nominally backward-compatible.
 Before changing a critical architecture version or integration, perform and record due
 diligence in the work log and commit history:
 
+Never accept or ship a dependency, vendored/generated bundle, or update mechanism that
+downloads executable instructions, source code, scripts, or commands at runtime, or passes
+network-controlled data to a shell, process launcher, dynamic import, or code evaluator.
+Runtime version checks may return inert metadata only; updates must arrive as reviewed,
+pinned code changes and be included in a newly built image.
+
+For vendored, generated, bundled, or minified code, review the complete final artifact—not
+only the wrapper, latest commit, or claimed upstream diff. Verify its exact provenance and
+checksum, top-level side effects, network endpoints, process execution, and the actual
+COPY/import path by which it enters the built image.
+
 1. Identify the exact old and new versions, source commits, artifacts, transitive/runtime
    dependencies, and the complete installation and update path.
 2. Inspect upstream release notes, source diffs, build and packaging definitions, lockfiles,
