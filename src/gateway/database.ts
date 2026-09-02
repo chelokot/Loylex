@@ -12,8 +12,48 @@ import type {
   TelegramUser,
   WorkerRegistration,
 } from "../shared/types.ts";
+import type { AgentTokenUsage } from "../shared/usage.ts";
 
 export type JobState = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export type UsageTotals = AgentTokenUsage & {
+  jobs: number;
+  meteredJobs: number;
+  unmeteredJobs: number;
+  nonCachedInputTokens: number;
+};
+
+export type UsageUserBreakdown = UsageTotals & {
+  userId: number | null;
+  username: string | null;
+  displayName: string | null;
+};
+
+export type UsageTelegramThreadBreakdown = UsageTotals & {
+  chatId: number;
+  chatType: AgentJob["chatType"] | null;
+  chatTitle: string | null;
+  messageThreadId: number | null;
+};
+
+export type UsageCodexThreadBreakdown = UsageTotals & {
+  threadId: string;
+  chatId: number | null;
+  chatTitle: string | null;
+  users: UsageUserBreakdown[];
+};
+
+export type UsageDayBreakdown = UsageTotals & { day: string };
+
+export type UsageReport = {
+  generatedAt: number;
+  chatId: number | null;
+  summary: UsageTotals;
+  byUser: UsageUserBreakdown[];
+  byTelegramThread: UsageTelegramThreadBreakdown[];
+  byCodexThread: UsageCodexThreadBreakdown[];
+  byDay: UsageDayBreakdown[];
+};
 
 export const jobLeaseDurationMs = 60_000;
 export const workerLeaseDurationMs = 15_000;
@@ -96,6 +136,57 @@ type JobOwnershipRow = {
   state: string;
   worker_id: string | null;
 };
+
+type UsageAggregateRow = {
+  jobs: number;
+  metered_jobs: number;
+  input_tokens: number | null;
+  cached_input_tokens: number | null;
+  cache_write_input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_output_tokens: number | null;
+  total_tokens: number | null;
+};
+
+type UsageUserRow = UsageAggregateRow & {
+  user_id: number | null;
+  username: string | null;
+  display_name: string | null;
+};
+
+type UsageTelegramThreadRow = UsageAggregateRow & {
+  chat_id: number;
+  chat_type: AgentJob["chatType"] | null;
+  chat_title: string | null;
+  message_thread_id: number | null;
+};
+
+type UsageCodexThreadRow = UsageAggregateRow & {
+  thread_id: string;
+  chat_id: number | null;
+  chat_title: string | null;
+};
+
+type UsageThreadUserRow = UsageUserRow & { thread_id: string };
+
+type UsageDayRow = UsageAggregateRow & { day: string };
+
+function usageTotals(row: UsageAggregateRow): UsageTotals {
+  const inputTokens = row.input_tokens ?? 0;
+  const cachedInputTokens = row.cached_input_tokens ?? 0;
+  return {
+    jobs: row.jobs,
+    meteredJobs: row.metered_jobs,
+    unmeteredJobs: Math.max(row.jobs - row.metered_jobs, 0),
+    inputTokens,
+    cachedInputTokens,
+    cacheWriteInputTokens: row.cache_write_input_tokens ?? 0,
+    outputTokens: row.output_tokens ?? 0,
+    reasoningOutputTokens: row.reasoning_output_tokens ?? 0,
+    totalTokens: row.total_tokens ?? 0,
+    nonCachedInputTokens: Math.max(inputTokens - cachedInputTokens, 0),
+  };
+}
 
 export type SearchResult = {
   chatId: number;
@@ -360,6 +451,12 @@ export class LoylexDatabase {
         thinking_message_id INTEGER,
         status_log TEXT NOT NULL DEFAULT '',
         error TEXT,
+        input_tokens INTEGER,
+        cached_input_tokens INTEGER,
+        cache_write_input_tokens INTEGER,
+        output_tokens INTEGER,
+        reasoning_output_tokens INTEGER,
+        total_tokens INTEGER,
         created_at INTEGER NOT NULL
       );
 
@@ -378,6 +475,9 @@ export class LoylexDatabase {
         ON jobs(state, resume_thread_id, created_at, id);
       CREATE INDEX IF NOT EXISTS jobs_codex_thread_idx
         ON jobs(chat_id, codex_thread_id, created_at DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS jobs_usage_user_idx ON jobs(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS jobs_usage_forum_idx
+        ON jobs(chat_id, message_thread_id, created_at);
       CREATE INDEX IF NOT EXISTS outbound_thread_idx ON outbound_messages(codex_thread_id);
 
       CREATE TABLE IF NOT EXISTS workers (
@@ -400,6 +500,12 @@ export class LoylexDatabase {
     this.ensureJobColumn("lease_expires_at", "INTEGER");
     this.ensureJobColumn("worker_generation", "INTEGER NOT NULL DEFAULT 1");
     this.ensureJobColumn("context_mode", "TEXT NOT NULL DEFAULT 'full'");
+    this.ensureJobColumn("input_tokens", "INTEGER");
+    this.ensureJobColumn("cached_input_tokens", "INTEGER");
+    this.ensureJobColumn("cache_write_input_tokens", "INTEGER");
+    this.ensureJobColumn("output_tokens", "INTEGER");
+    this.ensureJobColumn("reasoning_output_tokens", "INTEGER");
+    this.ensureJobColumn("total_tokens", "INTEGER");
     this.connection.exec(
       "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id)",
     );
@@ -412,7 +518,17 @@ export class LoylexDatabase {
   }
 
   private ensureJobColumn(
-    name: "worker_id" | "lease_expires_at" | "worker_generation" | "context_mode",
+    name:
+      | "worker_id"
+      | "lease_expires_at"
+      | "worker_generation"
+      | "context_mode"
+      | "input_tokens"
+      | "cached_input_tokens"
+      | "cache_write_input_tokens"
+      | "output_tokens"
+      | "reasoning_output_tokens"
+      | "total_tokens",
     definition: string,
   ): void {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -1433,6 +1549,196 @@ export class LoylexDatabase {
     }));
   }
 
+  usageReport(chatId: number | null = null, limit = 100): UsageReport {
+    const safeLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 1_000) : 100;
+    const filter = "(? IS NULL OR j.chat_id = ?)";
+    const summary = this.connection
+      .query<UsageAggregateRow, [number | null, number | null]>(`
+        SELECT count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        WHERE ${filter}
+      `)
+      .get(chatId, chatId);
+
+    const userRows = this.connection
+      .query<UsageUserRow, [number | null, number | null, number]>(`
+        SELECT j.user_id,
+               u.username,
+               u.display_name,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN users AS u ON u.user_id = j.user_id
+        WHERE ${filter}
+        GROUP BY j.user_id, u.username, u.display_name
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 j.user_id
+        LIMIT ?
+      `)
+      .all(chatId, chatId, safeLimit);
+
+    const telegramThreadRows = this.connection
+      .query<UsageTelegramThreadRow, [number | null, number | null, number]>(`
+        SELECT j.chat_id,
+               c.chat_type,
+               c.chat_title,
+               j.message_thread_id,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN chats AS c ON c.chat_id = j.chat_id
+        WHERE ${filter}
+        GROUP BY j.chat_id, c.chat_type, c.chat_title, j.message_thread_id
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 j.chat_id,
+                 j.message_thread_id
+        LIMIT ?
+      `)
+      .all(chatId, chatId, safeLimit);
+
+    const codexThreadRows = this.connection
+      .query<UsageCodexThreadRow, [number | null, number | null, number]>(`
+        SELECT COALESCE(j.codex_thread_id, j.resume_thread_id) AS thread_id,
+               min(j.chat_id) AS chat_id,
+               min(c.chat_title) AS chat_title,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN chats AS c ON c.chat_id = j.chat_id
+        WHERE ${filter} AND COALESCE(j.codex_thread_id, j.resume_thread_id) IS NOT NULL
+        GROUP BY COALESCE(j.codex_thread_id, j.resume_thread_id)
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 thread_id
+        LIMIT ?
+      `)
+      .all(chatId, chatId, safeLimit);
+
+    const threadIds = new Set(codexThreadRows.map((row) => row.thread_id));
+    const threadUserRows = this.connection
+      .query<UsageThreadUserRow, [number | null, number | null]>(`
+        SELECT COALESCE(j.codex_thread_id, j.resume_thread_id) AS thread_id,
+               j.user_id,
+               u.username,
+               u.display_name,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN users AS u ON u.user_id = j.user_id
+        WHERE ${filter} AND COALESCE(j.codex_thread_id, j.resume_thread_id) IS NOT NULL
+        GROUP BY COALESCE(j.codex_thread_id, j.resume_thread_id),
+                 j.user_id,
+                 u.username,
+                 u.display_name
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 j.user_id
+      `)
+      .all(chatId, chatId)
+      .filter((row) => threadIds.has(row.thread_id));
+
+    const usersByThread = new Map<string, UsageUserBreakdown[]>();
+    for (const row of threadUserRows) {
+      const users = usersByThread.get(row.thread_id) ?? [];
+      users.push({
+        ...usageTotals(row),
+        userId: row.user_id,
+        username: row.username,
+        displayName: row.display_name,
+      });
+      usersByThread.set(row.thread_id, users);
+    }
+
+    const dayRows = this.connection
+      .query<UsageDayRow, [number | null, number | null]>(`
+        SELECT strftime('%Y-%m-%d', j.created_at / 1000, 'unixepoch') AS day,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        WHERE ${filter}
+        GROUP BY day
+        ORDER BY day ASC
+      `)
+      .all(chatId, chatId);
+
+    return {
+      generatedAt: Date.now(),
+      chatId,
+      summary: usageTotals(
+        summary ?? {
+          jobs: 0,
+          metered_jobs: 0,
+          input_tokens: null,
+          cached_input_tokens: null,
+          cache_write_input_tokens: null,
+          output_tokens: null,
+          reasoning_output_tokens: null,
+          total_tokens: null,
+        },
+      ),
+      byUser: userRows.map((row) => ({
+        ...usageTotals(row),
+        userId: row.user_id,
+        username: row.username,
+        displayName: row.display_name,
+      })),
+      byTelegramThread: telegramThreadRows.map((row) => ({
+        ...usageTotals(row),
+        chatId: row.chat_id,
+        chatType: row.chat_type,
+        chatTitle: row.chat_title,
+        messageThreadId: row.message_thread_id,
+      })),
+      byCodexThread: codexThreadRows.map((row) => ({
+        ...usageTotals(row),
+        threadId: row.thread_id,
+        chatId: row.chat_id,
+        chatTitle: row.chat_title,
+        users: usersByThread.get(row.thread_id) ?? [],
+      })),
+      byDay: dayRows.map((row) => ({ ...usageTotals(row), day: row.day })),
+    };
+  }
+
   private contextForJob(
     chatId: number,
     beforeMessageId: number,
@@ -1817,22 +2123,80 @@ export class LoylexDatabase {
     };
   }
 
+  recordUsage(
+    jobId: number,
+    usage: AgentTokenUsage,
+    workerId?: string,
+    codexThreadId?: string | null,
+  ): boolean {
+    const result = this.connection
+      .query(`
+        UPDATE jobs SET
+          codex_thread_id = COALESCE(?, codex_thread_id),
+          input_tokens = ?,
+          cached_input_tokens = ?,
+          cache_write_input_tokens = ?,
+          output_tokens = ?,
+          reasoning_output_tokens = ?,
+          total_tokens = ?
+        WHERE id = ?
+          AND state IN ('pending', 'running', 'completed', 'failed', 'cancelled')
+          AND (? IS NULL OR worker_id = ?)
+      `)
+      .run(
+        codexThreadId ?? null,
+        usage.inputTokens,
+        usage.cachedInputTokens,
+        usage.cacheWriteInputTokens,
+        usage.outputTokens,
+        usage.reasoningOutputTokens,
+        usage.totalTokens,
+        jobId,
+        workerId ?? null,
+        workerId ?? null,
+      );
+    return result.changes > 0;
+  }
+
   complete(
     jobId: number,
     answerMessageId: number,
     codexThreadId: string,
     workerId?: string,
+    usage: AgentTokenUsage | null = null,
   ): boolean {
     const address = this.jobAddress(jobId);
     const transaction = this.connection.transaction(() => {
       const result = this.connection
         .query(`
           UPDATE jobs
-          SET state = 'completed', completed_at = ?, codex_thread_id = ?, thinking_message_id = ?
+          SET state = 'completed',
+              completed_at = ?,
+              codex_thread_id = ?,
+              thinking_message_id = ?,
+              input_tokens = COALESCE(?, input_tokens),
+              cached_input_tokens = COALESCE(?, cached_input_tokens),
+              cache_write_input_tokens = COALESCE(?, cache_write_input_tokens),
+              output_tokens = COALESCE(?, output_tokens),
+              reasoning_output_tokens = COALESCE(?, reasoning_output_tokens),
+              total_tokens = COALESCE(?, total_tokens)
           WHERE id = ? AND state = 'running'
             AND (? IS NULL OR worker_id = ?)
         `)
-        .run(Date.now(), codexThreadId, answerMessageId, jobId, workerId ?? null, workerId ?? null);
+        .run(
+          Date.now(),
+          codexThreadId,
+          answerMessageId,
+          usage?.inputTokens ?? null,
+          usage?.cachedInputTokens ?? null,
+          usage?.cacheWriteInputTokens ?? null,
+          usage?.outputTokens ?? null,
+          usage?.reasoningOutputTokens ?? null,
+          usage?.totalTokens ?? null,
+          jobId,
+          workerId ?? null,
+          workerId ?? null,
+        );
       if (result.changes === 0) {
         return false;
       }
@@ -1847,13 +2211,45 @@ export class LoylexDatabase {
     return transaction.immediate();
   }
 
-  fail(jobId: number, error: string, workerId?: string, codexThreadId?: string | null): void {
+  fail(
+    jobId: number,
+    error: string,
+    workerId?: string,
+    codexThreadId?: string | null,
+    usage: AgentTokenUsage | null = null,
+  ): void {
     const transaction = this.connection.transaction(() => {
       const result = this.connection
         .query(
-          "UPDATE jobs SET state = 'failed', completed_at = ?, error = ?, codex_thread_id = COALESCE(?, codex_thread_id) WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)",
+          `
+            UPDATE jobs SET
+              state = 'failed',
+              completed_at = ?,
+              error = ?,
+              codex_thread_id = COALESCE(?, codex_thread_id),
+              input_tokens = COALESCE(?, input_tokens),
+              cached_input_tokens = COALESCE(?, cached_input_tokens),
+              cache_write_input_tokens = COALESCE(?, cache_write_input_tokens),
+              output_tokens = COALESCE(?, output_tokens),
+              reasoning_output_tokens = COALESCE(?, reasoning_output_tokens),
+              total_tokens = COALESCE(?, total_tokens)
+            WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)
+          `,
         )
-        .run(Date.now(), error, codexThreadId ?? null, jobId, workerId ?? null, workerId ?? null);
+        .run(
+          Date.now(),
+          error,
+          codexThreadId ?? null,
+          usage?.inputTokens ?? null,
+          usage?.cachedInputTokens ?? null,
+          usage?.cacheWriteInputTokens ?? null,
+          usage?.outputTokens ?? null,
+          usage?.reasoningOutputTokens ?? null,
+          usage?.totalTokens ?? null,
+          jobId,
+          workerId ?? null,
+          workerId ?? null,
+        );
       if (result.changes > 0 && codexThreadId) {
         this.connection
           .query(

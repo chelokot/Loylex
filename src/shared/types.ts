@@ -1,3 +1,5 @@
+import type { AgentTokenUsage } from "./usage.ts";
+
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = boolean | JsonObject | JsonValue[] | null | number | string;
 
@@ -135,6 +137,7 @@ export type AgentEvent = {
 export type AgentCompletion = {
   answer: string;
   threadId: string;
+  usage?: AgentTokenUsage;
 };
 
 export type WorkerRegistration = {

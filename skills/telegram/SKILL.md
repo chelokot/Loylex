@@ -8,6 +8,8 @@ description: Search Loylex's Telegram archive and send, delete, download, or upl
 Use the `loylex` command. The gateway owns the bot token; never seek or recreate it.
 
 - `loylex status` reports archive and queue counts.
+- `loylex usage [CHAT_ID] [LIMIT]` returns JSON token analytics grouped by users, Telegram
+  topics, Codex threads, and day; use it as the data source for charts.
 - `loylex search 'FTS QUERY' [CHAT_ID]` searches archived message text with SQLite
   FTS5 syntax.
 - `loylex media FILE_ID OUTPUT_PATH` downloads Telegram media without exposing the

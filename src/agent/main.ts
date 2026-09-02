@@ -1,5 +1,6 @@
 import { unlink, writeFile } from "node:fs/promises";
 import type { AgentJob } from "../shared/types.ts";
+import type { AgentTokenUsage } from "../shared/usage.ts";
 import { stageAttachments } from "./attachments.ts";
 import { loadBuckets } from "./buckets.ts";
 import { runCodex } from "./codex.ts";
@@ -60,6 +61,8 @@ async function processJob(job: AgentJob): Promise<void> {
   const cancellation = new AbortController();
   const cancellationMonitor = monitorCancellation(job.id, cancellation);
   let stagedAttachments: Awaited<ReturnType<typeof stageAttachments>> | null = null;
+  let usage: AgentTokenUsage | null = null;
+  let codexThreadId = job.resumeThreadId;
   try {
     if (await cancellationRequested(job.id, cancellation)) {
       return;
@@ -72,10 +75,31 @@ async function processJob(job: AgentJob): Promise<void> {
       prompt,
       job.resumeThreadId,
       async (event) => {
+        if (event.threadId) {
+          codexThreadId = event.threadId;
+        }
         await gateway.event(job.id, event);
       },
       cancellation.signal,
+      async (observedUsage, observedThreadId) => {
+        usage = observedUsage;
+        if (observedThreadId) {
+          codexThreadId = observedThreadId;
+        }
+        await gateway.recordUsage(job.id, observedUsage, codexThreadId).catch((error) => {
+          console.error(
+            JSON.stringify({
+              level: "warn",
+              jobId: job.id,
+              event: "usage_record_failed",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        });
+      },
     );
+    usage = result.usage ?? usage;
+    codexThreadId = result.threadId;
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
@@ -86,7 +110,7 @@ async function processJob(job: AgentJob): Promise<void> {
     }
     const message = error instanceof Error ? error.message : String(error);
     console.error(JSON.stringify({ level: "error", jobId: job.id, message }));
-    await gateway.fail(job.id, message);
+    await gateway.fail(job.id, message, usage, codexThreadId);
   } finally {
     await stagedAttachments?.cleanup();
     cancellation.abort();

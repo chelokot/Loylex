@@ -1,5 +1,6 @@
 import type { Server } from "bun";
 import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
+import { isAgentTokenUsage } from "../shared/usage.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
 import { responseOptions } from "./message-options.ts";
@@ -139,20 +140,55 @@ export class GatewayServer {
         return json({ ok: true });
       }
 
+      const usageMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/usage$/);
+      if (request.method === "POST" && usageMatch?.[1]) {
+        const payload = await body<{ usage?: unknown; threadId?: unknown }>(request);
+        if (!isAgentTokenUsage(payload.usage)) {
+          return json({ error: "usage must contain non-negative integer token counts" }, 400);
+        }
+        if (payload.threadId !== undefined && typeof payload.threadId !== "string") {
+          return json({ error: "threadId must be a string" }, 400);
+        }
+        return json({
+          ok: true,
+          recorded: this.database.recordUsage(
+            Number.parseInt(usageMatch[1], 10),
+            payload.usage,
+            workerId(request),
+            payload.threadId ?? null,
+          ),
+        });
+      }
+
       const completionMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/complete$/);
       if (request.method === "POST" && completionMatch?.[1]) {
-        await this.complete(
-          Number.parseInt(completionMatch[1], 10),
-          await body<AgentCompletion>(request),
-          workerId(request),
-        );
+        const payload = await body<AgentCompletion>(request);
+        if (payload.usage !== undefined && !isAgentTokenUsage(payload.usage)) {
+          return json({ error: "usage must contain non-negative integer token counts" }, 400);
+        }
+        await this.complete(Number.parseInt(completionMatch[1], 10), payload, workerId(request));
         return json({ ok: true });
       }
 
       const failureMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/fail$/);
       if (request.method === "POST" && failureMatch?.[1]) {
-        const payload = await body<{ error: string }>(request);
-        await this.fail(Number.parseInt(failureMatch[1], 10), payload.error, workerId(request));
+        const payload = await body<{ error: string; usage?: unknown; threadId?: unknown }>(request);
+        if (typeof payload.error !== "string") {
+          return json({ error: "error must be a string" }, 400);
+        }
+        if (payload.usage !== undefined && !isAgentTokenUsage(payload.usage)) {
+          return json({ error: "usage must contain non-negative integer token counts" }, 400);
+        }
+        if (payload.threadId !== undefined && typeof payload.threadId !== "string") {
+          return json({ error: "threadId must be a string" }, 400);
+        }
+        await this.fail(
+          Number.parseInt(failureMatch[1], 10),
+          payload.error,
+          workerId(request),
+          payload.usage ?? null,
+          payload.threadId ?? null,
+        );
         return json({ ok: true });
       }
 
@@ -256,6 +292,20 @@ export class GatewayServer {
 
       if (request.method === "GET" && url.pathname === "/v1/status") {
         return json(this.database.stats());
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/usage") {
+        const rawChatId = url.searchParams.get("chat");
+        const chatId = rawChatId === null ? null : Number(rawChatId);
+        if (rawChatId !== null && (rawChatId.trim() === "" || !Number.isSafeInteger(chatId))) {
+          return json({ error: "chat must be a valid chat ID" }, 400);
+        }
+        const rawLimit = url.searchParams.get("limit");
+        const limit = rawLimit === null ? 100 : Number(rawLimit);
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+          return json({ error: "limit must be an integer from 1 to 1000" }, 400);
+        }
+        return json(this.database.usageReport(chatId, limit));
       }
 
       if (request.method === "GET" && url.pathname === "/v1/media") {
@@ -445,12 +495,24 @@ export class GatewayServer {
       this.database.recordOutboundMessage(jobId, followUp.message_id, completion.threadId);
       replyTo = followUp.message_id;
     }
-    this.database.complete(jobId, message.message_id, completion.threadId, workerId);
+    this.database.complete(
+      jobId,
+      message.message_id,
+      completion.threadId,
+      workerId,
+      completion.usage ?? null,
+    );
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);
   }
 
-  private async fail(jobId: number, error: string, workerId?: string): Promise<void> {
+  private async fail(
+    jobId: number,
+    error: string,
+    workerId?: string,
+    usage: AgentCompletion["usage"] | null = null,
+    threadId: string | null = null,
+  ): Promise<void> {
     if (this.database.isJobCancelled(jobId)) {
       return;
     }
@@ -459,7 +521,7 @@ export class GatewayServer {
     }
     const address = this.database.jobAddress(jobId);
     const thinkingMessageId = this.database.thinkingMessage(jobId);
-    const threadId = this.database.jobThreadId(jobId);
+    const currentThreadId = threadId ?? this.database.jobThreadId(jobId);
     const markdown = failedDocument(this.database.statusLog(jobId) ?? "", error);
     let message: { message_id: number };
     if (thinkingMessageId === null) {
@@ -469,8 +531,8 @@ export class GatewayServer {
     } else {
       message = await this.telegram.editRich(address.chatId, thinkingMessageId, markdown);
     }
-    this.database.recordOutboundMessage(jobId, message.message_id, threadId);
-    this.database.fail(jobId, error.slice(0, 8_000), workerId, threadId);
+    this.database.recordOutboundMessage(jobId, message.message_id, currentThreadId);
+    this.database.fail(jobId, error.slice(0, 8_000), workerId, currentThreadId, usage);
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);
   }

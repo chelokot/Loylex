@@ -10,6 +10,7 @@ import type {
   TelegramMessageOrigin,
   TelegramUpdate,
 } from "../src/shared/types.ts";
+import type { AgentTokenUsage } from "../src/shared/usage.ts";
 
 const directories: string[] = [];
 
@@ -711,6 +712,98 @@ describe("LoylexDatabase", () => {
         canResume: false,
       },
     ]);
+    database.close();
+  });
+
+  test("aggregates token usage by user, Telegram thread, Codex thread, and day", () => {
+    const database = setup();
+    const usageOne: AgentTokenUsage = {
+      inputTokens: 100,
+      cachedInputTokens: 80,
+      cacheWriteInputTokens: 2,
+      outputTokens: 20,
+      reasoningOutputTokens: 15,
+      totalTokens: 120,
+    };
+    const usageTwo: AgentTokenUsage = {
+      inputTokens: 50,
+      cachedInputTokens: 10,
+      cacheWriteInputTokens: 3,
+      outputTokens: 10,
+      reasoningOutputTokens: 5,
+      totalTokens: 60,
+    };
+    const first = message(1, "первая задача");
+    first.message_thread_id = 101;
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(1, first, "первая задача", null);
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.complete(firstJob?.id ?? 0, 11, "thread-usage", undefined, usageOne);
+
+    const second: TelegramMessage = {
+      ...message(2, "вторая задача"),
+      message_thread_id: 101,
+      from: { id: 8, is_bot: false, first_name: "Artem", username: "exposedcat" },
+    };
+    database.archiveMessage(second, "bot_api");
+    database.enqueue(2, second, "вторая задача", "thread-usage");
+    const secondJob = database.claimNext(10);
+    expect(secondJob).not.toBeNull();
+    database.complete(secondJob?.id ?? 0, 12, "thread-usage", undefined, usageTwo);
+
+    const report = database.usageReport();
+    expect(report.summary).toMatchObject({
+      jobs: 2,
+      meteredJobs: 2,
+      unmeteredJobs: 0,
+      inputTokens: 150,
+      cachedInputTokens: 90,
+      nonCachedInputTokens: 60,
+      cacheWriteInputTokens: 5,
+      outputTokens: 30,
+      reasoningOutputTokens: 20,
+      totalTokens: 180,
+    });
+    expect(report.byUser.map((row) => row.userId)).toEqual([7, 8]);
+    expect(report.byTelegramThread).toHaveLength(1);
+    expect(report.byTelegramThread[0]).toMatchObject({
+      chatId: -10042,
+      messageThreadId: 101,
+      inputTokens: 150,
+    });
+    expect(report.byCodexThread).toHaveLength(1);
+    expect(report.byCodexThread[0]).toMatchObject({
+      threadId: "thread-usage",
+      inputTokens: 150,
+    });
+    expect(report.byCodexThread[0]?.users.map((row) => row.userId)).toEqual([7, 8]);
+    expect(report.byDay).toHaveLength(1);
+    expect(report.byDay[0]).toMatchObject({ inputTokens: 150, outputTokens: 30 });
+    database.close();
+  });
+
+  test("records usage on a running job and keeps it when it fails", () => {
+    const database = setup();
+    const incoming = message(1, "задача с ошибкой");
+    database.archiveMessage(incoming, "bot_api");
+    database.enqueue(1, incoming, "задача с ошибкой", null);
+    const job = database.claimNext(10);
+    expect(job).not.toBeNull();
+    const usage: AgentTokenUsage = {
+      inputTokens: 22,
+      cachedInputTokens: 11,
+      cacheWriteInputTokens: 0,
+      outputTokens: 4,
+      reasoningOutputTokens: 3,
+      totalTokens: 26,
+    };
+    expect(database.recordUsage(job?.id ?? 0, usage, undefined, "thread-failed")).toBe(true);
+    database.fail(job?.id ?? 0, "ошибка", undefined, "thread-failed", usage);
+
+    const report = database.usageReport();
+    expect(report.summary).toMatchObject({ jobs: 1, meteredJobs: 1, inputTokens: 22 });
+    expect(report.byCodexThread[0]?.threadId).toBe("thread-failed");
     database.close();
   });
 });

@@ -41,7 +41,7 @@ gateway container                 agent blue / agent green
                  - no arbitrary host commands
 ```
 
-The bridge exposes jobs, archive search, media transfer, status, and scoped outbound
+The bridge exposes jobs, archive search, media transfer, status, usage analytics, and scoped outbound
 Telegram operations. The agent can request deletion of one live message with
 `loylex delete CHAT_ID MESSAGE_ID`; this leaves the archived copy intact. It never exposes the
 Telegram token. The agent has no host Podman
@@ -80,6 +80,25 @@ for 14 days.
 The agent starts its TypeScript runtime from the mounted `/workspace/Loylex` repository.
 After checks pass, a supervised restart therefore applies its self-authored agent changes
 without replacing memory, Codex sessions, or the workspace.
+
+## Usage analytics
+
+Each Codex turn reports its exact token usage back to the gateway. The durable job record keeps
+input, cached input, cache-write input, output, reasoning output, and total tokens together with
+the Telegram user, chat, forum topic, and Codex thread. The authenticated agent CLI exposes a
+JSON report suitable for charts:
+
+```bash
+loylex usage
+loylex usage CHAT_ID
+loylex usage CHAT_ID 500
+```
+
+The report contains totals, top users, Telegram topics, Codex threads with per-user contributions,
+and a daily series. `cachedInputTokens` is a subset of `inputTokens`; `nonCachedInputTokens` is
+derived from those two values. Jobs created before the telemetry change, or runs whose Codex
+version did not emit usage, remain visible as `unmeteredJobs` and are never estimated from text
+length.
 
 ## Self-management
 

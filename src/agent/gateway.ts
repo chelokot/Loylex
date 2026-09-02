@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentCompletion, AgentEvent, AgentJob, WorkerRegistration } from "../shared/types.ts";
+import type { AgentTokenUsage } from "../shared/usage.ts";
 import { retryTransient } from "./retry.ts";
 
 export class GatewayClient {
@@ -131,10 +132,34 @@ export class GatewayClient {
     });
   }
 
-  fail(jobId: number, error: string): Promise<{ ok: true }> {
+  recordUsage(
+    jobId: number,
+    usage: AgentTokenUsage,
+    threadId: string | null = null,
+  ): Promise<{ ok: true }> {
+    return this.request(`/v1/jobs/${jobId}/usage`, {
+      method: "POST",
+      body: JSON.stringify({
+        usage,
+        ...(threadId === null ? {} : { threadId }),
+      }),
+      headers: { "x-loylex-worker-id": this.workerId },
+    });
+  }
+
+  fail(
+    jobId: number,
+    error: string,
+    usage: AgentTokenUsage | null = null,
+    threadId: string | null = null,
+  ): Promise<{ ok: true }> {
     return this.request(`/v1/jobs/${jobId}/fail`, {
       method: "POST",
-      body: JSON.stringify({ error }),
+      body: JSON.stringify({
+        error,
+        ...(usage === null ? {} : { usage }),
+        ...(threadId === null ? {} : { threadId }),
+      }),
       headers: { "x-loylex-worker-id": this.workerId },
     });
   }

@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../shared/types.ts";
+import type { AgentTokenUsage } from "../shared/usage.ts";
 import type { AgentConfig } from "./config.ts";
 
 type CodexItem = {
@@ -13,12 +14,17 @@ type CodexJsonEvent = {
   thread_id?: string;
   message?: string;
   item?: CodexItem;
+  usage?: unknown;
+  token_usage?: unknown;
 };
 
 export type CodexRunResult = {
   answer: string;
   threadId: string;
+  usage?: AgentTokenUsage;
 };
+
+type UsageObserver = (usage: AgentTokenUsage, threadId: string | null) => Promise<void> | void;
 
 export class CodexCancelledError extends Error {
   constructor() {
@@ -31,6 +37,69 @@ const threadConflictRetryDelaysMs = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000
 
 function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name} ${error.message}` : String(error);
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function usageFromRecord(value: unknown): AgentTokenUsage | null {
+  const usage = record(value);
+  if (!usage) {
+    return null;
+  }
+  const inputTokens = nonNegativeInteger(usage.input_tokens);
+  const cachedInputTokens = nonNegativeInteger(usage.cached_input_tokens);
+  const cacheWriteInputTokens = nonNegativeInteger(usage.cache_write_input_tokens);
+  const outputTokens = nonNegativeInteger(usage.output_tokens);
+  const reasoningOutputTokens = nonNegativeInteger(usage.reasoning_output_tokens);
+  const totalTokens = nonNegativeInteger(usage.total_tokens);
+  if (inputTokens === null && outputTokens === null) {
+    return null;
+  }
+  const normalizedInputTokens = inputTokens ?? 0;
+  const normalizedOutputTokens = outputTokens ?? 0;
+  const computedTotal = normalizedInputTokens + normalizedOutputTokens;
+  return {
+    inputTokens: normalizedInputTokens,
+    cachedInputTokens: cachedInputTokens ?? 0,
+    cacheWriteInputTokens: cacheWriteInputTokens ?? 0,
+    outputTokens: normalizedOutputTokens,
+    reasoningOutputTokens: reasoningOutputTokens ?? 0,
+    totalTokens: totalTokens ?? (Number.isSafeInteger(computedTotal) ? computedTotal : 0),
+  };
+}
+
+export function parseCodexUsage(event: unknown): AgentTokenUsage | null {
+  const value = record(event);
+  if (!value) {
+    return null;
+  }
+  for (const candidate of [value.usage, value.token_usage]) {
+    const usage = usageFromRecord(candidate);
+    if (usage) {
+      return usage;
+    }
+  }
+  return null;
+}
+
+function sameUsage(left: AgentTokenUsage | null, right: AgentTokenUsage): boolean {
+  return (
+    left !== null &&
+    left.inputTokens === right.inputTokens &&
+    left.cachedInputTokens === right.cachedInputTokens &&
+    left.cacheWriteInputTokens === right.cacheWriteInputTokens &&
+    left.outputTokens === right.outputTokens &&
+    left.reasoningOutputTokens === right.reasoningOutputTokens &&
+    left.totalTokens === right.totalTokens
+  );
 }
 
 export function isThreadStoreConflict(error: unknown): boolean {
@@ -64,6 +133,7 @@ async function runCodexAttempt(
   resumeThreadId: string | null,
   onEvent: (event: AgentEvent) => Promise<void>,
   signal?: AbortSignal,
+  onUsage?: UsageObserver,
 ): Promise<CodexRunResult> {
   if (signal?.aborted) {
     throw new CodexCancelledError();
@@ -125,6 +195,7 @@ async function runCodexAttempt(
     let threadId = resumeThreadId;
     let finalAnswer = "";
     let pendingAgentMessage = "";
+    let lastUsage: AgentTokenUsage | null = null;
     let buffered = "";
     const decoder = new TextDecoder();
 
@@ -149,6 +220,14 @@ async function runCodexAttempt(
           continue;
         }
         const event = JSON.parse(line) as CodexJsonEvent;
+        if (event.thread_id) {
+          threadId = event.thread_id;
+        }
+        const usage = parseCodexUsage(event);
+        if (usage && !sameUsage(lastUsage, usage)) {
+          lastUsage = usage;
+          await onUsage?.(usage, threadId);
+        }
         if (event.type === "thread.started" && event.thread_id) {
           threadId = event.thread_id;
         } else if (event.type === "item.completed" && event.item?.type === "agent_message") {
@@ -206,7 +285,11 @@ async function runCodexAttempt(
     if (!finalAnswer.trim()) {
       throw new Error("Codex completed without an answer");
     }
-    return { answer: finalAnswer, threadId };
+    return {
+      answer: finalAnswer,
+      threadId,
+      ...(lastUsage === null ? {} : { usage: lastUsage }),
+    };
   } finally {
     signal?.removeEventListener("abort", abortHandler);
     if (forceKillTimer !== undefined) {
@@ -221,10 +304,11 @@ export async function runCodex(
   resumeThreadId: string | null,
   onEvent: (event: AgentEvent) => Promise<void>,
   signal?: AbortSignal,
+  onUsage?: UsageObserver,
 ): Promise<CodexRunResult> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await runCodexAttempt(config, prompt, resumeThreadId, onEvent, signal);
+      return await runCodexAttempt(config, prompt, resumeThreadId, onEvent, signal, onUsage);
     } catch (error) {
       if (!resumeThreadId || !isThreadStoreConflict(error)) {
         throw error;

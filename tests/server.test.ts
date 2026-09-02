@@ -4,6 +4,7 @@ import type { LoylexDatabase } from "../src/gateway/database.ts";
 import { GatewayServer } from "../src/gateway/server.ts";
 import type { TelegramClient } from "../src/gateway/telegram.ts";
 import type { AgentCompletion, TelegramMessage } from "../src/shared/types.ts";
+import type { AgentTokenUsage } from "../src/shared/usage.ts";
 
 function botMessage(id: number): TelegramMessage {
   return {
@@ -417,4 +418,102 @@ test("rejects invalid deletion IDs before calling Telegram", async () => {
     error: "chatId and messageId must be valid integer IDs",
   });
   expect(called).toBe(false);
+});
+
+test("records usage from a worker", async () => {
+  const recorded: {
+    jobId: number;
+    usage: AgentTokenUsage;
+    workerId: string | undefined;
+    threadId: string | null;
+  }[] = [];
+  const database = {
+    recordUsage: (
+      jobId: number,
+      usage: AgentTokenUsage,
+      workerId?: string,
+      threadId?: string | null,
+    ) => {
+      recorded.push({ jobId, usage, workerId, threadId: threadId ?? null });
+      return true;
+    },
+  } as unknown as LoylexDatabase;
+  const server = new GatewayServer(config(), database, {} as TelegramClient);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+  const usage: AgentTokenUsage = {
+    inputTokens: 100,
+    cachedInputTokens: 80,
+    cacheWriteInputTokens: 0,
+    outputTokens: 20,
+    reasoningOutputTokens: 10,
+    totalTokens: 120,
+  };
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/jobs/7/usage", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer unused",
+        "x-loylex-worker-id": "worker-1",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ usage, threadId: "thread-7" }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ ok: true, recorded: true });
+  expect(recorded).toEqual([{ jobId: 7, usage, workerId: "worker-1", threadId: "thread-7" }]);
+});
+
+test("rejects malformed usage payloads", async () => {
+  let called = false;
+  const database = {
+    recordUsage: () => {
+      called = true;
+      return true;
+    },
+  } as unknown as LoylexDatabase;
+  const server = new GatewayServer(config(), database, {} as TelegramClient);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/jobs/7/usage", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ usage: { inputTokens: -1 } }),
+    }),
+  );
+
+  expect(response.status).toBe(400);
+  expect(called).toBe(false);
+});
+
+test("returns the usage report with an optional chat filter", async () => {
+  let requested: { chatId: number | null; limit: number } | null = null;
+  const report = { generatedAt: 1, chatId: -10042, summary: {}, byUser: [] };
+  const database = {
+    usageReport: (chatId: number | null, limit: number) => {
+      requested = { chatId, limit };
+      return report;
+    },
+  } as unknown as LoylexDatabase;
+  const server = new GatewayServer(config(), database, {} as TelegramClient);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/usage?chat=-10042&limit=25", {
+      headers: { authorization: "Bearer unused" },
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(report);
+  expect(requested as { chatId: number | null; limit: number } | null).toEqual({
+    chatId: -10042,
+    limit: 25,
+  });
 });

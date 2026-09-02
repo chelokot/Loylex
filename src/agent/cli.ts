@@ -69,6 +69,28 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(await (await request("/v1/status", {}, true)).json(), null, 2));
     return;
   }
+  if (command === "usage" || command === "stats") {
+    const [rawChatId, rawLimit = "100"] = arguments_;
+    const chatId = rawChatId === undefined ? null : Number(rawChatId);
+    const limit = Number(rawLimit);
+    if (
+      (chatId !== null && !Number.isSafeInteger(chatId)) ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 1_000
+    ) {
+      throw new Error("Usage: loylex usage [CHAT_ID] [LIMIT]");
+    }
+    const chat = chatId === null ? "" : `?chat=${encodeURIComponent(String(chatId))}`;
+    const separator = chat === "" ? "?" : "&";
+    const response = await request(
+      `/v1/usage${chat}${separator}limit=${encodeURIComponent(String(limit))}`,
+      {},
+      true,
+    );
+    console.log(JSON.stringify(await response.json(), null, 2));
+    return;
+  }
   if (command === "search") {
     const query = arguments_[0];
     if (!query) {
@@ -306,7 +328,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|search|recent|media-list|message|messages|import|send|delete|media|upload|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|recent|media-list|message|messages|import|send|delete|media|upload|upload-album|system>",
   );
 }
 
