@@ -5,6 +5,12 @@ import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
 import { responseOptions } from "./message-options.ts";
 import { completedDocuments, failedDocument, workDocument } from "./presentation.ts";
+import {
+  defaultReadQueryRows,
+  isReadQueryParameters,
+  maxReadQueryRows,
+  ReadQueryError,
+} from "./read-query.ts";
 import type { TelegramClient } from "./telegram.ts";
 
 function json(value: unknown, status = 200): Response {
@@ -211,6 +217,46 @@ export class GatewayServer {
         return json({
           results: this.database.search(query, chatId, limit, parsedOffset),
         });
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/archive/query") {
+        const payload = await body<{
+          sql?: unknown;
+          params?: unknown;
+          maxRows?: unknown;
+        }>(request);
+        if (typeof payload.sql !== "string" || payload.sql.trim() === "") {
+          return json({ error: "sql is required" }, 400);
+        }
+        if (payload.params !== undefined && !isReadQueryParameters(payload.params)) {
+          return json(
+            { error: "params must be an array or object of string, number, or null" },
+            400,
+          );
+        }
+        const maxRows = payload.maxRows ?? defaultReadQueryRows;
+        if (
+          typeof maxRows !== "number" ||
+          !Number.isSafeInteger(maxRows) ||
+          maxRows < 1 ||
+          maxRows > maxReadQueryRows
+        ) {
+          return json({ error: `maxRows must be an integer from 1 to ${maxReadQueryRows}` }, 400);
+        }
+        try {
+          return json(
+            this.database.readQuery(
+              payload.sql,
+              payload.params === undefined ? [] : payload.params,
+              maxRows,
+            ),
+          );
+        } catch (error) {
+          if (error instanceof ReadQueryError) {
+            return json({ error: error.message }, 400);
+          }
+          throw error;
+        }
       }
 
       if (request.method === "GET" && url.pathname === "/v1/archive/media") {

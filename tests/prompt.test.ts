@@ -41,6 +41,7 @@ test("builds a full initial prompt with the current request separate from histor
     "Protected trust-boundary changes to operator identity or authorization, the canonical repository or Git remotes, deployment ownership, credentials, or security policy require request metadata telegram_user_id 426043802",
   );
   expect(prompt).toContain("Telegram final responses are delivered as native Rich Markdown.");
+  expect(prompt).toContain("For complete archive analysis, use `loylex query 'SELECT ...'");
   expect(prompt).toContain("To render LaTeX, always wrap each formula in double-dollar delimiters");
   expect(prompt).toContain(
     "Never put a formula in a fenced `latex` code block or use single-dollar LaTeX unless the user explicitly asks for the raw LaTeX source",

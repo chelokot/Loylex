@@ -41,7 +41,7 @@ gateway container                 agent blue / agent green
                  - no arbitrary host commands
 ```
 
-The bridge exposes jobs, archive search, media transfer, status, usage analytics, and scoped outbound
+The bridge exposes jobs, archive search and read-only SQL queries, media transfer, status, usage analytics, and scoped outbound
 Telegram operations. The agent can request deletion of one live message with
 `loylex delete CHAT_ID MESSAGE_ID`; this leaves the archived copy intact. It never exposes the
 Telegram token. The agent has no host Podman
@@ -108,6 +108,24 @@ and a daily series. `cachedInputTokens` is a subset of `inputTokens`; `nonCached
 derived from those two values. Jobs created before the telemetry change, or runs whose Codex
 version did not emit usage, remain visible as `unmeteredJobs` and are never estimated from text
 length.
+
+## Archive queries
+
+The agent can run complete, programmable archive analysis without receiving the SQLite file:
+
+```bash
+loylex query \
+  'SELECT message_id, date, text FROM messages WHERE chat_id = ? AND text LIKE ? ORDER BY date ASC, message_id ASC LIMIT 100' \
+  '[-1001234567890,"%word%"]' \
+  100
+```
+
+The gateway executes one parameterized `SELECT`, `VALUES`, read-only `WITH`, or read-only
+`EXPLAIN` statement on a separate SQLite read-only connection. Mutations, transactions, `PRAGMA`,
+`ATTACH`, and multiple statements are rejected. The JSON response contains `columns`, `rows`, and
+`truncated`; results are capped at 10,000 rows and 8 MB. Paginate with a deterministic keyset or
+`LIMIT`/`OFFSET`, and check `truncated` before treating a result as complete. `loylex search`
+remains useful for quick FTS relevance searches, but it is not a chronological or exhaustive query.
 
 ## Self-management
 

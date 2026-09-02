@@ -1,5 +1,10 @@
 import { rename, rm } from "node:fs/promises";
 import { basename } from "node:path";
+import {
+  defaultReadQueryRows,
+  isReadQueryParameters,
+  maxReadQueryRows,
+} from "../gateway/read-query.ts";
 import { type TelegramExport, telegramExportMessages } from "../shared/telegram-export.ts";
 import { loadAgentConfig } from "./config.ts";
 import { retryTransient } from "./retry.ts";
@@ -102,6 +107,36 @@ async function run(): Promise<void> {
     const response = await request(
       `/v1/archive/search?q=${encodeURIComponent(query)}${chat}${limit}${offset}`,
       {},
+      true,
+    );
+    console.log(JSON.stringify(await response.json(), null, 2));
+    return;
+  }
+  if (command === "query") {
+    const [sql, rawParameters = "[]", rawMaxRows = String(defaultReadQueryRows)] = arguments_;
+    if (!sql) {
+      throw new Error("Usage: loylex query SQL [PARAMS_JSON] [MAX_ROWS]");
+    }
+    let parameters: unknown;
+    try {
+      parameters = JSON.parse(rawParameters);
+    } catch {
+      throw new Error("PARAMS_JSON must be valid JSON");
+    }
+    if (!isReadQueryParameters(parameters)) {
+      throw new Error("PARAMS_JSON must be an array or object of string, number, or null");
+    }
+    const maxRows = Number(rawMaxRows);
+    if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > maxReadQueryRows) {
+      throw new Error(`MAX_ROWS must be an integer from 1 to ${maxReadQueryRows}`);
+    }
+    const response = await request(
+      "/v1/archive/query",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sql, params: parameters, maxRows }),
+      },
       true,
     );
     console.log(JSON.stringify(await response.json(), null, 2));
@@ -354,7 +389,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|recent|media-list|message|messages|import|send|send-thread|delete|media|upload|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|media|upload|upload-album|system>",
   );
 }
 

@@ -12,6 +12,8 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
   topics, Codex threads, and day; use it as the data source for charts.
 - `loylex search 'FTS QUERY' [CHAT_ID]` searches archived message text with SQLite
   FTS5 syntax.
+- `loylex query 'SELECT ...' '[PARAMS_JSON]' [MAX_ROWS]` runs a parameterized read-only SQL
+  query through the gateway and returns `columns`, `rows`, and `truncated`.
 - `loylex media FILE_ID OUTPUT_PATH` downloads Telegram media without exposing the
   bot token.
 - `loylex send CHAT_ID 'RICH MARKDOWN'` sends to a chat already present in the
@@ -23,6 +25,23 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
 The runtime automatically delivers the final Codex response to the current request. Do not
 call `loylex send` for that ordinary response. Use it only when the task explicitly requires
 a separate proactive message or another destination.
+
+`loylex query` never mounts or exposes the SQLite file to the agent. The gateway executes the
+statement on a separate SQLite read-only connection; only one `SELECT`, `VALUES`, read-only
+`WITH`, or read-only `EXPLAIN` statement is accepted. Writes, transactions, `PRAGMA`, `ATTACH`,
+and multiple statements are rejected. Results are capped at 10,000 rows and 8 MB, so a
+`truncated: true` response must be paginated before claiming completeness. Use parameter
+placeholders instead of interpolating Telegram text. For example:
+
+```bash
+loylex query \
+  'SELECT message_id, date, text FROM messages WHERE chat_id = ? AND text LIKE ? ORDER BY date ASC, message_id ASC LIMIT 100' \
+  '[-1001756869879,"%лейло%"]' \
+  100
+```
+
+Use `loylex query` for chronological or aggregate work and inspect `sqlite_master` when the
+schema is needed; `loylex search` is intentionally a small, relevance-ranked FTS shortcut.
 
 Rich Markdown supports GitHub-flavored Markdown, tables, `$$LaTeX$$`, arbitrary
 supported Rich HTML, `<details>`, `<tg-collage>`,

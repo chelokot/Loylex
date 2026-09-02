@@ -13,6 +13,14 @@ import type {
   WorkerRegistration,
 } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
+import {
+  defaultReadQueryRows,
+  maxReadQueryResultBytes,
+  maxReadQueryRows,
+  ReadQueryError,
+  type ReadQueryParameters,
+  validateReadOnlyQuery,
+} from "./read-query.ts";
 
 export type JobState = "pending" | "running" | "completed" | "failed" | "cancelled";
 
@@ -221,6 +229,12 @@ export type ArchivedMessage = {
   forwardOrigin?: JsonObject;
 };
 
+export type ReadQueryResult = {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+};
+
 type SearchRow = {
   chat_id: number;
   message_id: number;
@@ -400,6 +414,7 @@ function jobMedia(message: TelegramMessage): JsonValue[] {
 
 export class LoylexDatabase {
   readonly connection: Database;
+  readonly #readConnection: Database;
 
   constructor(path: string) {
     this.connection = new Database(path, { create: true, strict: true });
@@ -407,9 +422,18 @@ export class LoylexDatabase {
     this.connection.exec("PRAGMA foreign_keys = ON");
     this.connection.exec("PRAGMA synchronous = NORMAL");
     this.migrate();
+    if (path === ":memory:") {
+      this.#readConnection = this.connection;
+    } else {
+      this.#readConnection = new Database(path, { readonly: true, strict: true });
+      this.#readConnection.exec("PRAGMA query_only = ON");
+    }
   }
 
   close(): void {
+    if (this.#readConnection !== this.connection) {
+      this.#readConnection.close();
+    }
     this.connection.close();
   }
 
@@ -2337,6 +2361,56 @@ export class LoylexDatabase {
       `)
       .all(query, chatId, chatId, limit, offset);
     return rows.map(searchResult);
+  }
+
+  readQuery(
+    sql: string,
+    parameters: ReadQueryParameters = [],
+    maxRows = defaultReadQueryRows,
+  ): ReadQueryResult {
+    validateReadOnlyQuery(sql);
+    if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > maxReadQueryRows) {
+      throw new ReadQueryError(`maxRows must be an integer from 1 to ${maxReadQueryRows}`);
+    }
+
+    let statement: ReturnType<Database["query"]> | null = null;
+    try {
+      statement = this.#readConnection.query(sql);
+      const rows: Record<string, unknown>[] = [];
+      let resultBytes = 0;
+      let truncated = false;
+      const rowsIterator = Array.isArray(parameters)
+        ? statement.iterate(...parameters)
+        : statement.iterate(parameters);
+      const encoder = new TextEncoder();
+      for (const row of rowsIterator) {
+        if (rows.length >= maxRows) {
+          truncated = true;
+          break;
+        }
+        const rowBytes = encoder.encode(JSON.stringify(row)).byteLength;
+        if (resultBytes + rowBytes > maxReadQueryResultBytes) {
+          if (rows.length === 0) {
+            throw new ReadQueryError(
+              `the first result row exceeds the ${maxReadQueryResultBytes}-byte result limit`,
+            );
+          }
+          truncated = true;
+          break;
+        }
+        rows.push(row as Record<string, unknown>);
+        resultBytes += rowBytes;
+      }
+      return { columns: statement.columnNames, rows, truncated };
+    } catch (error) {
+      if (error instanceof ReadQueryError) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ReadQueryError(`read-only query failed: ${message}`);
+    } finally {
+      statement?.finalize();
+    }
   }
 
   recent(chatId: number, limit: number): SearchResult[] {
