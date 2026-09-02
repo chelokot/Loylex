@@ -1,65 +1,30 @@
-export const chronicleActions = [
-  "🏰 Поднимаю разводной мост The Floodoncelocal Kingdom",
-  "⚔️ Затачиваю королевский меч о край здравого смысла",
-  "🛡️ Проверяю щиты серверной крепости на звонкость",
-  "📜 Разворачиваю свиток древних протоколов",
-  "🕯️ Зажигаю свечи в башне системного мудреца",
-  "🐎 Седлаю самого быстрого пакетного скакуна",
-  "🦅 Отправляю королевского орла за свежими вестями",
-  "🔔 Бью в колокол великого деплоя",
-  "👑 Полирую корону, пока механизмы набирают ход",
-  "🗝️ Подбираю ключ от очередной башенной двери",
-  "🏹 Натягиваю тетиву королевского файрвола",
-  "🧙 Советуюсь с придворным магом по двоичным рунам",
-  "🐉 Проверяю, не уснул ли дракон в серверной",
-  "🍗 Подкупаю стражу жареной куриной ножкой",
-  "🍺 Наполняю кубок бодрящим эликсиром",
-  "🧱 Укрепляю стены The Floodoncelocal Kingdom",
-  "🗺️ Сверяю карту тайных ходов королевства",
-  "🧭 Кручу зачарованный компас в сторону результата",
-  "🪶 Макаю гусиное перо в чернила телеметрии",
-  "📯 Трублю сбор королевских процессов",
-  "⚒️ Кую новый артефакт в подземной мастерской",
-  "🪓 Рублю зависшие ветви древнего древа",
-  "🧀 Собираю налог сыром с окрестных герцогств",
-  "🐈 Допрашиваю замкового кота как главного свидетеля",
-  "🦆 Назначаю боевую утку смотрителем порта",
-  "🧹 Сметаю цифровую пыль с королевских архивов",
-  "🚪 Смазываю петли у ворот, чтобы релиз вошёл бесшумно",
-  "🪤 Расставляю ловушки для коварных багов",
-  "💰 Пересчитываю золотые байты в казначействе",
-  "🧪 Варю эликсир совместимости в медном котле",
-  "🔮 Всматриваюсь в хрустальный шар логов",
-  "⛓️ Проверяю цепи зависимостей на королевскую прочность",
-  "🛶 Переправляю данные через ров без единой капли",
-  "🌉 Чиню мост между башней агента и воротами gateway",
-  "🔥 Раздуваю кузнечный огонь вычислений",
-  "❄️ Отгоняю ледяные таймауты от крепостных стен",
-  "🌩️ Прошу придворного громовержца ускорить ответ",
-  "🦄 Осматриваю королевского единорога перед выездом",
-  "🐺 Договариваюсь с лесными волками о безопасном маршруте",
-  "🦉 Заседаю с совиным советом ночных администраторов",
-  "🐌 Тороплю почтовую улитку с важнейшим донесением",
-  "🐓 Сверяю время по главному замковому петуху",
-  "🧌 Выдаю троллю пропуск на технический мост",
-  "👻 Пересчитываю призраков в фоновых процессах",
-  "🪄 Накладываю чары устойчивости на королевский стек",
-  "🎺 Репетирую фанфары для успешного завершения",
-  "🎭 Маскирую секретный проход от любопытных менестрелей",
-  "🏆 Протираю кубок победы рукавом парадного камзола",
-  "🚩 Водружаю знамя The Floodoncelocal Kingdom над башней",
-  "⚜️ Скрепляю результат большой королевской печатью",
-] as const;
-
-const chronicleSeed = Math.floor(Math.random() * 0x1_0000_0000) >>> 0;
-
-function chronicleAction(entry: string, position: number): string {
-  let hash = (2_166_136_261 ^ chronicleSeed ^ position) >>> 0;
-  for (const character of entry) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16_777_619) >>> 0;
+function commandActivity(command: string): string {
+  const normalized = command.toLowerCase();
+  if (normalized.includes("find skills") || normalized.includes("-name skill.md")) {
+    return "Подбираю нужные навыки";
   }
-  return chronicleActions[hash % chronicleActions.length] ?? chronicleActions[0];
+  if (normalized.includes("skill.md")) {
+    return "Читаю рабочие инструкции";
+  }
+  if (
+    normalized.includes("free -") ||
+    normalized.includes("df -") ||
+    normalized.includes("/proc/cpuinfo") ||
+    normalized.includes("/proc/loadavg") ||
+    normalized.includes("uptime")
+  ) {
+    return "Проверяю ресурсы сервера";
+  }
+  if (normalized.includes("systemctl") || normalized.includes("ps -")) {
+    return "Проверяю процессы и сервисы";
+  }
+  if (normalized.includes("loylex status")) {
+    return "Проверяю Telegram и очередь задач";
+  }
+  if (normalized.includes("curl ") || normalized.includes("wget ")) {
+    return "Получаю данные из сети";
+  }
+  return "Работаю в терминале";
 }
 
 function escapeHtml(value: string): string {
@@ -67,10 +32,13 @@ function escapeHtml(value: string): string {
 }
 
 export function workDocument(status: string): string {
-  const activity = activityLines(status).slice(-8);
+  const activity = visibleActivity(status);
   const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
-  const fallback = chronicleAction("empty chronicle", 0);
-  return `<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>\n\n${history || `- ${escapeHtml(fallback)}`}\n\n</details>`;
+  return `<details><summary>Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
+}
+
+function visibleActivity(status: string): string[] {
+  return activityLines(status).slice(-8);
 }
 
 export const richMessageLimitBytes = 30_000;
@@ -118,11 +86,25 @@ export function splitRichMarkdown(markdown: string, maxBytes = richMessageLimitB
 }
 
 export function activityLines(status: string): string[] {
-  return status
-    .split("\n\n")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry, position) => chronicleAction(entry, position));
+  const fallback: string[] = [];
+  const narrative: string[] = [];
+  for (const entry of status.split("\n\n")) {
+    const separator = entry.indexOf(":");
+    const kind = separator === -1 ? "status" : entry.slice(0, separator);
+    const text = (separator === -1 ? entry : entry.slice(separator + 1)).trim();
+    if (kind === "command") {
+      const visible = commandActivity(text);
+      if (!fallback.includes(visible)) {
+        fallback.push(visible);
+      }
+    } else if (kind === "reasoning" || kind === "commentary") {
+      const visible = text.slice(0, 600);
+      if (visible && narrative.at(-1) !== visible) {
+        narrative.push(visible);
+      }
+    }
+  }
+  return narrative.length > 0 ? narrative : fallback;
 }
 
 export function failureMessage(error: string): string {
@@ -132,17 +114,12 @@ export function failureMessage(error: string): string {
   return `Не получилось завершить задачу.\n\n\`\`\`text\n${error.slice(0, 2_000)}\n\`\`\``;
 }
 
+export function failedDocument(status: string, error: string): string {
+  return `${workDocument(status)}\n\n${failureMessage(error)}`;
+}
+
 export function completedDocuments(status: string, answer: string): string[] {
-  const kingdomBanner = [
-    '<tg-emoji emoji-id="5861926791857311729">⚜️</tg-emoji>',
-    '<tg-emoji emoji-id="5852921692841580896">👑</tg-emoji>',
-    "The Floodoncelocal Kingdom",
-  ].join(" ");
-  const answerBanner = [
-    '<tg-emoji emoji-id="5935947980518460257">📜</tg-emoji>',
-    '<tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji>',
-  ].join(" ");
-  const prefix = `${workDocument(status)}\n\n${kingdomBanner}\n\n${answerBanner} `;
+  const prefix = `${workDocument(status)}\n\n`;
   const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix);
   if (availableAnswerBytes <= 0) {
     return splitRichMarkdown(`${prefix}${answer}`);
@@ -155,9 +132,9 @@ export function helpMessage(): string {
   return [
     "**Loylex — универсальный Linux-агент**",
     "",
-    "Напиши `Лойлекс, ...`, `лойликс, ...` или ответь на сообщение Loylex — запрос продолжит соответствующий Codex-тред.",
+    "В личке можно писать обычным сообщением — оно продолжит последний Codex-тред без reply. Ответ на старое сообщение переключит запрос в тред этого сообщения. `/newchat сообщение` начнёт новый чистый тред. В группах по-прежнему используй `Лойлекс, ...` или reply на сообщение Loylex.",
     "",
-    "`/tasks` — последние задачи; `/stop` в ответ на рабочее сообщение — остановить; `/cancel_ID` — остановить задачу; `/resume_ID` — продолжить прерванную задачу, если у неё сохранился Codex-тред.",
+    "`/tasks` — последние задачи; в ЛС активный draft можно остановить кнопкой Stop, а в группах `/stop` отправляется reply на рабочее сообщение; `/cancel_ID` — остановить задачу; `/resume_ID` — продолжить прерванную задачу, если у неё сохранился Codex-тред.",
     "",
     "Текст, изображения и файлы текущего сообщения передаются агенту через защищённый bridge. Для напоминаний и периодических действий можно попросить настроить cron/systemd timer на Linux-машине.",
   ].join("\n");

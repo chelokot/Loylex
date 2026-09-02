@@ -1,9 +1,16 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LoylexDatabase } from "../src/gateway/database.ts";
-import type { TelegramMessage, TelegramUpdate } from "../src/shared/types.ts";
+import type {
+  JsonObject,
+  TelegramMessage,
+  TelegramMessageOrigin,
+  TelegramUpdate,
+} from "../src/shared/types.ts";
+import type { AgentTokenUsage } from "../src/shared/usage.ts";
 
 const directories: string[] = [];
 
@@ -39,7 +46,234 @@ function botMessage(id: number, text: string): TelegramMessage {
   };
 }
 
+function privateMessage(id: number, text: string): TelegramMessage {
+  return {
+    message_id: id,
+    date: 1_700_000_000 + id,
+    chat: { id: 42, type: "private" },
+    from: { id: 7, is_bot: false, first_name: "Artem" },
+    text,
+  };
+}
+
+function forwardedMessage(id: number, text: string): TelegramMessage {
+  return {
+    ...message(id, text),
+    forward_origin: {
+      type: "user",
+      date: 1_700_000_500,
+      sender_user: {
+        id: 42,
+        is_bot: false,
+        first_name: "Chelokot",
+        username: "chelokot",
+      },
+    },
+  };
+}
+
 describe("LoylexDatabase", () => {
+  test("normalizes chats and users and archives reaction updates", () => {
+    const database = setup();
+    const target = message(1, "сообщение с реакцией");
+    database.archiveMessage(target, "bot_api");
+
+    expect(
+      database.connection
+        .query<{ chat_id: number; chat_type: string; chat_title: string | null }, [number]>(
+          "SELECT chat_id, chat_type, chat_title FROM chats WHERE chat_id = ?",
+        )
+        .get(-10042),
+    ).toEqual({ chat_id: -10042, chat_type: "supergroup", chat_title: "Test" });
+    expect(
+      database.connection
+        .query<{ user_id: number; username: string | null; display_name: string | null }, [number]>(
+          "SELECT user_id, username, display_name FROM users WHERE user_id = ?",
+        )
+        .get(7),
+    ).toEqual({ user_id: 7, username: "chelokot", display_name: "Andrii" });
+
+    const messageColumns = database.connection
+      .query<{ name: string }, []>("PRAGMA table_info(messages)")
+      .all()
+      .map((column) => column.name);
+    expect(messageColumns).not.toContain("chat_type");
+    expect(messageColumns).not.toContain("chat_title");
+    expect(messageColumns).not.toContain("from_username");
+    expect(messageColumns).not.toContain("from_display_name");
+    expect(
+      database.connection
+        .query<{ table: string; from: string; to: string }, []>("PRAGMA foreign_key_list(messages)")
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ table: "chats", from: "chat_id", to: "chat_id" }),
+        expect.objectContaining({ table: "users", from: "from_user_id", to: "user_id" }),
+      ]),
+    );
+    expect(database.search("chelokot", null, 10).map((result) => result.messageId)).toEqual([1]);
+
+    database.archiveUpdate({
+      update_id: 700,
+      message_reaction: {
+        chat: target.chat,
+        message_id: target.message_id,
+        user: { id: 8, is_bot: false, first_name: "Artem", username: "ExposedCat" },
+        date: 1_700_000_700,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👎" }],
+      },
+    });
+    database.archiveUpdate({
+      update_id: 701,
+      message_reaction_count: {
+        chat: target.chat,
+        message_id: target.message_id,
+        date: 1_700_000_701,
+        reactions: [{ type: { type: "emoji", emoji: "🔥" }, total_count: 3 }],
+      },
+    });
+    database.archiveUpdate({
+      update_id: 702,
+      message_reaction: {
+        chat: target.chat,
+        message_id: 999,
+        user: { id: 8, is_bot: false, first_name: "Artem", username: "ExposedCat" },
+        date: 1_700_000_702,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👎" }],
+      },
+    });
+
+    expect(
+      database.connection
+        .query<{ event_type: string; user_id: number | null; new_reaction_json: string }, [number]>(
+          "SELECT event_type, user_id, new_reaction_json FROM reactions WHERE update_id = ?",
+        )
+        .get(700),
+    ).toEqual({
+      event_type: "message_reaction",
+      user_id: 8,
+      new_reaction_json: '[{"type":"emoji","emoji":"👎"}]',
+    });
+    expect(
+      database.connection
+        .query<{ counts_json: string }, [number]>(
+          "SELECT counts_json FROM reactions WHERE update_id = ?",
+        )
+        .get(701),
+    ).toEqual({ counts_json: '[{"type":{"type":"emoji","emoji":"🔥"},"total_count":3}]' });
+    expect(
+      database.connection
+        .query<{ count: number }, []>("SELECT count(*) AS count FROM reactions")
+        .get()?.count,
+    ).toBe(2);
+    expect(
+      database.connection
+        .query<{ event_type: string; raw_json: string }, [number]>(
+          "SELECT event_type, raw_json FROM updates WHERE update_id = ?",
+        )
+        .get(702),
+    ).toMatchObject({ event_type: "message_reaction" });
+    database.close();
+  });
+
+  test("migrates legacy messages and backfills known reaction updates", () => {
+    const directory = mkdtempSync(join(tmpdir(), "loylex-legacy-"));
+    directories.push(directory);
+    const path = join(directory, "test.sqlite");
+    const legacy = new Database(path);
+    legacy.exec(`
+      CREATE TABLE updates (
+        update_id INTEGER PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        received_at INTEGER NOT NULL,
+        raw_json TEXT NOT NULL
+      );
+      CREATE TABLE messages (
+        chat_id INTEGER NOT NULL,
+        message_id INTEGER NOT NULL,
+        message_thread_id INTEGER,
+        chat_type TEXT NOT NULL,
+        chat_title TEXT,
+        date INTEGER NOT NULL,
+        edit_date INTEGER,
+        from_user_id INTEGER,
+        from_username TEXT,
+        from_display_name TEXT,
+        text TEXT,
+        reply_to_message_id INTEGER,
+        media_group_id TEXT,
+        media_json TEXT NOT NULL,
+        raw_json TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'bot_api',
+        PRIMARY KEY (chat_id, message_id)
+      );
+    `);
+    const legacyMessage: TelegramMessage = {
+      ...message(1, "legacy message"),
+      from: { id: 7, is_bot: false, first_name: "Legacy", username: "legacyuser" },
+    };
+    legacy
+      .query(`
+        INSERT INTO messages (
+          chat_id, message_id, message_thread_id, chat_type, chat_title, date, edit_date,
+          from_user_id, from_username, from_display_name, text, reply_to_message_id,
+          media_group_id, media_json, raw_json, source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        legacyMessage.chat.id,
+        legacyMessage.message_id,
+        null,
+        legacyMessage.chat.type,
+        legacyMessage.chat.title ?? null,
+        legacyMessage.date,
+        null,
+        legacyMessage.from?.id ?? null,
+        legacyMessage.from?.username ?? null,
+        "Legacy",
+        legacyMessage.text ?? null,
+        null,
+        null,
+        "[]",
+        JSON.stringify(legacyMessage),
+        "bot_api",
+      );
+    const reactionUpdate: TelegramUpdate = {
+      update_id: 901,
+      message_reaction: {
+        chat: legacyMessage.chat,
+        message_id: legacyMessage.message_id,
+        user: { id: 8, is_bot: false, first_name: "Reactor" },
+        date: 1_700_000_901,
+        old_reaction: [],
+        new_reaction: [{ type: "emoji", emoji: "👎" }],
+      },
+    };
+    legacy
+      .query("INSERT INTO updates VALUES (?, ?, ?, ?)")
+      .run(901, "message_reaction", Date.now(), JSON.stringify(reactionUpdate));
+    legacy.close();
+
+    const database = new LoylexDatabase(path);
+    expect(database.connection.query("SELECT * FROM chats WHERE chat_id = ?").get(-10042)).toEqual({
+      chat_id: -10042,
+      chat_type: "supergroup",
+      chat_title: "Test",
+    });
+    expect(database.connection.query("SELECT * FROM users WHERE user_id = ?").get(7)).toMatchObject(
+      { user_id: 7, username: "legacyuser", display_name: "Legacy" },
+    );
+    expect(database.search("legacyuser", null, 10).map((result) => result.messageId)).toEqual([1]);
+    expect(
+      database.connection
+        .query("SELECT update_id, user_id FROM reactions WHERE update_id = ?")
+        .get(901),
+    ).toEqual({ update_id: 901, user_id: 8 });
+    database.close();
+  });
+
   test("archives, indexes, claims, and resumes a thread", () => {
     const database = setup();
     database.archiveMessage(message(1, "предыдущий контекст"), "bot_api");
@@ -92,23 +326,79 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
-  test("claims and completes an operator command without a Codex thread", () => {
+  test("does not include prior chat context for a clean new chat", () => {
     const database = setup();
-    const incoming = message(1, "/exec pwd");
-    incoming.chat = { id: 849670500, type: "private" };
-    incoming.from = { id: 849670500, is_bot: false, first_name: "Operator" };
-    database.archiveUpdate({ update_id: 55, message: incoming });
-    database.enqueueOperatorCommand(55, incoming, "pwd");
+    const first = privateMessage(1, "старое сообщение из предыдущего чата");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "первая задача", null);
 
-    const job = database.claimNext(10);
-    expect(job).toMatchObject({
-      kind: "operator_exec",
-      command: "pwd",
-      prompt: "/exec pwd",
-      resumeThreadId: null,
-    });
-    expect(database.complete(job?.id ?? 0, 99, null)).toBe(true);
-    expect(database.resumeThread(849670500, 99)).toBeNull();
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.complete(firstJob?.id ?? 0, 2, "thread-old");
+
+    const fresh = privateMessage(3, "новый чистый чат");
+    fresh.reply_to_message = first;
+    database.archiveMessage(fresh, "bot_api");
+    database.enqueue(56, fresh, "новый чистый чат", null, "none");
+
+    const freshJob = database.claimNext(10);
+    expect(freshJob?.contextMode).toBe("none");
+    expect(freshJob?.context).toBe("");
+    expect(freshJob?.replyContext).toBeNull();
+    expect(freshJob?.context).not.toContain("старое сообщение");
+    database.close();
+  });
+
+  test("finds the latest private thread and resolves replies to job messages", () => {
+    const database = setup();
+    const first = privateMessage(1, "первая задача");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "первая задача", null);
+
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.complete(firstJob?.id ?? 0, 2, "thread-one");
+
+    expect(database.latestThread(42)).toBe("thread-one");
+    expect(database.latestContinuableThread(42)).toBe("thread-one");
+    expect(database.resumeThread(42, 2)).toBe("thread-one");
+    expect(database.resumeThread(42, 1)).toBe("thread-one");
+
+    const second = privateMessage(3, "вторая задача");
+    database.archiveMessage(second, "bot_api");
+    database.enqueue(56, second, "вторая задача", "thread-one");
+    const secondJob = database.claimNext(10);
+    expect(secondJob?.resumeThreadId).toBe("thread-one");
+    database.complete(secondJob?.id ?? 0, 4, "thread-two");
+
+    expect(database.latestThread(42)).toBe("thread-two");
+    database.close();
+  });
+
+  test("starts a separate private thread while the latest thread is busy", () => {
+    const database = setup();
+    const first = privateMessage(1, "долгая задача");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "долгая задача", null);
+
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.appendStatus(firstJob?.id ?? 0, "commentary: работаю", "thread-one");
+    expect(database.latestContinuableThread(42)).toBeNull();
+
+    const parallel = privateMessage(3, "параллельная задача");
+    database.archiveMessage(parallel, "bot_api");
+    const parallelResumeThreadId = database.latestContinuableThread(42);
+    expect(parallelResumeThreadId).toBeNull();
+    database.enqueue(56, parallel, "параллельная задача", parallelResumeThreadId);
+
+    const parallelJob = database.claimNext(10);
+    expect(parallelJob?.messageId).toBe(3);
+    expect(parallelJob?.resumeThreadId).toBeNull();
+    expect(database.complete(parallelJob?.id ?? 0, 4, "thread-two")).toBe(true);
+    expect(database.latestContinuableThread(42)).toBe("thread-two");
+
+    expect(database.complete(firstJob?.id ?? 0, 5, "thread-one")).toBe(true);
     database.close();
   });
 
@@ -166,6 +456,49 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("does not requeue an expired lease while its worker is alive", () => {
+    const database = setup();
+    const now = Date.now();
+    database.registerWorker("worker-a", now);
+
+    const incoming = message(1, "долгая задача");
+    database.enqueue(55, incoming, "долгая задача", null);
+    const running = database.claimNext(10, "worker-a");
+    expect(running).not.toBeNull();
+    database.appendStatus(running?.id ?? 0, "commentary: работаю", "thread-123", "worker-a");
+
+    database.connection
+      .query("UPDATE jobs SET lease_expires_at = ? WHERE id = ?")
+      .run(now - 1, running?.id ?? 0);
+    database.heartbeatWorker("worker-a", now);
+
+    expect(database.recoverExpiredJobs(now)).toBe(0);
+    expect(database.claimNext(10, "worker-a")).toBeNull();
+    database.close();
+  });
+
+  test("requeues an expired lease after its worker stops being live", () => {
+    const database = setup();
+    const now = Date.now();
+    database.registerWorker("worker-a", now);
+
+    const incoming = message(1, "задача после сбоя worker");
+    database.enqueue(55, incoming, "задача после сбоя worker", null);
+    const running = database.claimNext(10, "worker-a");
+    expect(running).not.toBeNull();
+    database.connection
+      .query("UPDATE jobs SET lease_expires_at = ? WHERE id = ?")
+      .run(now - 1, running?.id ?? 0);
+    database.heartbeatWorker("worker-a", now - 60_000);
+
+    expect(database.recoverExpiredJobs(now)).toBe(1);
+    database.registerWorker("worker-b", now);
+    const recovered = database.claimNext(10, "worker-b");
+    expect(recovered?.id).toBe(running?.id);
+    expect(recovered?.resumeThreadId).toBeNull();
+    database.close();
+  });
+
   test("reassigns queued old-generation work when a worker stops", () => {
     const database = setup();
     database.registerWorker("blue", 1_000);
@@ -191,6 +524,119 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("passes attachments from a replied-to message into the job", () => {
+    const database = setup();
+    const document = {
+      file_id: "reply-file-id",
+      file_name: "app.zip",
+      mime_type: "application/zip",
+      file_size: 123,
+    } satisfies JsonObject;
+    const source = message(1, "приложение");
+    source.document = document;
+    const current = message(2, "Лойлекс, продолжай по вложению");
+    current.reply_to_message = source;
+
+    database.archiveMessage(current, "bot_api");
+    database.enqueue(55, current, "продолжай по вложению", null);
+
+    const job = database.claimNext(10);
+    expect(job?.attachments).toEqual([{ kind: "document", value: document }]);
+    expect(job?.replyContext).toContain(
+      `attachments=${JSON.stringify([{ kind: "document", value: document }])}`,
+    );
+    database.close();
+  });
+
+  test("exposes the full forward origin in archive results and context", () => {
+    const database = setup();
+    const forwarded = forwardedMessage(1, "пересланное сообщение");
+    const origin = forwarded.forward_origin as JsonObject;
+    database.archiveMessage(forwarded, "bot_api");
+
+    expect(database.recent(-10042, 1)[0]?.forwardOrigin).toEqual(origin);
+    expect(database.search("пересланное", -10042, 1)[0]?.forwardOrigin).toEqual(origin);
+
+    const current = message(2, "Лойлекс, покажи источник");
+    database.archiveMessage(current, "bot_api");
+    database.enqueue(56, current, "покажи источник", null);
+    const job = database.claimNext(10);
+    expect(job?.context).toContain('forwarded_from="chelokot"');
+    expect(job?.context).toContain('forward_origin={"type":"user"');
+    expect(job?.context).toContain('"sender_user":{"id":42');
+    database.close();
+  });
+
+  test("does not update an unchanged archived user", () => {
+    const database = setup();
+    database.archiveMessage(message(1, "первое сообщение"), "bot_api");
+    database.connection.exec(`
+      CREATE TEMP TABLE user_update_audit (updates INTEGER NOT NULL);
+      INSERT INTO user_update_audit VALUES (0);
+      CREATE TEMP TRIGGER users_update_audit AFTER UPDATE ON users BEGIN
+        UPDATE user_update_audit SET updates = updates + 1;
+      END;
+    `);
+
+    database.archiveMessage(message(2, "второе сообщение"), "bot_api");
+
+    expect(
+      database.connection
+        .query<{ updates: number }, []>("SELECT updates FROM user_update_audit")
+        .get()?.updates,
+    ).toBe(0);
+    database.close();
+  });
+
+  test("formats chat, channel, and hidden-user forward origins", () => {
+    const database = setup();
+    const origins = [
+      {
+        messageId: 1,
+        origin: {
+          type: "chat",
+          date: 1_700_000_501,
+          sender_chat: { id: -10042, type: "supergroup", title: "Test" },
+        },
+      },
+      {
+        messageId: 2,
+        origin: {
+          type: "channel",
+          date: 1_700_000_502,
+          chat: { id: -10077, type: "channel", title: "News" },
+          message_id: 987,
+        },
+      },
+      {
+        messageId: 3,
+        origin: {
+          type: "hidden_user",
+          date: 1_700_000_503,
+          sender_user_name: "Скрытый автор",
+        },
+      },
+    ] satisfies Array<{ messageId: number; origin: TelegramMessageOrigin }>;
+
+    for (const item of origins) {
+      const forwarded = message(item.messageId, `сообщение ${item.messageId}`);
+      forwarded.forward_origin = item.origin;
+      database.archiveMessage(forwarded, "bot_api");
+    }
+    const current = message(4, "Лойлекс, проверь типы пересылок");
+    database.archiveMessage(current, "bot_api");
+    database.enqueue(56, current, "проверь типы пересылок", null);
+
+    const job = database.claimNext(10);
+    for (const item of origins) {
+      expect(job?.context).toContain(`forward_origin=${JSON.stringify(item.origin)}`);
+      expect(
+        database.recent(-10042, 10).find((result) => result.messageId === item.messageId),
+      ).toMatchObject({ forwardOrigin: item.origin });
+    }
+    database.close();
+  });
+
   test("cancels active jobs linked to an outbound message and its Codex thread", () => {
     const database = setup();
     const incoming = message(1, "Лойлекс, начни долгую работу");
@@ -210,6 +656,18 @@ describe("LoylexDatabase", () => {
     expect(database.isJobCancelled(runningJobId)).toBe(true);
     expect(database.complete(runningJobId, 99, "thread-123")).toBe(false);
     expect(database.claimNext(10)).toBeNull();
+    database.close();
+  });
+
+  test("cancels a private job addressed by its draft ID", () => {
+    const database = setup();
+    const incoming = privateMessage(1, "долгая задача");
+    database.enqueue(55, incoming, "долгая задача", null);
+
+    const running = database.claimNext(10);
+    expect(running).not.toBeNull();
+    expect(database.cancelJobsForDraft(42, running?.id ?? 0)).toEqual([running?.id ?? 0]);
+    expect(database.isJobCancelled(running?.id ?? 0)).toBe(true);
     database.close();
   });
 
@@ -250,10 +708,102 @@ describe("LoylexDatabase", () => {
         state: "completed",
         createdAt: expect.any(Number),
         completedAt: expect.any(Number),
-        thinkingMessageId: 10,
+        thinkingMessageId: 11,
         canResume: false,
       },
     ]);
+    database.close();
+  });
+
+  test("aggregates token usage by user, Telegram thread, Codex thread, and day", () => {
+    const database = setup();
+    const usageOne: AgentTokenUsage = {
+      inputTokens: 100,
+      cachedInputTokens: 80,
+      cacheWriteInputTokens: 2,
+      outputTokens: 20,
+      reasoningOutputTokens: 15,
+      totalTokens: 120,
+    };
+    const usageTwo: AgentTokenUsage = {
+      inputTokens: 50,
+      cachedInputTokens: 10,
+      cacheWriteInputTokens: 3,
+      outputTokens: 10,
+      reasoningOutputTokens: 5,
+      totalTokens: 60,
+    };
+    const first = message(1, "первая задача");
+    first.message_thread_id = 101;
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(1, first, "первая задача", null);
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    database.complete(firstJob?.id ?? 0, 11, "thread-usage", undefined, usageOne);
+
+    const second: TelegramMessage = {
+      ...message(2, "вторая задача"),
+      message_thread_id: 101,
+      from: { id: 8, is_bot: false, first_name: "Artem", username: "exposedcat" },
+    };
+    database.archiveMessage(second, "bot_api");
+    database.enqueue(2, second, "вторая задача", "thread-usage");
+    const secondJob = database.claimNext(10);
+    expect(secondJob).not.toBeNull();
+    database.complete(secondJob?.id ?? 0, 12, "thread-usage", undefined, usageTwo);
+
+    const report = database.usageReport();
+    expect(report.summary).toMatchObject({
+      jobs: 2,
+      meteredJobs: 2,
+      unmeteredJobs: 0,
+      inputTokens: 150,
+      cachedInputTokens: 90,
+      nonCachedInputTokens: 60,
+      cacheWriteInputTokens: 5,
+      outputTokens: 30,
+      reasoningOutputTokens: 20,
+      totalTokens: 180,
+    });
+    expect(report.byUser.map((row) => row.userId)).toEqual([7, 8]);
+    expect(report.byTelegramThread).toHaveLength(1);
+    expect(report.byTelegramThread[0]).toMatchObject({
+      chatId: -10042,
+      messageThreadId: 101,
+      inputTokens: 150,
+    });
+    expect(report.byCodexThread).toHaveLength(1);
+    expect(report.byCodexThread[0]).toMatchObject({
+      threadId: "thread-usage",
+      inputTokens: 150,
+    });
+    expect(report.byCodexThread[0]?.users.map((row) => row.userId)).toEqual([7, 8]);
+    expect(report.byDay).toHaveLength(1);
+    expect(report.byDay[0]).toMatchObject({ inputTokens: 150, outputTokens: 30 });
+    database.close();
+  });
+
+  test("records usage on a running job and keeps it when it fails", () => {
+    const database = setup();
+    const incoming = message(1, "задача с ошибкой");
+    database.archiveMessage(incoming, "bot_api");
+    database.enqueue(1, incoming, "задача с ошибкой", null);
+    const job = database.claimNext(10);
+    expect(job).not.toBeNull();
+    const usage: AgentTokenUsage = {
+      inputTokens: 22,
+      cachedInputTokens: 11,
+      cacheWriteInputTokens: 0,
+      outputTokens: 4,
+      reasoningOutputTokens: 3,
+      totalTokens: 26,
+    };
+    expect(database.recordUsage(job?.id ?? 0, usage, undefined, "thread-failed")).toBe(true);
+    database.fail(job?.id ?? 0, "ошибка", undefined, "thread-failed", usage);
+
+    const report = database.usageReport();
+    expect(report.summary).toMatchObject({ jobs: 1, meteredJobs: 1, inputTokens: 22 });
+    expect(report.byCodexThread[0]?.threadId).toBe("thread-failed");
     database.close();
   });
 });

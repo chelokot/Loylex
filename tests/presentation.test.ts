@@ -1,56 +1,44 @@
 import { describe, expect, test } from "bun:test";
 import {
   activityLines,
-  chronicleActions,
   completedDocuments,
+  failedDocument,
   failureMessage,
   stopResultMessage,
-  workDocument,
 } from "../src/gateway/presentation.ts";
 
 describe("activityLines", () => {
-  test("replaces every internal event with a medieval chronicle action", () => {
+  test("turns shell events into concise user-facing activity", () => {
     const status = [
       "command: /bin/bash -lc 'find skills -maxdepth 2 -name SKILL.md -print'",
       "status: Команда завершена с кодом 0",
       "command: /bin/bash -lc 'free -h; df -h /; uptime'",
     ].join("\n\n");
 
-    const actions = activityLines(status);
-    const availableActions = new Set<string>(chronicleActions);
-    expect(actions).toHaveLength(3);
-    expect(actions.every((action) => availableActions.has(action))).toBe(true);
-    expect(actions.join("\n")).not.toContain("find skills");
-    expect(actions.join("\n")).not.toContain("Команда завершена");
-    expect(actions.join("\n")).not.toContain("free -h");
+    expect(activityLines(status)).toEqual(["Подбираю нужные навыки", "Проверяю ресурсы сервера"]);
   });
 
-  test("provides exactly 50 distinct chronicle actions", () => {
-    expect(chronicleActions).toHaveLength(50);
-    expect(new Set(chronicleActions).size).toBe(50);
+  test("prefers Codex commentary over command classifications", () => {
+    const status = [
+      "command: uname -a",
+      "commentary: Сначала проверю окружение, затем сопоставлю результаты.",
+      "command: git status --short",
+    ].join("\n\n");
+
+    expect(activityLines(status)).toEqual([
+      "Сначала проверю окружение, затем сопоставлю результаты.",
+    ]);
   });
 
-  test("uses the kingdom chronicle title without exposing commentary", () => {
-    const document = workDocument("commentary: Секретный реальный шаг");
+  test("deduplicates command fallback globally without command-specific placeholders", () => {
+    const status = [
+      "command: uname -a",
+      "command: git status --short",
+      "command: whoami",
+      "command: git diff --stat",
+    ].join("\n\n");
 
-    expect(document).toContain(
-      "<details><summary>Летопись The Floodoncelocal Kingdom 🇸🇪</summary>",
-    );
-    expect(document).not.toContain("Секретный реальный шаг");
-  });
-
-  test("adds the exact custom emoji template before the final answer", () => {
-    const document = completedDocuments("status: Готово", "Финальный ответ")[0] ?? "";
-
-    expect(document).toContain(
-      '<tg-emoji emoji-id="5861926791857311729">⚜️</tg-emoji> <tg-emoji emoji-id="5852921692841580896">👑</tg-emoji> The Floodoncelocal Kingdom\n\n',
-    );
-    expect(document).toContain(
-      '<tg-emoji emoji-id="5935947980518460257">📜</tg-emoji> <tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji> Финальный ответ',
-    );
-    expect(document).not.toContain(
-      '<tg-emoji emoji-id="5418008880632321663">🛡️</tg-emoji>\nФинальный ответ',
-    );
+    expect(activityLines(status)).toEqual(["Работаю в терминале"]);
   });
 
   test("describes the result of a stop command", () => {
@@ -58,6 +46,30 @@ describe("activityLines", () => {
     expect(stopResultMessage(2)).toBe("⏹️ Остановлено: 2 задачи.");
     expect(stopResultMessage(5)).toBe("⏹️ Остановлено: 5 задач.");
     expect(stopResultMessage(0)).toBe("Активных задач для остановки нет.");
+  });
+});
+
+describe("completedDocuments", () => {
+  test("keeps work history even when it contains at most one visible item", () => {
+    expect(completedDocuments("status: Готово", "Ответ пользователю")).toEqual([
+      "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю",
+    ]);
+    expect(
+      completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю"),
+    ).toEqual([
+      "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю",
+    ]);
+  });
+
+  test("keeps useful multi-step work history", () => {
+    expect(
+      completedDocuments(
+        "commentary: Проверяю код\n\ncommentary: Запускаю тесты\n\nstatus: Готово",
+        "Ответ пользователю",
+      ),
+    ).toEqual([
+      "<details><summary>Ход работы</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю",
+    ]);
   });
 });
 
@@ -71,4 +83,16 @@ test("explains a busy Codex thread without exposing CLI diagnostics", () => {
   );
   expect(message).not.toContain("thread-store conflict");
   expect(message).not.toContain("active writer");
+});
+
+test("keeps the work history in a failure document", () => {
+  const message = failedDocument(
+    "commentary: Проверяю архив",
+    "TypeError: The socket connection was closed unexpectedly",
+  );
+
+  expect(message).toContain("<summary>Ход работы</summary>");
+  expect(message).toContain("- Проверяю архив");
+  expect(message).toContain("Не получилось завершить задачу.");
+  expect(message).toContain("The socket connection was closed unexpectedly");
 });

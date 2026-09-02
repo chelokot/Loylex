@@ -1,15 +1,60 @@
 import { Database } from "bun:sqlite";
+import { chatIdFromUpdate, GDPR_EXCLUDED_CHAT_ID, isGdprExcludedChat } from "../shared/privacy.ts";
 import type {
   AgentContextMode,
   AgentJob,
-  AgentJobKind,
+  JsonObject,
   JsonValue,
+  TelegramChat,
   TelegramMessage,
+  TelegramMessageReactionCountUpdated,
+  TelegramMessageReactionUpdated,
   TelegramUpdate,
+  TelegramUser,
   WorkerRegistration,
 } from "../shared/types.ts";
+import type { AgentTokenUsage } from "../shared/usage.ts";
 
 export type JobState = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export type UsageTotals = AgentTokenUsage & {
+  jobs: number;
+  meteredJobs: number;
+  unmeteredJobs: number;
+  nonCachedInputTokens: number;
+};
+
+export type UsageUserBreakdown = UsageTotals & {
+  userId: number | null;
+  username: string | null;
+  displayName: string | null;
+};
+
+export type UsageTelegramThreadBreakdown = UsageTotals & {
+  chatId: number;
+  chatType: AgentJob["chatType"] | null;
+  chatTitle: string | null;
+  messageThreadId: number | null;
+};
+
+export type UsageCodexThreadBreakdown = UsageTotals & {
+  threadId: string;
+  chatId: number | null;
+  chatTitle: string | null;
+  users: UsageUserBreakdown[];
+};
+
+export type UsageDayBreakdown = UsageTotals & { day: string };
+
+export type UsageReport = {
+  generatedAt: number;
+  chatId: number | null;
+  summary: UsageTotals;
+  byUser: UsageUserBreakdown[];
+  byTelegramThread: UsageTelegramThreadBreakdown[];
+  byCodexThread: UsageCodexThreadBreakdown[];
+  byDay: UsageDayBreakdown[];
+};
 
 export const jobLeaseDurationMs = 60_000;
 export const workerLeaseDurationMs = 15_000;
@@ -36,9 +81,8 @@ type JobRow = {
   message_thread_id: number | null;
   user_id: number | null;
   prompt: string;
-  kind: AgentJobKind;
-  command: string | null;
   resume_thread_id: string | null;
+  context_mode: AgentContextMode;
   attachments_json: string;
   worker_generation: number;
 };
@@ -94,6 +138,57 @@ type JobOwnershipRow = {
   worker_id: string | null;
 };
 
+type UsageAggregateRow = {
+  jobs: number;
+  metered_jobs: number;
+  input_tokens: number | null;
+  cached_input_tokens: number | null;
+  cache_write_input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_output_tokens: number | null;
+  total_tokens: number | null;
+};
+
+type UsageUserRow = UsageAggregateRow & {
+  user_id: number | null;
+  username: string | null;
+  display_name: string | null;
+};
+
+type UsageTelegramThreadRow = UsageAggregateRow & {
+  chat_id: number;
+  chat_type: AgentJob["chatType"] | null;
+  chat_title: string | null;
+  message_thread_id: number | null;
+};
+
+type UsageCodexThreadRow = UsageAggregateRow & {
+  thread_id: string;
+  chat_id: number | null;
+  chat_title: string | null;
+};
+
+type UsageThreadUserRow = UsageUserRow & { thread_id: string };
+
+type UsageDayRow = UsageAggregateRow & { day: string };
+
+function usageTotals(row: UsageAggregateRow): UsageTotals {
+  const inputTokens = row.input_tokens ?? 0;
+  const cachedInputTokens = row.cached_input_tokens ?? 0;
+  return {
+    jobs: row.jobs,
+    meteredJobs: row.metered_jobs,
+    unmeteredJobs: Math.max(row.jobs - row.metered_jobs, 0),
+    inputTokens,
+    cachedInputTokens,
+    cacheWriteInputTokens: row.cache_write_input_tokens ?? 0,
+    outputTokens: row.output_tokens ?? 0,
+    reasoningOutputTokens: row.reasoning_output_tokens ?? 0,
+    totalTokens: row.total_tokens ?? 0,
+    nonCachedInputTokens: Math.max(inputTokens - cachedInputTokens, 0),
+  };
+}
+
 export type SearchResult = {
   chatId: number;
   messageId: number;
@@ -101,6 +196,56 @@ export type SearchResult = {
   userId: number | null;
   author: string;
   text: string;
+  forwardOrigin?: JsonObject;
+};
+
+export type ArchivedMedia = {
+  chatId: number;
+  messageId: number;
+  date: number;
+  source: "bot_api" | "telegram_export";
+  media: JsonValue[];
+};
+
+export type ArchivedMessage = {
+  chatId: number;
+  messageId: number;
+  date: number;
+  userId: number | null;
+  author: string;
+  text: string;
+  replyToMessageId: number | null;
+  mediaGroupId: string | null;
+  source: "bot_api" | "telegram_export";
+  media: JsonValue[];
+  raw: JsonObject;
+  forwardOrigin?: JsonObject;
+};
+
+type SearchRow = {
+  chat_id: number;
+  message_id: number;
+  date: number;
+  from_user_id: number | null;
+  from_display_name: string | null;
+  from_username: string | null;
+  text: string | null;
+  raw_json: string;
+};
+
+type ArchivedMessageRow = {
+  chat_id: number;
+  message_id: number;
+  date: number;
+  from_user_id: number | null;
+  from_display_name: string | null;
+  from_username: string | null;
+  text: string | null;
+  reply_to_message_id: number | null;
+  media_group_id: string | null;
+  media_json: string;
+  raw_json: string;
+  source: string;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -127,6 +272,12 @@ function parseObject(value: string): UnknownRecord {
   }
 }
 
+function forwardOrigin(rawJson: string): JsonObject | null {
+  const raw = parseObject(rawJson);
+  const origin = object(raw.forward_origin);
+  return origin as JsonObject | null;
+}
+
 function nestedAuthor(message: UnknownRecord): string {
   const sender = object(message.from) ?? object(message.sender_chat);
   if (!sender) {
@@ -139,16 +290,56 @@ function nestedAuthor(message: UnknownRecord): string {
   return username ? `${name || username} (@${username})` : name || "unknown";
 }
 
+function searchResult(row: SearchRow): SearchResult {
+  const result: SearchResult = {
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    date: row.date,
+    userId: row.from_user_id,
+    author: row.from_username
+      ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
+      : (row.from_display_name ?? "unknown"),
+    text: row.text ?? "",
+  };
+  const origin = forwardOrigin(row.raw_json);
+  return origin === null ? result : { ...result, forwardOrigin: origin };
+}
+
+function archivedMessage(row: ArchivedMessageRow): ArchivedMessage {
+  const raw = parseObject(row.raw_json) as unknown as JsonObject;
+  const origin = forwardOrigin(row.raw_json);
+  return {
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    date: row.date,
+    userId: row.from_user_id,
+    author: row.from_username
+      ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
+      : (row.from_display_name ?? "unknown"),
+    text: row.text ?? "",
+    replyToMessageId: row.reply_to_message_id,
+    mediaGroupId: row.media_group_id,
+    source: row.source as ArchivedMessage["source"],
+    media: JSON.parse(row.media_json) as JsonValue[],
+    raw,
+    ...(origin === null ? {} : { forwardOrigin: origin }),
+  };
+}
+
 function messageReference(message: UnknownRecord, label: string): string | null {
   const messageId = numberField(message.message_id);
   if (messageId === null) {
     return null;
   }
   const text = stringField(message.text) ?? stringField(message.caption) ?? "";
-  const mediaKinds = ["photo", "document", "audio", "video", "voice", "animation"].filter(
-    (key) => message[key] !== undefined,
-  );
-  const mediaText = mediaKinds.length > 0 ? ` attachments=${mediaKinds.join(",")}` : "";
+  const attachments: JsonValue[] = [];
+  for (const key of ["photo", "document", "audio", "video", "voice", "animation"]) {
+    const value = message[key];
+    if (value) {
+      attachments.push({ kind: key, value: value as JsonValue });
+    }
+  }
+  const mediaText = attachments.length > 0 ? ` attachments=${JSON.stringify(attachments)}` : "";
   return `${label} #${messageId} ${nestedAuthor(message)}: ${text}${mediaText}`;
 }
 
@@ -165,21 +356,22 @@ function rawRelations(rawJson: string): string {
   if (externalId !== null) {
     relations.push(`external_reply=#${externalId}`);
   }
-  const forward = object(raw.forward_origin);
+  const forward = forwardOrigin(rawJson);
   if (forward) {
     const origin =
-      object(forward.sender_user) ??
-      object(forward.sender_chat) ??
-      object(forward.sender_name) ??
-      forward;
+      object(forward.sender_user) ?? object(forward.sender_chat) ?? object(forward.chat) ?? forward;
     const originName =
       stringField(origin.username) ??
       ([stringField(origin.first_name), stringField(origin.last_name)]
         .filter((part): part is string => part !== null)
         .join(" ") ||
+        stringField(origin.title) ||
+        stringField(forward.sender_user_name) ||
         stringField(origin.type) ||
         "unknown");
-    relations.push(`forwarded_from=${JSON.stringify(originName)}`);
+    relations.push(
+      `forwarded_from=${JSON.stringify(originName)} forward_origin=${JSON.stringify(forward)}`,
+    );
   }
   return relations.join(" ");
 }
@@ -188,11 +380,27 @@ function eventType(update: TelegramUpdate): string {
   return Object.keys(update).find((key) => key !== "update_id") ?? "unknown";
 }
 
-function displayName(message: TelegramMessage): string | null {
-  if (message.from) {
-    return [message.from.first_name, message.from.last_name].filter(Boolean).join(" ");
-  }
-  return message.sender_chat?.title ?? null;
+const updateChatIdExpression = `COALESCE(
+  json_extract(raw_json, '$.message.chat.id'),
+  json_extract(raw_json, '$.edited_message.chat.id'),
+  json_extract(raw_json, '$.channel_post.chat.id'),
+  json_extract(raw_json, '$.edited_channel_post.chat.id'),
+  json_extract(raw_json, '$.message_reaction.chat.id'),
+  json_extract(raw_json, '$.message_reaction_count.chat.id'),
+  json_extract(raw_json, '$.callback_query.message.chat.id'),
+  json_extract(raw_json, '$.business_message.chat.id'),
+  json_extract(raw_json, '$.edited_business_message.chat.id'),
+  json_extract(raw_json, '$.deleted_business_messages.chat.id'),
+  json_extract(raw_json, '$.my_chat_member.chat.id'),
+  json_extract(raw_json, '$.chat_member.chat.id'),
+  json_extract(raw_json, '$.chat_join_request.chat.id'),
+  json_extract(raw_json, '$.chat_boost.chat.id'),
+  json_extract(raw_json, '$.removed_chat_boost.chat.id'),
+  json_extract(raw_json, '$.stopped_message_generation.chat.id')
+)`;
+
+function displayNameForUser(user: TelegramUser): string {
+  return [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "unknown";
 }
 
 function media(message: TelegramMessage): JsonValue[] {
@@ -204,6 +412,10 @@ function media(message: TelegramMessage): JsonValue[] {
     }
   }
   return values;
+}
+
+function jobMedia(message: TelegramMessage): JsonValue[] {
+  return [...media(message), ...(message.reply_to_message ? media(message.reply_to_message) : [])];
 }
 
 export class LoylexDatabase {
@@ -223,7 +435,14 @@ export class LoylexDatabase {
 
   nextUpdateOffset(): number {
     const row = this.connection
-      .query<{ update_id: number | null }, []>("SELECT max(update_id) AS update_id FROM updates")
+      .query<{ update_id: number | null }, []>(`
+        SELECT max(update_id) AS update_id
+        FROM (
+          SELECT max(update_id) AS update_id FROM updates
+          UNION ALL
+          SELECT update_id FROM update_cursor WHERE id = 1
+        )
+      `)
       .get();
     return (row?.update_id ?? -1) + 1;
   }
@@ -237,51 +456,10 @@ export class LoylexDatabase {
         raw_json TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS messages (
-        chat_id INTEGER NOT NULL,
-        message_id INTEGER NOT NULL,
-        message_thread_id INTEGER,
-        chat_type TEXT NOT NULL,
-        chat_title TEXT,
-        date INTEGER NOT NULL,
-        edit_date INTEGER,
-        from_user_id INTEGER,
-        from_username TEXT,
-        from_display_name TEXT,
-        text TEXT,
-        reply_to_message_id INTEGER,
-        media_group_id TEXT,
-        media_json TEXT NOT NULL,
-        raw_json TEXT NOT NULL,
-        source TEXT NOT NULL DEFAULT 'bot_api',
-        PRIMARY KEY (chat_id, message_id)
+      CREATE TABLE IF NOT EXISTS update_cursor (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        update_id INTEGER NOT NULL
       );
-
-      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-        text,
-        from_display_name,
-        from_username,
-        content='messages',
-        content_rowid='rowid',
-        tokenize='unicode61'
-      );
-
-      CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
-        VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-        INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
-        VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-        INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
-        VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
-        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
-        VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
-      END;
 
       CREATE TABLE IF NOT EXISTS jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -292,9 +470,8 @@ export class LoylexDatabase {
         message_thread_id INTEGER,
         user_id INTEGER,
         prompt TEXT NOT NULL,
-        kind TEXT NOT NULL DEFAULT 'codex',
-        command TEXT,
         resume_thread_id TEXT,
+        context_mode TEXT NOT NULL DEFAULT 'full',
         attachments_json TEXT NOT NULL,
         state TEXT NOT NULL DEFAULT 'pending',
         claimed_at INTEGER,
@@ -306,6 +483,12 @@ export class LoylexDatabase {
         thinking_message_id INTEGER,
         status_log TEXT NOT NULL DEFAULT '',
         error TEXT,
+        input_tokens INTEGER,
+        cached_input_tokens INTEGER,
+        cache_write_input_tokens INTEGER,
+        output_tokens INTEGER,
+        reasoning_output_tokens INTEGER,
+        total_tokens INTEGER,
         created_at INTEGER NOT NULL
       );
 
@@ -319,12 +502,14 @@ export class LoylexDatabase {
         FOREIGN KEY (job_id) REFERENCES jobs(id)
       );
 
-      CREATE INDEX IF NOT EXISTS messages_chat_date_idx ON messages(chat_id, date DESC);
       CREATE INDEX IF NOT EXISTS jobs_state_created_idx ON jobs(state, created_at);
       CREATE INDEX IF NOT EXISTS jobs_resume_thread_idx
         ON jobs(state, resume_thread_id, created_at, id);
       CREATE INDEX IF NOT EXISTS jobs_codex_thread_idx
         ON jobs(chat_id, codex_thread_id, created_at DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS jobs_usage_user_idx ON jobs(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS jobs_usage_forum_idx
+        ON jobs(chat_id, message_thread_id, created_at);
       CREATE INDEX IF NOT EXISTS outbound_thread_idx ON outbound_messages(codex_thread_id);
 
       CREATE TABLE IF NOT EXISTS workers (
@@ -346,8 +531,13 @@ export class LoylexDatabase {
     this.ensureJobColumn("worker_id", "TEXT");
     this.ensureJobColumn("lease_expires_at", "INTEGER");
     this.ensureJobColumn("worker_generation", "INTEGER NOT NULL DEFAULT 1");
-    this.ensureJobColumn("kind", "TEXT NOT NULL DEFAULT 'codex'");
-    this.ensureJobColumn("command", "TEXT");
+    this.ensureJobColumn("context_mode", "TEXT NOT NULL DEFAULT 'full'");
+    this.ensureJobColumn("input_tokens", "INTEGER");
+    this.ensureJobColumn("cached_input_tokens", "INTEGER");
+    this.ensureJobColumn("cache_write_input_tokens", "INTEGER");
+    this.ensureJobColumn("output_tokens", "INTEGER");
+    this.ensureJobColumn("reasoning_output_tokens", "INTEGER");
+    this.ensureJobColumn("total_tokens", "INTEGER");
     this.connection.exec(
       "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id)",
     );
@@ -356,10 +546,21 @@ export class LoylexDatabase {
         "INSERT OR IGNORE INTO worker_runtime (id, active_worker_id, active_generation, updated_at) VALUES (1, NULL, 1, ?)",
       )
       .run(Date.now());
+    this.migrateNormalizedSchema();
   }
 
   private ensureJobColumn(
-    name: "worker_id" | "lease_expires_at" | "worker_generation" | "kind" | "command",
+    name:
+      | "worker_id"
+      | "lease_expires_at"
+      | "worker_generation"
+      | "context_mode"
+      | "input_tokens"
+      | "cached_input_tokens"
+      | "cache_write_input_tokens"
+      | "output_tokens"
+      | "reasoning_output_tokens"
+      | "total_tokens",
     definition: string,
   ): void {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -368,37 +569,431 @@ export class LoylexDatabase {
     }
   }
 
-  archiveUpdate(update: TelegramUpdate): TelegramMessage | null {
-    this.connection
-      .query("INSERT OR IGNORE INTO updates VALUES (?, ?, ?, ?)")
-      .run(update.update_id, eventType(update), Date.now(), JSON.stringify(update));
+  private tableExists(name: string): boolean {
+    return Boolean(
+      this.connection
+        .query<{ value: number }, [string]>(
+          "SELECT 1 AS value FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .get(name),
+    );
+  }
 
+  private messageColumns(): Set<string> {
+    return new Set(
+      this.connection
+        .query<{ name: string }, []>("PRAGMA table_info(messages)")
+        .all()
+        .map((column) => column.name),
+    );
+  }
+
+  private messagesHaveIdentityForeignKeys(): boolean {
+    const foreignKeys = this.connection
+      .query<{ table: string; from: string; to: string }, []>("PRAGMA foreign_key_list(messages)")
+      .all();
+    return (
+      foreignKeys.some(
+        (foreignKey) =>
+          foreignKey.table === "chats" &&
+          foreignKey.from === "chat_id" &&
+          foreignKey.to === "chat_id",
+      ) &&
+      foreignKeys.some(
+        (foreignKey) =>
+          foreignKey.table === "users" &&
+          foreignKey.from === "from_user_id" &&
+          foreignKey.to === "user_id",
+      )
+    );
+  }
+
+  private searchIndexIsCurrent(): boolean {
+    const sql = this.connection
+      .query<{ sql: string | null }, [string]>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("messages_fts")?.sql;
+    if (!sql) {
+      return false;
+    }
+    const normalized = sql.toLowerCase().replaceAll(" ", "");
+    return normalized.includes("content=''") && normalized.includes("contentless_delete=1");
+  }
+
+  private createMessagesTable(name: "messages" | "messages_new"): void {
+    this.connection.exec(`
+      CREATE TABLE ${name} (
+        chat_id INTEGER NOT NULL,
+        message_id INTEGER NOT NULL,
+        message_thread_id INTEGER,
+        date INTEGER NOT NULL,
+        edit_date INTEGER,
+        from_user_id INTEGER,
+        text TEXT,
+        reply_to_message_id INTEGER,
+        media_group_id TEXT,
+        media_json TEXT NOT NULL,
+        raw_json TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'bot_api',
+        PRIMARY KEY (chat_id, message_id),
+        FOREIGN KEY (chat_id) REFERENCES chats(chat_id),
+        FOREIGN KEY (from_user_id) REFERENCES users(user_id)
+      );
+    `);
+  }
+
+  private populateIdentityTablesFromLegacyMessages(): void {
+    this.connection.exec(`
+      WITH latest_chats AS (
+        SELECT chat_id, chat_type, chat_title,
+               ROW_NUMBER() OVER (
+                 PARTITION BY chat_id ORDER BY date DESC, message_id DESC
+               ) AS row_number
+        FROM messages
+      )
+      INSERT INTO chats (chat_id, chat_type, chat_title)
+      SELECT chat_id, chat_type, chat_title
+      FROM latest_chats
+      WHERE row_number = 1
+      ON CONFLICT(chat_id) DO UPDATE SET
+        chat_type = excluded.chat_type,
+        chat_title = COALESCE(excluded.chat_title, chats.chat_title);
+
+      WITH latest_users AS (
+        SELECT from_user_id, from_username, from_display_name,
+               ROW_NUMBER() OVER (
+                 PARTITION BY from_user_id ORDER BY date DESC, message_id DESC
+               ) AS row_number
+        FROM messages
+        WHERE from_user_id IS NOT NULL
+      )
+      INSERT INTO users (user_id, username, display_name)
+      SELECT from_user_id, from_username, from_display_name
+      FROM latest_users
+      WHERE row_number = 1
+      ON CONFLICT(user_id) DO UPDATE SET
+        username = COALESCE(excluded.username, users.username),
+        display_name = COALESCE(excluded.display_name, users.display_name);
+    `);
+  }
+
+  private dropSearchObjects(): void {
+    this.connection.exec(`
+      DROP TRIGGER IF EXISTS messages_ai;
+      DROP TRIGGER IF EXISTS messages_ad;
+      DROP TRIGGER IF EXISTS messages_au;
+      DROP TRIGGER IF EXISTS users_au;
+      DROP TABLE IF EXISTS messages_fts;
+    `);
+  }
+
+  private rebuildMessages(): void {
+    this.dropSearchObjects();
+    this.connection.exec("DROP TABLE IF EXISTS messages_new");
+    this.createMessagesTable("messages_new");
+    this.connection.exec(`
+      INSERT INTO messages_new (
+        rowid, chat_id, message_id, message_thread_id, date, edit_date, from_user_id, text,
+        reply_to_message_id, media_group_id, media_json, raw_json, source
+      )
+      SELECT rowid, chat_id, message_id, message_thread_id, date, edit_date, from_user_id, text,
+             reply_to_message_id, media_group_id, media_json, raw_json, source
+      FROM messages;
+
+      DROP TABLE messages;
+      ALTER TABLE messages_new RENAME TO messages;
+    `);
+  }
+
+  private createSearchIndex(rebuild: boolean): void {
+    this.connection.exec(`
+      DROP TRIGGER IF EXISTS messages_ai;
+      DROP TRIGGER IF EXISTS messages_ad;
+      DROP TRIGGER IF EXISTS messages_au;
+      DROP TRIGGER IF EXISTS users_au;
+    `);
+    if (rebuild) {
+      this.connection.exec("DROP TABLE IF EXISTS messages_fts");
+    }
+    this.connection.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text,
+        from_display_name,
+        from_username,
+        content='',
+        contentless_delete=1,
+        tokenize='unicode61'
+      );
+
+      CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT new.rowid, new.text, users.display_name, users.username
+        FROM (SELECT 1) AS one
+        LEFT JOIN users ON users.user_id = new.from_user_id;
+      END;
+
+      CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+        DELETE FROM messages_fts WHERE rowid = old.rowid;
+      END;
+
+      CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+        DELETE FROM messages_fts WHERE rowid = old.rowid;
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT new.rowid, new.text, users.display_name, users.username
+        FROM (SELECT 1) AS one
+        LEFT JOIN users ON users.user_id = new.from_user_id;
+      END;
+
+      CREATE TRIGGER users_au AFTER UPDATE OF username, display_name ON users
+      WHEN old.username IS NOT new.username OR old.display_name IS NOT new.display_name
+      BEGIN
+        DELETE FROM messages_fts
+        WHERE rowid IN (
+          SELECT rowid FROM messages WHERE from_user_id = old.user_id
+        );
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT messages.rowid, messages.text, new.display_name, new.username
+        FROM messages
+        WHERE messages.from_user_id = new.user_id;
+      END;
+    `);
+    if (rebuild) {
+      this.connection.exec(`
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT messages.rowid, messages.text, users.display_name, users.username
+        FROM messages
+        LEFT JOIN users ON users.user_id = messages.from_user_id;
+      `);
+    }
+  }
+
+  private migrateMessages(): void {
+    let rebuildMessages = false;
+    if (!this.tableExists("messages")) {
+      this.createMessagesTable("messages");
+      rebuildMessages = true;
+    } else {
+      const columns = this.messageColumns();
+      const legacyIdentityColumns = [
+        "chat_type",
+        "chat_title",
+        "from_username",
+        "from_display_name",
+      ].some((column) => columns.has(column));
+      rebuildMessages = legacyIdentityColumns || !this.messagesHaveIdentityForeignKeys();
+      if (legacyIdentityColumns) {
+        this.populateIdentityTablesFromLegacyMessages();
+      }
+      if (rebuildMessages) {
+        this.rebuildMessages();
+      }
+    }
+    this.createSearchIndex(rebuildMessages || !this.searchIndexIsCurrent());
+  }
+
+  private migrateNormalizedSchema(): void {
+    const transaction = this.connection.transaction(() => {
+      this.connection.exec(`
+        CREATE TABLE IF NOT EXISTS chats (
+          chat_id INTEGER PRIMARY KEY,
+          chat_type TEXT NOT NULL,
+          chat_title TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS users (
+          user_id INTEGER PRIMARY KEY,
+          username TEXT,
+          display_name TEXT
+        );
+      `);
+      this.migrateMessages();
+      this.connection.exec(`
+        CREATE INDEX IF NOT EXISTS messages_chat_date_idx ON messages(chat_id, date DESC);
+
+        CREATE TABLE IF NOT EXISTS reactions (
+          update_id INTEGER PRIMARY KEY,
+          chat_id INTEGER NOT NULL,
+          message_id INTEGER NOT NULL,
+          date INTEGER NOT NULL,
+          event_type TEXT NOT NULL CHECK (event_type IN ('message_reaction', 'message_reaction_count')),
+          user_id INTEGER,
+          actor_chat_id INTEGER,
+          old_reaction_json TEXT NOT NULL DEFAULT '[]',
+          new_reaction_json TEXT NOT NULL DEFAULT '[]',
+          counts_json TEXT NOT NULL DEFAULT '[]',
+          FOREIGN KEY (update_id) REFERENCES updates(update_id) ON DELETE CASCADE,
+          FOREIGN KEY (chat_id, message_id) REFERENCES messages(chat_id, message_id) ON DELETE CASCADE,
+          FOREIGN KEY (actor_chat_id) REFERENCES chats(chat_id),
+          FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
+        CREATE INDEX IF NOT EXISTS reactions_message_date_idx
+          ON reactions(chat_id, message_id, date DESC);
+        CREATE INDEX IF NOT EXISTS reactions_user_date_idx ON reactions(user_id, date DESC);
+      `);
+      this.backfillReactions();
+    });
+    transaction.immediate();
+  }
+
+  private upsertChat(chat: TelegramChat): void {
+    this.connection
+      .query(`
+        INSERT INTO chats (chat_id, chat_type, chat_title)
+        VALUES (?, ?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET
+          chat_type = excluded.chat_type,
+          chat_title = COALESCE(excluded.chat_title, chats.chat_title)
+      `)
+      .run(chat.id, chat.type, chat.title ?? null);
+  }
+
+  private upsertUser(user: TelegramUser): void {
+    this.connection
+      .query(`
+        INSERT INTO users (user_id, username, display_name)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          username = COALESCE(excluded.username, users.username),
+          display_name = COALESCE(excluded.display_name, users.display_name)
+        WHERE users.username IS NOT COALESCE(excluded.username, users.username)
+           OR users.display_name IS NOT COALESCE(excluded.display_name, users.display_name)
+      `)
+      .run(user.id, user.username ?? null, displayNameForUser(user));
+  }
+
+  private messageExists(chatId: number, messageId: number): boolean {
+    return Boolean(
+      this.connection
+        .query<{ value: number }, [number, number]>(
+          "SELECT 1 AS value FROM messages WHERE chat_id = ? AND message_id = ? LIMIT 1",
+        )
+        .get(chatId, messageId),
+    );
+  }
+
+  private archiveReaction(
+    updateId: number,
+    eventType: "message_reaction" | "message_reaction_count",
+    reaction: TelegramMessageReactionUpdated | TelegramMessageReactionCountUpdated,
+  ): void {
+    if (isGdprExcludedChat(reaction.chat.id)) {
+      return;
+    }
+    if (!this.messageExists(reaction.chat.id, reaction.message_id)) {
+      return;
+    }
+
+    this.upsertChat(reaction.chat);
+    const isUserReaction = eventType === "message_reaction";
+    const userReaction = isUserReaction ? (reaction as TelegramMessageReactionUpdated) : null;
+    const countReaction = isUserReaction ? null : (reaction as TelegramMessageReactionCountUpdated);
+    if (userReaction?.user) {
+      this.upsertUser(userReaction.user);
+    }
+    if (userReaction?.actor_chat) {
+      this.upsertChat(userReaction.actor_chat);
+    }
+    this.connection
+      .query(`
+        INSERT OR IGNORE INTO reactions (
+          update_id, chat_id, message_id, date, event_type, user_id, actor_chat_id,
+          old_reaction_json, new_reaction_json, counts_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        updateId,
+        reaction.chat.id,
+        reaction.message_id,
+        reaction.date,
+        eventType,
+        userReaction?.user?.id ?? null,
+        userReaction?.actor_chat?.id ?? null,
+        JSON.stringify(userReaction?.old_reaction ?? []),
+        JSON.stringify(userReaction?.new_reaction ?? []),
+        JSON.stringify(countReaction?.reactions ?? []),
+      );
+  }
+
+  private backfillReactions(): void {
+    const rows = this.connection
+      .query<{ update_id: number; raw_json: string }, []>(`
+        SELECT update_id, raw_json
+        FROM updates
+        WHERE event_type IN ('message_reaction', 'message_reaction_count')
+      `)
+      .all();
+    for (const row of rows) {
+      const update = parseObject(row.raw_json) as unknown as TelegramUpdate;
+      if (update.message_reaction) {
+        this.archiveReaction(row.update_id, "message_reaction", update.message_reaction);
+      }
+      if (update.message_reaction_count) {
+        this.archiveReaction(
+          row.update_id,
+          "message_reaction_count",
+          update.message_reaction_count,
+        );
+      }
+    }
+  }
+
+  archiveUpdate(update: TelegramUpdate): TelegramMessage | null {
     const message =
       update.message ?? update.edited_message ?? update.channel_post ?? update.edited_channel_post;
-    if (message) {
-      this.archiveMessage(message, "bot_api");
-    }
-    return message ?? null;
+    const excluded = isGdprExcludedChat(chatIdFromUpdate(update));
+    const transaction = this.connection.transaction(() => {
+      this.connection
+        .query(`
+          INSERT INTO update_cursor (id, update_id) VALUES (1, ?)
+          ON CONFLICT(id) DO UPDATE SET update_id = max(update_cursor.update_id, excluded.update_id)
+        `)
+        .run(update.update_id);
+
+      if (!excluded) {
+        this.connection
+          .query("INSERT OR IGNORE INTO updates VALUES (?, ?, ?, ?)")
+          .run(update.update_id, eventType(update), Date.now(), JSON.stringify(update));
+
+        if (message) {
+          this.archiveMessage(message, "bot_api");
+        }
+        if (update.message_reaction) {
+          this.archiveReaction(update.update_id, "message_reaction", update.message_reaction);
+        }
+        if (update.message_reaction_count) {
+          this.archiveReaction(
+            update.update_id,
+            "message_reaction_count",
+            update.message_reaction_count,
+          );
+        }
+      }
+      return message ?? null;
+    });
+    return transaction.immediate();
   }
 
   archiveMessage(message: TelegramMessage, source: "bot_api" | "telegram_export"): void {
+    if (isGdprExcludedChat(message.chat.id)) {
+      return;
+    }
+    this.upsertChat(message.chat);
+    if (message.from) {
+      this.upsertUser(message.from);
+    }
     const text = message.text ?? message.caption ?? null;
     this.connection
       .query(`
         INSERT INTO messages (
-          chat_id, message_id, message_thread_id, chat_type, chat_title, date, edit_date,
-          from_user_id, from_username, from_display_name, text, reply_to_message_id,
-          media_group_id, media_json, raw_json, source
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          chat_id, message_id, message_thread_id, date, edit_date, from_user_id, text,
+          reply_to_message_id, media_group_id, media_json, raw_json, source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(chat_id, message_id) DO UPDATE SET
           message_thread_id=excluded.message_thread_id,
-          chat_type=excluded.chat_type,
-          chat_title=excluded.chat_title,
           date=excluded.date,
           edit_date=excluded.edit_date,
-          from_user_id=excluded.from_user_id,
-          from_username=excluded.from_username,
-          from_display_name=excluded.from_display_name,
+          from_user_id=COALESCE(excluded.from_user_id, messages.from_user_id),
           text=excluded.text,
           reply_to_message_id=excluded.reply_to_message_id,
           media_group_id=excluded.media_group_id,
@@ -410,13 +1005,9 @@ export class LoylexDatabase {
         message.chat.id,
         message.message_id,
         message.message_thread_id ?? null,
-        message.chat.type,
-        message.chat.title ?? null,
         message.date,
         message.edit_date ?? null,
         message.from?.id ?? null,
-        message.from?.username ?? null,
-        displayName(message),
         text,
         message.reply_to_message?.message_id ?? null,
         message.media_group_id ?? null,
@@ -426,16 +1017,159 @@ export class LoylexDatabase {
       );
   }
 
-  resumeThread(chatId: number, repliedMessageId: number | undefined): string | null {
-    if (repliedMessageId === undefined) {
+  archiveExportMessages(messages: TelegramMessage[]): number {
+    const allowedMessages = messages.filter((message) => !isGdprExcludedChat(message.chat.id));
+    const transaction = this.connection.transaction(() => {
+      for (const message of allowedMessages) {
+        this.archiveMessage(message, "telegram_export");
+      }
+      return allowedMessages.length;
+    });
+    return transaction.immediate();
+  }
+
+  archivedMedia(chatId: number, limit: number): ArchivedMedia[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
+    const rows = this.connection
+      .query<
+        { chat_id: number; message_id: number; date: number; media_json: string; source: string },
+        [number, number]
+      >(
+        `
+          SELECT chat_id, message_id, date, media_json, source
+          FROM messages
+          WHERE chat_id = ? AND media_json != '[]'
+          ORDER BY date ASC, message_id ASC
+          LIMIT ?
+        `,
+      )
+      .all(chatId, limit);
+    return rows.map((row) => ({
+      chatId: row.chat_id,
+      messageId: row.message_id,
+      date: row.date,
+      source: row.source as ArchivedMedia["source"],
+      media: JSON.parse(row.media_json) as JsonValue[],
+    }));
+  }
+
+  archivedMessage(chatId: number, messageId: number): ArchivedMessage | null {
+    if (isGdprExcludedChat(chatId)) {
       return null;
     }
     const row = this.connection
-      .query<{ codex_thread_id: string | null }, [number, number]>(
-        "SELECT codex_thread_id FROM outbound_messages WHERE chat_id = ? AND message_id = ?",
+      .query<ArchivedMessageRow, [number, number]>(`
+        SELECT messages.chat_id, messages.message_id, messages.date, messages.from_user_id,
+               users.display_name AS from_display_name, users.username AS from_username,
+               messages.text, messages.reply_to_message_id, messages.media_group_id,
+               messages.media_json, messages.raw_json, messages.source
+        FROM messages
+        LEFT JOIN users ON users.user_id = messages.from_user_id
+        WHERE messages.chat_id = ? AND messages.message_id = ?
+      `)
+      .get(chatId, messageId);
+    return row ? archivedMessage(row) : null;
+  }
+
+  archivedMessages(
+    chatId: number,
+    afterMessageId: number | null,
+    beforeMessageId: number | null,
+    limit: number,
+  ): ArchivedMessage[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
+    const rows = this.connection
+      .query<
+        ArchivedMessageRow,
+        [number, number | null, number | null, number | null, number | null, number]
+      >(`
+        SELECT messages.chat_id, messages.message_id, messages.date, messages.from_user_id,
+               users.display_name AS from_display_name, users.username AS from_username,
+               messages.text, messages.reply_to_message_id, messages.media_group_id,
+               messages.media_json, messages.raw_json, messages.source
+        FROM messages
+        LEFT JOIN users ON users.user_id = messages.from_user_id
+        WHERE messages.chat_id = ?
+          AND (? IS NULL OR messages.message_id > ?)
+          AND (? IS NULL OR messages.message_id < ?)
+        ORDER BY messages.message_id ASC
+        LIMIT ?
+      `)
+      .all(chatId, afterMessageId, afterMessageId, beforeMessageId, beforeMessageId, limit);
+    return rows.map(archivedMessage);
+  }
+
+  resumeThread(chatId: number, repliedMessageId: number | undefined): string | null {
+    if (repliedMessageId === undefined || isGdprExcludedChat(chatId)) {
+      return null;
+    }
+    const outbound = this.connection
+      .query<{ thread_id: string | null }, [number, number]>(
+        `
+          SELECT COALESCE(o.codex_thread_id, j.codex_thread_id, j.resume_thread_id) AS thread_id
+          FROM outbound_messages AS o
+          LEFT JOIN jobs AS j ON j.id = o.job_id
+          WHERE o.chat_id = ? AND o.message_id = ?
+        `,
       )
       .get(chatId, repliedMessageId);
-    return row?.codex_thread_id ?? null;
+    if (outbound?.thread_id) {
+      return outbound.thread_id;
+    }
+    return (
+      this.connection
+        .query<{ thread_id: string | null }, [number, number]>(`
+          SELECT COALESCE(codex_thread_id, resume_thread_id) AS thread_id
+          FROM jobs
+          WHERE chat_id = ? AND message_id = ?
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        `)
+        .get(chatId, repliedMessageId)?.thread_id ?? null
+    );
+  }
+
+  latestThread(chatId: number): string | null {
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
+    return (
+      this.connection
+        .query<{ thread_id: string | null }, [number]>(`
+          SELECT COALESCE(codex_thread_id, resume_thread_id) AS thread_id
+          FROM jobs
+          WHERE chat_id = ?
+            AND COALESCE(codex_thread_id, resume_thread_id) IS NOT NULL
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        `)
+        .get(chatId)?.thread_id ?? null
+    );
+  }
+
+  latestContinuableThread(chatId: number): string | null {
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
+    const threadId = this.latestThread(chatId);
+    if (threadId === null) {
+      return null;
+    }
+    const activeJob = this.connection
+      .query<{ value: number }, [number, string, string]>(`
+        SELECT 1 AS value
+        FROM jobs
+        WHERE chat_id = ?
+          AND state IN ('pending', 'running')
+          AND (resume_thread_id = ? OR codex_thread_id = ?)
+        LIMIT 1
+      `)
+      .get(chatId, threadId, threadId);
+    return activeJob ? null : threadId;
   }
 
   enqueue(
@@ -443,16 +1177,15 @@ export class LoylexDatabase {
     message: TelegramMessage,
     prompt: string,
     resumeThreadId: string | null,
-    kind: AgentJobKind = "codex",
-    command: string | null = null,
+    contextMode: AgentContextMode = resumeThreadId === null ? "full" : "delta",
   ): void {
     const generation = this.activeWorkerGeneration();
     this.connection
       .query(`
         INSERT OR IGNORE INTO jobs (
           update_id, chat_id, chat_type, message_id, message_thread_id, user_id, prompt,
-          kind, command, resume_thread_id, attachments_json, worker_generation, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          resume_thread_id, context_mode, attachments_json, worker_generation, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         updateId,
@@ -462,17 +1195,12 @@ export class LoylexDatabase {
         message.message_thread_id ?? null,
         message.from?.id ?? null,
         prompt,
-        kind,
-        command,
         resumeThreadId,
-        JSON.stringify(media(message)),
+        contextMode,
+        JSON.stringify(jobMedia(message)),
         generation,
         Date.now(),
       );
-  }
-
-  enqueueOperatorCommand(updateId: number, message: TelegramMessage, command: string): void {
-    this.enqueue(updateId, message, `/exec ${command}`, null, "operator_exec", command);
   }
 
   private activeWorkerGeneration(): number {
@@ -760,6 +1488,7 @@ export class LoylexDatabase {
       row.message_id,
       contextMessages,
       row.resume_thread_id,
+      row.context_mode,
     );
     return {
       id: row.id,
@@ -770,14 +1499,13 @@ export class LoylexDatabase {
       messageThreadId: row.message_thread_id,
       userId: row.user_id,
       prompt: row.prompt,
-      kind: row.kind,
-      command: row.command,
       resumeThreadId: row.resume_thread_id,
       context: context.text,
       contextMode: context.mode,
-      replyContext: row.resume_thread_id
-        ? null
-        : this.replyContext(row.chat_id, row.message_id, context.text),
+      replyContext:
+        context.mode === "none" || row.resume_thread_id !== null
+          ? null
+          : this.replyContext(row.chat_id, row.message_id, context.text),
       attachments: JSON.parse(row.attachments_json) as JsonValue[],
     };
   }
@@ -810,7 +1538,14 @@ export class LoylexDatabase {
         ORDER BY id
       `)
       .all(now);
+    let recovered = 0;
     for (const job of jobs) {
+      // A job lease can expire while its worker is still alive (for example when a
+      // long-running tool call delays the per-job heartbeat). Do not hand that job to a
+      // second Codex process: the original process may still hold the thread writer lock.
+      if (job.worker_id !== null && this.hasLiveWorkerLease(job.worker_id, now)) {
+        continue;
+      }
       const generation = this.generationForRecovery(job.worker_id, job.worker_generation, now);
       this.connection
         .query(`
@@ -824,8 +1559,18 @@ export class LoylexDatabase {
           WHERE id = ? AND state = 'running'
         `)
         .run(generation, job.id);
+      recovered += 1;
     }
-    return jobs.length;
+    return recovered;
+  }
+
+  private hasLiveWorkerLease(workerId: string, now: number): boolean {
+    const owner = this.worker(workerId);
+    return (
+      owner !== null &&
+      owner.state !== "stopped" &&
+      owner.last_seen_at >= now - workerLeaseDurationMs
+    );
   }
 
   private generationForRecovery(workerId: string | null, generation: number, now: number): number {
@@ -839,6 +1584,9 @@ export class LoylexDatabase {
   }
 
   listRecentJobs(chatId: number, limit = 5): JobSummary[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
     const rows = this.connection
       .query<JobSummaryRow, [number, number]>(`
         SELECT id, chat_id, chat_type, message_id, prompt, state,
@@ -865,12 +1613,211 @@ export class LoylexDatabase {
     }));
   }
 
+  usageReport(chatId: number | null = null, limit = 100): UsageReport {
+    const safeLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 1_000) : 100;
+    const filter = `j.chat_id != ${GDPR_EXCLUDED_CHAT_ID} AND (? IS NULL OR j.chat_id = ?)`;
+    const summary = this.connection
+      .query<UsageAggregateRow, [number | null, number | null]>(`
+        SELECT count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        WHERE ${filter}
+      `)
+      .get(chatId, chatId);
+
+    const userRows = this.connection
+      .query<UsageUserRow, [number | null, number | null, number]>(`
+        SELECT j.user_id,
+               u.username,
+               u.display_name,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN users AS u ON u.user_id = j.user_id
+        WHERE ${filter}
+        GROUP BY j.user_id, u.username, u.display_name
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 j.user_id
+        LIMIT ?
+      `)
+      .all(chatId, chatId, safeLimit);
+
+    const telegramThreadRows = this.connection
+      .query<UsageTelegramThreadRow, [number | null, number | null, number]>(`
+        SELECT j.chat_id,
+               c.chat_type,
+               c.chat_title,
+               j.message_thread_id,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN chats AS c ON c.chat_id = j.chat_id
+        WHERE ${filter}
+        GROUP BY j.chat_id, c.chat_type, c.chat_title, j.message_thread_id
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 j.chat_id,
+                 j.message_thread_id
+        LIMIT ?
+      `)
+      .all(chatId, chatId, safeLimit);
+
+    const codexThreadRows = this.connection
+      .query<UsageCodexThreadRow, [number | null, number | null, number]>(`
+        SELECT COALESCE(j.codex_thread_id, j.resume_thread_id) AS thread_id,
+               min(j.chat_id) AS chat_id,
+               min(c.chat_title) AS chat_title,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN chats AS c ON c.chat_id = j.chat_id
+        WHERE ${filter} AND COALESCE(j.codex_thread_id, j.resume_thread_id) IS NOT NULL
+        GROUP BY COALESCE(j.codex_thread_id, j.resume_thread_id)
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 thread_id
+        LIMIT ?
+      `)
+      .all(chatId, chatId, safeLimit);
+
+    const threadIds = new Set(codexThreadRows.map((row) => row.thread_id));
+    const threadUserRows = this.connection
+      .query<UsageThreadUserRow, [number | null, number | null]>(`
+        SELECT COALESCE(j.codex_thread_id, j.resume_thread_id) AS thread_id,
+               j.user_id,
+               u.username,
+               u.display_name,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        LEFT JOIN users AS u ON u.user_id = j.user_id
+        WHERE ${filter} AND COALESCE(j.codex_thread_id, j.resume_thread_id) IS NOT NULL
+        GROUP BY COALESCE(j.codex_thread_id, j.resume_thread_id),
+                 j.user_id,
+                 u.username,
+                 u.display_name
+        ORDER BY COALESCE(sum(j.input_tokens), 0) DESC,
+                 COALESCE(sum(j.output_tokens), 0) DESC,
+                 j.user_id
+      `)
+      .all(chatId, chatId)
+      .filter((row) => threadIds.has(row.thread_id));
+
+    const usersByThread = new Map<string, UsageUserBreakdown[]>();
+    for (const row of threadUserRows) {
+      const users = usersByThread.get(row.thread_id) ?? [];
+      users.push({
+        ...usageTotals(row),
+        userId: row.user_id,
+        username: row.username,
+        displayName: row.display_name,
+      });
+      usersByThread.set(row.thread_id, users);
+    }
+
+    const dayRows = this.connection
+      .query<UsageDayRow, [number | null, number | null]>(`
+        SELECT strftime('%Y-%m-%d', j.created_at / 1000, 'unixepoch') AS day,
+               count(*) AS jobs,
+               count(j.input_tokens) AS metered_jobs,
+               sum(j.input_tokens) AS input_tokens,
+               sum(j.cached_input_tokens) AS cached_input_tokens,
+               sum(j.cache_write_input_tokens) AS cache_write_input_tokens,
+               sum(j.output_tokens) AS output_tokens,
+               sum(j.reasoning_output_tokens) AS reasoning_output_tokens,
+               sum(j.total_tokens) AS total_tokens
+        FROM jobs AS j
+        WHERE ${filter}
+        GROUP BY day
+        ORDER BY day ASC
+      `)
+      .all(chatId, chatId);
+
+    return {
+      generatedAt: Date.now(),
+      chatId,
+      summary: usageTotals(
+        summary ?? {
+          jobs: 0,
+          metered_jobs: 0,
+          input_tokens: null,
+          cached_input_tokens: null,
+          cache_write_input_tokens: null,
+          output_tokens: null,
+          reasoning_output_tokens: null,
+          total_tokens: null,
+        },
+      ),
+      byUser: userRows.map((row) => ({
+        ...usageTotals(row),
+        userId: row.user_id,
+        username: row.username,
+        displayName: row.display_name,
+      })),
+      byTelegramThread: telegramThreadRows.map((row) => ({
+        ...usageTotals(row),
+        chatId: row.chat_id,
+        chatType: row.chat_type,
+        chatTitle: row.chat_title,
+        messageThreadId: row.message_thread_id,
+      })),
+      byCodexThread: codexThreadRows.map((row) => ({
+        ...usageTotals(row),
+        threadId: row.thread_id,
+        chatId: row.chat_id,
+        chatTitle: row.chat_title,
+        users: usersByThread.get(row.thread_id) ?? [],
+      })),
+      byDay: dayRows.map((row) => ({ ...usageTotals(row), day: row.day })),
+    };
+  }
+
   private contextForJob(
     chatId: number,
     beforeMessageId: number,
     limit: number,
     resumeThreadId: string | null,
+    contextMode: AgentContextMode,
   ): ContextResult {
+    if (isGdprExcludedChat(chatId)) {
+      return { mode: "none", text: "" };
+    }
+    // A null resume ID also represents a normal first turn, so /newchat needs an explicit
+    // mode to prevent that request from falling through to the recent chat history.
+    if (contextMode === "none") {
+      return { mode: "none", text: "" };
+    }
     if (!resumeThreadId) {
       return { mode: "full", text: this.recentContext(chatId, beforeMessageId, limit) };
     }
@@ -898,6 +1845,9 @@ export class LoylexDatabase {
     threadId: string,
     beforeMessageId: number,
   ): number | null {
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
     return (
       this.connection
         .query<{ message_id: number }, [number, string, string, number]>(`
@@ -914,13 +1864,19 @@ export class LoylexDatabase {
   }
 
   private recentContext(chatId: number, beforeMessageId: number, limit: number): string {
+    if (isGdprExcludedChat(chatId)) {
+      return "";
+    }
     const rows = this.connection
       .query<MessageContextRow, [number, number, number]>(`
-        SELECT date, edit_date, from_user_id, from_display_name, from_username, text, media_json, message_id,
-               message_thread_id, reply_to_message_id, raw_json
+        SELECT messages.date, messages.edit_date, messages.from_user_id,
+               users.display_name AS from_display_name, users.username AS from_username,
+               messages.text, messages.media_json, messages.message_id,
+               messages.message_thread_id, messages.reply_to_message_id, messages.raw_json
         FROM messages
-        WHERE chat_id = ? AND message_id < ?
-        ORDER BY date DESC, message_id DESC
+        LEFT JOIN users ON users.user_id = messages.from_user_id
+        WHERE messages.chat_id = ? AND messages.message_id < ?
+        ORDER BY messages.date DESC, messages.message_id DESC
         LIMIT ?
       `)
       .all(chatId, beforeMessageId, limit)
@@ -935,14 +1891,20 @@ export class LoylexDatabase {
     threadId: string,
     limit: number,
   ): string {
+    if (isGdprExcludedChat(chatId)) {
+      return "";
+    }
     const rows = this.connection
       .query<MessageContextRow, [number, number, number, string, number]>(`
-        SELECT date, edit_date, from_user_id, from_display_name, from_username, text, media_json, message_id,
-               message_thread_id, reply_to_message_id, raw_json
+        SELECT messages.date, messages.edit_date, messages.from_user_id,
+               users.display_name AS from_display_name, users.username AS from_username,
+               messages.text, messages.media_json, messages.message_id,
+               messages.message_thread_id, messages.reply_to_message_id, messages.raw_json
         FROM messages
-        WHERE chat_id = ?
-          AND message_id > ?
-          AND message_id < ?
+        LEFT JOIN users ON users.user_id = messages.from_user_id
+        WHERE messages.chat_id = ?
+          AND messages.message_id > ?
+          AND messages.message_id < ?
           AND NOT EXISTS (
             SELECT 1
             FROM outbound_messages
@@ -950,7 +1912,7 @@ export class LoylexDatabase {
               AND outbound_messages.message_id = messages.message_id
               AND outbound_messages.codex_thread_id = ?
           )
-        ORDER BY date DESC, message_id DESC
+        ORDER BY messages.date DESC, messages.message_id DESC
         LIMIT ?
       `)
       .all(chatId, afterMessageId, beforeMessageId, threadId, limit)
@@ -982,6 +1944,9 @@ export class LoylexDatabase {
   }
 
   private replyContext(chatId: number, messageId: number, context: string): string | null {
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
     const rawJson = this.connection
       .query<{ raw_json: string }, [number, number]>(
         "SELECT raw_json FROM messages WHERE chat_id = ? AND message_id = ?",
@@ -1010,9 +1975,20 @@ export class LoylexDatabase {
   appendStatus(
     jobId: number,
     text: string,
-    threadId: string | null | undefined,
+    threadId: string | undefined,
     workerId?: string,
   ): string | null {
+    const address = this.jobAddress(jobId);
+    if (isGdprExcludedChat(address.chatId)) {
+      const running = this.connection
+        .query<{ value: number }, [number, string | null, string | null]>(`
+          SELECT 1 AS value
+          FROM jobs
+          WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)
+        `)
+        .get(jobId, workerId ?? null, workerId ?? null);
+      return running ? text : null;
+    }
     const result = this.connection
       .query(`
         UPDATE jobs SET
@@ -1028,7 +2004,9 @@ export class LoylexDatabase {
     if (threadId) {
       this.connection
         .query(
-          "UPDATE outbound_messages SET codex_thread_id = ? WHERE job_id = ? AND codex_thread_id IS NULL",
+          `UPDATE outbound_messages
+           SET codex_thread_id = ?
+           WHERE job_id = ? AND codex_thread_id IS NULL AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`,
         )
         .run(threadId, jobId);
     }
@@ -1056,6 +2034,12 @@ export class LoylexDatabase {
   }
 
   thinkingMessage(jobId: number): number | null {
+    const chatId = this.connection
+      .query<{ chat_id: number }, [number]>("SELECT chat_id FROM jobs WHERE id = ?")
+      .get(jobId)?.chat_id;
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
     return (
       this.connection
         .query<{ thinking_message_id: number | null }, [number]>(
@@ -1065,7 +2049,27 @@ export class LoylexDatabase {
     );
   }
 
+  statusLog(jobId: number): string | null {
+    const chatId = this.connection
+      .query<{ chat_id: number }, [number]>("SELECT chat_id FROM jobs WHERE id = ?")
+      .get(jobId)?.chat_id;
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
+    return (
+      this.connection
+        .query<{ status_log: string }, [number]>("SELECT status_log FROM jobs WHERE id = ?")
+        .get(jobId)?.status_log ?? null
+    );
+  }
+
   jobThreadId(jobId: number): string | null {
+    const chatId = this.connection
+      .query<{ chat_id: number }, [number]>("SELECT chat_id FROM jobs WHERE id = ?")
+      .get(jobId)?.chat_id;
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
     return (
       this.connection
         .query<{ thread_id: string | null }, [number]>(
@@ -1076,6 +2080,10 @@ export class LoylexDatabase {
   }
 
   setThinkingMessage(jobId: number, messageId: number): void {
+    const address = this.jobAddress(jobId);
+    if (isGdprExcludedChat(address.chatId)) {
+      return;
+    }
     this.connection
       .query("UPDATE jobs SET thinking_message_id = ? WHERE id = ?")
       .run(messageId, jobId);
@@ -1088,6 +2096,9 @@ export class LoylexDatabase {
     codexThreadId: string | null = null,
   ): void {
     const address = this.jobAddress(jobId);
+    if (isGdprExcludedChat(address.chatId)) {
+      return;
+    }
     this.connection
       .query(`
         INSERT INTO outbound_messages (chat_id, message_id, job_id, codex_thread_id, sent_at)
@@ -1101,6 +2112,9 @@ export class LoylexDatabase {
   }
 
   cancelJobsForMessage(chatId: number, messageId: number): number[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
     const transaction = this.connection.transaction(() => {
       const outbound = this.connection
         .query<{ job_id: number | null; codex_thread_id: string | null }, [number, number]>(
@@ -1163,7 +2177,22 @@ export class LoylexDatabase {
     return transaction.immediate();
   }
 
+  cancelJobsForDraft(chatId: number, draftId: number): number[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
+    const messageId = this.connection
+      .query<{ message_id: number }, [number, number]>(
+        "SELECT message_id FROM jobs WHERE id = ? AND chat_id = ?",
+      )
+      .get(draftId, chatId)?.message_id;
+    return messageId === undefined ? [] : this.cancelJobsForMessage(chatId, messageId);
+  }
+
   resumableThread(chatId: number, messageId: number): string | null {
+    if (isGdprExcludedChat(chatId)) {
+      return null;
+    }
     return (
       this.connection
         .query<{ thread_id: string | null }, [number, number, number]>(`
@@ -1220,47 +2249,148 @@ export class LoylexDatabase {
     };
   }
 
+  recordUsage(
+    jobId: number,
+    usage: AgentTokenUsage,
+    workerId?: string,
+    codexThreadId?: string | null,
+  ): boolean {
+    const result = this.connection
+      .query(`
+        UPDATE jobs SET
+          codex_thread_id = COALESCE(?, codex_thread_id),
+          input_tokens = ?,
+          cached_input_tokens = ?,
+          cache_write_input_tokens = ?,
+          output_tokens = ?,
+          reasoning_output_tokens = ?,
+          total_tokens = ?
+        WHERE id = ?
+          AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}
+          AND state IN ('pending', 'running', 'completed', 'failed', 'cancelled')
+          AND (? IS NULL OR worker_id = ?)
+      `)
+      .run(
+        codexThreadId ?? null,
+        usage.inputTokens,
+        usage.cachedInputTokens,
+        usage.cacheWriteInputTokens,
+        usage.outputTokens,
+        usage.reasoningOutputTokens,
+        usage.totalTokens,
+        jobId,
+        workerId ?? null,
+        workerId ?? null,
+      );
+    return result.changes > 0;
+  }
+
   complete(
     jobId: number,
     answerMessageId: number,
-    codexThreadId: string | null,
+    codexThreadId: string,
     workerId?: string,
+    usage: AgentTokenUsage | null = null,
   ): boolean {
     const address = this.jobAddress(jobId);
+    const excluded = isGdprExcludedChat(address.chatId);
+    const storedUsage = excluded ? null : usage;
     const transaction = this.connection.transaction(() => {
       const result = this.connection
         .query(`
           UPDATE jobs
-          SET state = 'completed', completed_at = ?, codex_thread_id = ?
+          SET state = 'completed',
+              completed_at = ?,
+              codex_thread_id = COALESCE(?, codex_thread_id),
+              thinking_message_id = COALESCE(?, thinking_message_id),
+              input_tokens = COALESCE(?, input_tokens),
+              cached_input_tokens = COALESCE(?, cached_input_tokens),
+              cache_write_input_tokens = COALESCE(?, cache_write_input_tokens),
+              output_tokens = COALESCE(?, output_tokens),
+              reasoning_output_tokens = COALESCE(?, reasoning_output_tokens),
+              total_tokens = COALESCE(?, total_tokens)
           WHERE id = ? AND state = 'running'
             AND (? IS NULL OR worker_id = ?)
         `)
-        .run(Date.now(), codexThreadId, jobId, workerId ?? null, workerId ?? null);
+        .run(
+          Date.now(),
+          excluded ? null : codexThreadId,
+          excluded ? null : answerMessageId,
+          storedUsage?.inputTokens ?? null,
+          storedUsage?.cachedInputTokens ?? null,
+          storedUsage?.cacheWriteInputTokens ?? null,
+          storedUsage?.outputTokens ?? null,
+          storedUsage?.reasoningOutputTokens ?? null,
+          storedUsage?.totalTokens ?? null,
+          jobId,
+          workerId ?? null,
+          workerId ?? null,
+        );
       if (result.changes === 0) {
         return false;
       }
-      this.connection
-        .query("UPDATE outbound_messages SET codex_thread_id = ? WHERE job_id = ?")
-        .run(codexThreadId, jobId);
-      this.connection
-        .query("INSERT OR REPLACE INTO outbound_messages VALUES (?, ?, ?, ?, ?)")
-        .run(address.chatId, answerMessageId, jobId, codexThreadId, Date.now());
+      if (!excluded) {
+        this.connection
+          .query("UPDATE outbound_messages SET codex_thread_id = ? WHERE job_id = ?")
+          .run(codexThreadId, jobId);
+        this.connection
+          .query("INSERT OR REPLACE INTO outbound_messages VALUES (?, ?, ?, ?, ?)")
+          .run(address.chatId, answerMessageId, jobId, codexThreadId, Date.now());
+      }
       return true;
     });
     return transaction.immediate();
   }
 
-  fail(jobId: number, error: string, workerId?: string, codexThreadId?: string | null): void {
+  fail(
+    jobId: number,
+    error: string,
+    workerId?: string,
+    codexThreadId?: string | null,
+    usage: AgentTokenUsage | null = null,
+  ): void {
+    const address = this.jobAddress(jobId);
+    const excluded = isGdprExcludedChat(address.chatId);
+    const storedUsage = excluded ? null : usage;
+    const storedError = excluded ? null : error;
     const transaction = this.connection.transaction(() => {
       const result = this.connection
         .query(
-          "UPDATE jobs SET state = 'failed', completed_at = ?, error = ?, codex_thread_id = COALESCE(?, codex_thread_id) WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)",
+          `
+            UPDATE jobs SET
+              state = 'failed',
+              completed_at = ?,
+              error = ?,
+              codex_thread_id = COALESCE(?, codex_thread_id),
+              input_tokens = COALESCE(?, input_tokens),
+              cached_input_tokens = COALESCE(?, cached_input_tokens),
+              cache_write_input_tokens = COALESCE(?, cache_write_input_tokens),
+              output_tokens = COALESCE(?, output_tokens),
+              reasoning_output_tokens = COALESCE(?, reasoning_output_tokens),
+              total_tokens = COALESCE(?, total_tokens)
+            WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)
+          `,
         )
-        .run(Date.now(), error, codexThreadId ?? null, jobId, workerId ?? null, workerId ?? null);
-      if (result.changes > 0 && codexThreadId) {
+        .run(
+          Date.now(),
+          storedError,
+          excluded ? null : (codexThreadId ?? null),
+          storedUsage?.inputTokens ?? null,
+          storedUsage?.cachedInputTokens ?? null,
+          storedUsage?.cacheWriteInputTokens ?? null,
+          storedUsage?.outputTokens ?? null,
+          storedUsage?.reasoningOutputTokens ?? null,
+          storedUsage?.totalTokens ?? null,
+          jobId,
+          workerId ?? null,
+          workerId ?? null,
+        );
+      if (result.changes > 0 && codexThreadId && !excluded) {
         this.connection
           .query(
-            "UPDATE outbound_messages SET codex_thread_id = ? WHERE job_id = ? AND codex_thread_id IS NULL",
+            `UPDATE outbound_messages
+             SET codex_thread_id = ?
+             WHERE job_id = ? AND codex_thread_id IS NULL AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`,
           )
           .run(codexThreadId, jobId);
       }
@@ -1269,101 +2399,75 @@ export class LoylexDatabase {
   }
 
   chatExists(chatId: number): boolean {
+    if (isGdprExcludedChat(chatId)) {
+      return false;
+    }
     return Boolean(
       this.connection
         .query<{ value: number }, [number]>(
-          "SELECT 1 AS value FROM messages WHERE chat_id = ? LIMIT 1",
+          "SELECT 1 AS value FROM chats WHERE chat_id = ? LIMIT 1",
         )
         .get(chatId),
     );
   }
 
-  search(query: string, chatId: number | null, limit: number): SearchResult[] {
+  search(query: string, chatId: number | null, limit: number, offset = 0): SearchResult[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
     const rows = this.connection
-      .query<
-        {
-          chat_id: number;
-          message_id: number;
-          date: number;
-          from_user_id: number | null;
-          from_display_name: string | null;
-          from_username: string | null;
-          text: string | null;
-        },
-        [string, number | null, number | null, number]
-      >(`
-        SELECT m.chat_id, m.message_id, m.date, m.from_user_id, m.from_display_name, m.from_username, m.text
+      .query<SearchRow, [string, number | null, number | null, number, number]>(`
+        SELECT m.chat_id, m.message_id, m.date, m.from_user_id,
+               u.display_name AS from_display_name, u.username AS from_username,
+               m.text, m.raw_json
         FROM messages_fts f
         JOIN messages m ON m.rowid = f.rowid
-        WHERE messages_fts MATCH ? AND (? IS NULL OR m.chat_id = ?)
+        LEFT JOIN users u ON u.user_id = m.from_user_id
+        WHERE messages_fts MATCH ?
+          AND m.chat_id != ${GDPR_EXCLUDED_CHAT_ID}
+          AND (? IS NULL OR m.chat_id = ?)
         ORDER BY bm25(messages_fts), m.date DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
       `)
-      .all(query, chatId, chatId, limit);
-    return rows.map((row) => ({
-      chatId: row.chat_id,
-      messageId: row.message_id,
-      date: row.date,
-      userId: row.from_user_id,
-      author: row.from_username
-        ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
-        : (row.from_display_name ?? "unknown"),
-      text: row.text ?? "",
-    }));
+      .all(query, chatId, chatId, limit, offset);
+    return rows.map(searchResult);
   }
 
   recent(chatId: number, limit: number): SearchResult[] {
+    if (isGdprExcludedChat(chatId)) {
+      return [];
+    }
     const rows = this.connection
-      .query<
-        {
-          chat_id: number;
-          message_id: number;
-          date: number;
-          from_user_id: number | null;
-          from_display_name: string | null;
-          from_username: string | null;
-          text: string | null;
-        },
-        [number, number]
-      >(`
-        SELECT chat_id, message_id, date, from_user_id, from_display_name, from_username, text
+      .query<SearchRow, [number, number]>(`
+        SELECT messages.chat_id, messages.message_id, messages.date, messages.from_user_id,
+               users.display_name AS from_display_name, users.username AS from_username,
+               messages.text, messages.raw_json
         FROM messages
-        WHERE chat_id = ?
-        ORDER BY date DESC, message_id DESC
+        LEFT JOIN users ON users.user_id = messages.from_user_id
+        WHERE messages.chat_id = ?
+        ORDER BY messages.date DESC, messages.message_id DESC
         LIMIT ?
       `)
       .all(chatId, limit);
-    return rows.map((row) => ({
-      chatId: row.chat_id,
-      messageId: row.message_id,
-      date: row.date,
-      userId: row.from_user_id,
-      author: row.from_username
-        ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
-        : (row.from_display_name ?? "unknown"),
-      text: row.text ?? "",
-    }));
+    return rows.map(searchResult);
   }
 
   stats(): Record<string, number> {
-    const count = (table: string): number =>
-      this.connection.query<{ count: number }, []>(`SELECT count(*) AS count FROM ${table}`).get()
-        ?.count ?? 0;
+    const count = (table: string, where = ""): number =>
+      this.connection
+        .query<{ count: number }, []>(
+          `SELECT count(*) AS count FROM ${table}${where ? ` WHERE ${where}` : ""}`,
+        )
+        .get()?.count ?? 0;
+    const updates = count(
+      "updates",
+      `(${updateChatIdExpression}) IS NULL OR (${updateChatIdExpression}) != ${GDPR_EXCLUDED_CHAT_ID}`,
+    );
     return {
-      updates: count("updates"),
-      messages: count("messages"),
-      pendingJobs:
-        this.connection
-          .query<{ count: number }, []>(
-            "SELECT count(*) AS count FROM jobs WHERE state = 'pending'",
-          )
-          .get()?.count ?? 0,
-      runningJobs:
-        this.connection
-          .query<{ count: number }, []>(
-            "SELECT count(*) AS count FROM jobs WHERE state = 'running'",
-          )
-          .get()?.count ?? 0,
+      updates,
+      messages: count("messages", `chat_id != ${GDPR_EXCLUDED_CHAT_ID}`),
+      pendingJobs: count("jobs", `state = 'pending' AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`),
+      runningJobs: count("jobs", `state = 'running' AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`),
     };
   }
 }

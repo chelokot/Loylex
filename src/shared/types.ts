@@ -1,3 +1,5 @@
+import type { AgentTokenUsage } from "./usage.ts";
+
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonValue = boolean | JsonObject | JsonValue[] | null | number | string;
 
@@ -16,6 +18,58 @@ export type TelegramChat = {
   username?: string;
 };
 
+export type TelegramReactionType =
+  | { type: "emoji"; emoji: string }
+  | { type: "custom_emoji"; custom_emoji_id: string }
+  | { type: "paid" };
+
+export type TelegramReactionCount = {
+  type: TelegramReactionType;
+  total_count: number;
+};
+
+export type TelegramMessageReactionUpdated = {
+  chat: TelegramChat;
+  message_id: number;
+  user?: TelegramUser;
+  actor_chat?: TelegramChat;
+  date: number;
+  old_reaction: TelegramReactionType[];
+  new_reaction: TelegramReactionType[];
+};
+
+export type TelegramMessageReactionCountUpdated = {
+  chat: TelegramChat;
+  message_id: number;
+  date: number;
+  reactions: TelegramReactionCount[];
+};
+
+export type TelegramMessageOrigin =
+  | {
+      type: "user";
+      date: number;
+      sender_user: TelegramUser;
+    }
+  | {
+      type: "hidden_user";
+      date: number;
+      sender_user_name: string;
+    }
+  | {
+      type: "chat";
+      date: number;
+      sender_chat: TelegramChat;
+      author_signature?: string;
+    }
+  | {
+      type: "channel";
+      date: number;
+      chat: TelegramChat;
+      message_id: number;
+      author_signature?: string;
+    };
+
 export type TelegramMessage = {
   message_id: number;
   message_thread_id?: number;
@@ -27,6 +81,7 @@ export type TelegramMessage = {
   text?: string;
   caption?: string;
   media_group_id?: string;
+  forward_origin?: TelegramMessageOrigin;
   reply_to_message?: TelegramMessage;
   photo?: JsonValue[];
   document?: JsonObject;
@@ -37,18 +92,25 @@ export type TelegramMessage = {
   [key: string]: unknown;
 };
 
+export type TelegramMessageGenerationStopped = {
+  chat: TelegramChat;
+  message_thread_id?: number;
+  draft_id: number;
+};
+
 export type TelegramUpdate = {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
   channel_post?: TelegramMessage;
   edited_channel_post?: TelegramMessage;
+  message_reaction?: TelegramMessageReactionUpdated;
+  message_reaction_count?: TelegramMessageReactionCountUpdated;
+  stopped_message_generation?: TelegramMessageGenerationStopped;
   [key: string]: unknown;
 };
 
-export type AgentContextMode = "full" | "delta";
-
-export type AgentJobKind = "codex" | "operator_exec";
+export type AgentContextMode = "full" | "delta" | "none";
 
 export type AgentJob = {
   id: number;
@@ -59,8 +121,6 @@ export type AgentJob = {
   messageThreadId: number | null;
   userId: number | null;
   prompt: string;
-  kind: AgentJobKind;
-  command: string | null;
   resumeThreadId: string | null;
   context: string;
   contextMode: AgentContextMode;
@@ -76,7 +136,8 @@ export type AgentEvent = {
 
 export type AgentCompletion = {
   answer: string;
-  threadId: string | null;
+  threadId: string;
+  usage?: AgentTokenUsage;
 };
 
 export type WorkerRegistration = {

@@ -42,32 +42,63 @@ class SupervisorTest(unittest.TestCase):
         with self.assertRaises(SUPERVISOR.SupervisorError):
             SUPERVISOR.selected_components("host")
 
-    def test_renders_distinct_draining_agent_slots(self) -> None:
+    def test_replaces_only_expected_compose_service_image(self) -> None:
         content = (
-            "[Unit]\n"
-            "Description=Loylex persistent Codex agent\n"
-            "[Container]\n"
-            "ContainerName=loylex-agent\n"
-            "Environment=CODEX_MODEL=test\n"
-            "NoNewPrivileges=false\n"
-            "[Service]\n"
-            "Restart=always\n"
+            "services:\n"
+            "  gateway:\n"
+            "    image: ghcr.io/chelokot/loylex-gateway@sha256:old\n"
+            "  agent-blue:\n"
+            "    image: ghcr.io/chelokot/loylex-agent:main\n"
+            "  agent-green:\n"
+            "    image: ghcr.io/chelokot/loylex-agent:main\n"
+            "volumes:\n"
         )
-        blue = SUPERVISOR.render_agent_slot(content, "blue")
-        green = SUPERVISOR.render_agent_slot(content, "green")
-        self.assertIn("Description=Loylex persistent Codex agent (blue)", blue)
-        self.assertIn("ContainerName=loylex-agent-blue", blue)
-        self.assertIn("Environment=LOYLEX_WORKER_SLOT=blue", blue)
-        self.assertIn("Restart=on-failure", blue)
-        self.assertIn("ContainerName=loylex-agent-green", green)
-        self.assertIn("Environment=LOYLEX_WORKER_SLOT=green", green)
-        self.assertNotIn("LOYLEX_WORKER_SLOT=blue", green)
+        updated = SUPERVISOR.replace_compose_image_line(
+            content,
+            "agent-blue",
+            "ghcr.io/chelokot/loylex-agent",
+            "ghcr.io/chelokot/loylex-agent@sha256:new",
+        )
+        self.assertIn("agent-blue:\n    image: ghcr.io/chelokot/loylex-agent@sha256:new", updated)
+        self.assertIn("agent-green:\n    image: ghcr.io/chelokot/loylex-agent:main", updated)
 
-    def test_rejects_invalid_agent_slot_quadlet(self) -> None:
+    def test_initial_compose_images_are_immutable(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        self.assertNotIn("ghcr.io/chelokot/loylex-agent:main", compose)
+        self.assertNotIn("ghcr.io/chelokot/loylex-gateway:main", compose)
+        self.assertEqual(compose.count("ghcr.io/chelokot/loylex-agent@sha256:"), 2)
+
+    def test_external_secrets_use_podman_compose_mount_names(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        self.assertNotIn("target:", compose)
+        self.assertIn("/run/secrets/loylex-telegram-token", compose)
+        self.assertEqual(compose.count("/run/secrets/loylex-bridge-token"), 3)
+        self.assertEqual(compose.count("/run/secrets/loylex-supervisor-token"), 2)
+
+    def test_persistent_worker_volumes_relabel_and_map_ownership(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        self.assertEqual(compose.count("agent-home:/home/loylex:Z,U"), 2)
+        self.assertEqual(compose.count("memory:/memory:Z,U"), 2)
+        self.assertEqual(compose.count("workspace:/workspace:Z,U"), 2)
+
+    def test_rejects_missing_or_ambiguous_compose_service_image(self) -> None:
         with self.assertRaises(SUPERVISOR.SupervisorError):
-            SUPERVISOR.render_agent_slot("[Container]\nContainerName=loylex-agent\n", "blue")
+            SUPERVISOR.replace_compose_image_line(
+                "services:\n  agent-blue:\n    restart: on-failure\n",
+                "agent-blue",
+                "example/image",
+                "example/image@sha256:1",
+            )
         with self.assertRaises(SUPERVISOR.SupervisorError):
-            SUPERVISOR.render_agent_slot("[Unit]\nDescription=agent\n", "blue")
+            SUPERVISOR.replace_compose_image_line(
+                "services:\n"
+                "  agent-blue:\n"
+                "    image: example/image:main\n"
+                "    image: example/image:old\n",
+                "agent-blue",
+                "example/image",
+                "example/image@sha256:1",
+            )
 
 
 if __name__ == "__main__":
