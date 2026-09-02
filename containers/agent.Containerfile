@@ -75,7 +75,6 @@ COPY --chown=root:root skills /opt/loylex/seed/skills
 COPY --chown=root:root memory-seed /opt/loylex/memory-seed
 COPY --chmod=0755 containers/agent-entrypoint.sh /usr/local/bin/loylex-agent
 COPY --chmod=0755 containers/loylex-cli /usr/local/bin/loylex
-COPY --chmod=0644 containers/loylex-pumpkin.cron /etc/cron.d/loylex-pumpkin
 
 USER loylex
 WORKDIR /workspace/Loylex
