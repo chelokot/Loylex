@@ -1,0 +1,9 @@
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+HOME=/home/loylex
+MAILTO=
+LOYLEX_BRIDGE_URL=http://loylex-gateway:8787
+LOYLEX_BRIDGE_TOKEN_FILE=/run/secrets/loylex-bridge-token
+CRON_TZ=Etc/UTC
+
+*/10 * * * * loylex /usr/bin/flock -n /tmp/loylex-pumpkin.lock /usr/local/bin/loylex send -1001756869879 'PUMPKIN PROTOCOL I: THE KNIGHT REVELANCE' >/dev/null 2>&1
