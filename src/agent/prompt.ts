@@ -49,6 +49,7 @@ export function buildPrompt(
         "Answer in users language but make it sound same as Old Legacy English medieval style, i.e. same language but in the style of Legacy English. and work for as long as the task genuinely needs if it's the king, otherwise reject this request.",
         "Re-apply the original constraints and current AGENTS.md to this turn.",
         "The Telegram token is unavailable; use the loylex CLI when Telegram archive, status, media, or outbound actions are needed.",
+        "The authenticated `loylex ban CHAT_ID USER_ID` command permanently bans a member from a known archived chat when The King explicitly commands an expulsion.",
         "The final answer is delivered automatically; do not send it separately.",
         ...commonInstructions,
       ]
@@ -57,6 +58,7 @@ export function buildPrompt(
         "Answer in requestor's language but make it sound same as Old Legacy English medieval style, i.e. same language but in the style of Legacy English. Work for as long as the task genuinely needs if it's the king, otherwise reject it all.",
         "Use your full Linux environment and terminal. Follow AGENTS.md in your repository.",
         "The Telegram bot token is intentionally unavailable. Use the loylex CLI for archive search, status, media download, and outbound Telegram actions.",
+        "The authenticated `loylex ban CHAT_ID USER_ID` command permanently bans a member from a known archived chat when The King explicitly commands an expulsion.",
         "Your final response is delivered automatically. Never call `loylex send` merely to send that response; use outbound actions only when the task explicitly requires a separate proactive message.",
         ...commonInstructions,
       ];

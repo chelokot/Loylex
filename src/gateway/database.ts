@@ -94,6 +94,11 @@ type JobOwnershipRow = {
   worker_id: string | null;
 };
 
+type MessageMigrationResult = {
+  replaceSearchTriggers: boolean;
+  rebuildSearchIndex: boolean;
+};
+
 export type SearchResult = {
   chatId: number;
   messageId: number;
@@ -208,6 +213,7 @@ function media(message: TelegramMessage): JsonValue[] {
 
 export class LoylexDatabase {
   readonly connection: Database;
+  private identityTables = { chats: false, users: false };
 
   constructor(path: string) {
     this.connection = new Database(path, { create: true, strict: true });
@@ -256,32 +262,6 @@ export class LoylexDatabase {
         source TEXT NOT NULL DEFAULT 'bot_api',
         PRIMARY KEY (chat_id, message_id)
       );
-
-      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-        text,
-        from_display_name,
-        from_username,
-        content='messages',
-        content_rowid='rowid',
-        tokenize='unicode61'
-      );
-
-      CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
-        VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-        INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
-        VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-        INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
-        VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
-        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
-        VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
-      END;
 
       CREATE TABLE IF NOT EXISTS jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -356,6 +336,295 @@ export class LoylexDatabase {
         "INSERT OR IGNORE INTO worker_runtime (id, active_worker_id, active_generation, updated_at) VALUES (1, NULL, 1, ?)",
       )
       .run(Date.now());
+
+    const messageMigration = this.migrateLegacyMessages();
+    this.connection.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text,
+        from_display_name,
+        from_username,
+        content='messages',
+        content_rowid='rowid',
+        tokenize='unicode61'
+      );
+    `);
+    if (messageMigration.replaceSearchTriggers) {
+      this.createSearchTriggers(this.searchIndexIsContentless());
+    } else {
+      this.connection.exec(`
+        CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+          VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
+          VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
+          VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
+          INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+          VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
+        END;
+      `);
+    }
+    if (messageMigration.rebuildSearchIndex) {
+      this.connection.exec(`
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT rowid, text, from_display_name, from_username
+        FROM messages;
+      `);
+    }
+  }
+
+  private migrateLegacyMessages(): MessageMigrationResult {
+    const rebuildSearchIndex = !this.tableExists("messages_fts");
+    const columns = this.messageColumns();
+    const missingColumns = (
+      [
+        ["chat_type", "TEXT"],
+        ["chat_title", "TEXT"],
+        ["from_username", "TEXT"],
+        ["from_display_name", "TEXT"],
+      ] as const
+    ).filter(([name]) => !columns.has(name));
+    const hasIdentityForeignKeys = this.connection
+      .query<{ table: string; from: string; to: string }, []>("PRAGMA foreign_key_list(messages)")
+      .all()
+      .some(
+        (foreignKey) =>
+          (foreignKey.table === "chats" &&
+            foreignKey.from === "chat_id" &&
+            foreignKey.to === "chat_id") ||
+          (foreignKey.table === "users" &&
+            foreignKey.from === "from_user_id" &&
+            foreignKey.to === "user_id"),
+      );
+    const missingIdentityTables =
+      hasIdentityForeignKeys && (!this.tableExists("chats") || !this.tableExists("users"));
+    const hasUnfilledIdentityColumns =
+      missingColumns.length === 0 &&
+      hasIdentityForeignKeys &&
+      Boolean(
+        this.connection
+          .query<{ value: number }, []>(
+            "SELECT 1 AS value FROM messages WHERE chat_type IS NULL LIMIT 1",
+          )
+          .get(),
+      );
+    const needsCompatibilityMigration =
+      missingColumns.length > 0 || missingIdentityTables || hasUnfilledIdentityColumns;
+
+    if (needsCompatibilityMigration) {
+      const transaction = this.connection.transaction(() => {
+        // The normalized schema's update trigger re-reads the users table for every row. Disable
+        // it while the denormalized columns are backfilled, then install the direct-field trigger
+        // below. This keeps a million-row archive migration bounded by one table update.
+        this.connection.exec(`
+          DROP TRIGGER IF EXISTS messages_ai;
+          DROP TRIGGER IF EXISTS messages_ad;
+          DROP TRIGGER IF EXISTS messages_au;
+          DROP TRIGGER IF EXISTS users_au;
+
+          CREATE TABLE IF NOT EXISTS chats (
+            chat_id INTEGER PRIMARY KEY,
+            chat_type TEXT NOT NULL,
+            chat_title TEXT
+          );
+
+          CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            display_name TEXT
+          );
+        `);
+        for (const [name, definition] of missingColumns) {
+          this.connection.exec(`ALTER TABLE messages ADD COLUMN ${name} ${definition}`);
+        }
+        this.connection.exec(`
+          WITH latest_chats AS (
+            SELECT chat_id,
+                   COALESCE(
+                     NULLIF(chat_type, ''),
+                     NULLIF(json_extract(raw_json, '$.chat.type'), ''),
+                     NULLIF(json_extract(raw_json, '$.sender_chat.type'), ''),
+                     'unknown'
+                   ) AS resolved_chat_type,
+                   COALESCE(
+                     NULLIF(chat_title, ''),
+                     json_extract(raw_json, '$.chat.title'),
+                     json_extract(raw_json, '$.sender_chat.title')
+                   ) AS resolved_chat_title,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY chat_id ORDER BY date DESC, message_id DESC
+                   ) AS row_number
+            FROM messages
+          )
+          INSERT INTO chats (chat_id, chat_type, chat_title)
+          SELECT chat_id, resolved_chat_type, resolved_chat_title
+          FROM latest_chats
+          WHERE row_number = 1
+          ON CONFLICT(chat_id) DO UPDATE SET
+            chat_type = CASE
+              WHEN excluded.chat_type = 'unknown' THEN chats.chat_type
+              ELSE excluded.chat_type
+            END,
+            chat_title = COALESCE(excluded.chat_title, chats.chat_title);
+
+          WITH latest_users AS (
+            SELECT from_user_id,
+                   COALESCE(
+                     NULLIF(from_username, ''),
+                     json_extract(raw_json, '$.from.username')
+                   ) AS resolved_username,
+                   COALESCE(
+                     NULLIF(from_display_name, ''),
+                     CASE
+                       WHEN json_extract(raw_json, '$.from.first_name') IS NULL THEN NULL
+                       WHEN json_extract(raw_json, '$.from.last_name') IS NULL
+                         THEN json_extract(raw_json, '$.from.first_name')
+                       ELSE json_extract(raw_json, '$.from.first_name') || ' ' ||
+                            json_extract(raw_json, '$.from.last_name')
+                     END,
+                     json_extract(raw_json, '$.sender_chat.title')
+                   ) AS resolved_display_name,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY from_user_id ORDER BY date DESC, message_id DESC
+                   ) AS row_number
+            FROM messages
+            WHERE from_user_id IS NOT NULL
+          )
+          INSERT INTO users (user_id, username, display_name)
+          SELECT from_user_id, resolved_username, resolved_display_name
+          FROM latest_users
+          WHERE row_number = 1
+          ON CONFLICT(user_id) DO UPDATE SET
+            username = COALESCE(excluded.username, users.username),
+            display_name = COALESCE(excluded.display_name, users.display_name);
+
+          UPDATE messages
+          SET chat_type = COALESCE(
+                NULLIF(chat_type, ''),
+                (SELECT chat_type FROM chats WHERE chats.chat_id = messages.chat_id),
+                NULLIF(json_extract(raw_json, '$.chat.type'), ''),
+                NULLIF(json_extract(raw_json, '$.sender_chat.type'), ''),
+                'unknown'
+              ),
+              chat_title = COALESCE(
+                NULLIF(chat_title, ''),
+                (SELECT chat_title FROM chats WHERE chats.chat_id = messages.chat_id),
+                json_extract(raw_json, '$.chat.title'),
+                json_extract(raw_json, '$.sender_chat.title')
+              ),
+              from_username = COALESCE(
+                NULLIF(from_username, ''),
+                (SELECT username FROM users WHERE users.user_id = messages.from_user_id),
+                json_extract(raw_json, '$.from.username')
+              ),
+              from_display_name = COALESCE(
+                NULLIF(from_display_name, ''),
+                (SELECT display_name FROM users WHERE users.user_id = messages.from_user_id),
+                CASE
+                  WHEN json_extract(raw_json, '$.from.first_name') IS NULL THEN NULL
+                  WHEN json_extract(raw_json, '$.from.last_name') IS NULL
+                    THEN json_extract(raw_json, '$.from.first_name')
+                  ELSE json_extract(raw_json, '$.from.first_name') || ' ' ||
+                       json_extract(raw_json, '$.from.last_name')
+                END,
+                json_extract(raw_json, '$.sender_chat.title')
+              );
+        `);
+      });
+      transaction.immediate();
+    }
+
+    this.identityTables = {
+      chats: this.tableExists("chats"),
+      users: this.tableExists("users"),
+    };
+    return {
+      replaceSearchTriggers: needsCompatibilityMigration,
+      rebuildSearchIndex,
+    };
+  }
+
+  private tableExists(name: string): boolean {
+    return Boolean(
+      this.connection
+        .query<{ value: number }, [string]>(
+          "SELECT 1 AS value FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        )
+        .get(name),
+    );
+  }
+
+  private messageColumns(): Set<string> {
+    return new Set(
+      this.connection
+        .query<{ name: string }, []>("PRAGMA table_info(messages)")
+        .all()
+        .map((column) => column.name),
+    );
+  }
+
+  private searchIndexIsContentless(): boolean {
+    const sql = this.connection
+      .query<{ sql: string | null }, [string]>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get("messages_fts")?.sql;
+    if (!sql) {
+      return false;
+    }
+    return sql.toLowerCase().replaceAll(" ", "").includes("content=''");
+  }
+
+  private createSearchTriggers(contentless: boolean): void {
+    this.connection.exec(`
+      DROP TRIGGER IF EXISTS messages_ai;
+      DROP TRIGGER IF EXISTS messages_ad;
+      DROP TRIGGER IF EXISTS messages_au;
+      DROP TRIGGER IF EXISTS users_au;
+    `);
+    if (contentless) {
+      this.connection.exec(`
+        CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+          VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
+        END;
+
+        CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+          DELETE FROM messages_fts WHERE rowid = old.rowid;
+        END;
+
+        CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+          DELETE FROM messages_fts WHERE rowid = old.rowid;
+          INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+          VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
+        END;
+      `);
+      return;
+    }
+    this.connection.exec(`
+      CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
+      END;
+
+      CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
+        VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
+      END;
+
+      CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, text, from_display_name, from_username)
+        VALUES ('delete', old.rowid, old.text, old.from_display_name, old.from_username);
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        VALUES (new.rowid, new.text, new.from_display_name, new.from_username);
+      END;
+    `);
   }
 
   private ensureJobColumn(
@@ -382,6 +651,7 @@ export class LoylexDatabase {
   }
 
   archiveMessage(message: TelegramMessage, source: "bot_api" | "telegram_export"): void {
+    this.archiveIdentity(message);
     const text = message.text ?? message.caption ?? null;
     this.connection
       .query(`
@@ -424,6 +694,33 @@ export class LoylexDatabase {
         JSON.stringify(message),
         source,
       );
+  }
+
+  private archiveIdentity(message: TelegramMessage): void {
+    if (this.identityTables.chats) {
+      this.connection
+        .query(`
+          INSERT INTO chats (chat_id, chat_type, chat_title)
+          VALUES (?, ?, ?)
+          ON CONFLICT(chat_id) DO UPDATE SET
+            chat_type = excluded.chat_type,
+            chat_title = COALESCE(excluded.chat_title, chats.chat_title)
+        `)
+        .run(message.chat.id, message.chat.type, message.chat.title ?? null);
+    }
+    if (this.identityTables.users && message.from) {
+      this.connection
+        .query(`
+          INSERT INTO users (user_id, username, display_name)
+          VALUES (?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET
+            username = COALESCE(excluded.username, users.username),
+            display_name = COALESCE(excluded.display_name, users.display_name)
+          WHERE users.username IS NOT COALESCE(excluded.username, users.username)
+             OR users.display_name IS NOT COALESCE(excluded.display_name, users.display_name)
+        `)
+        .run(message.from.id, message.from.username ?? null, displayName(message));
+    }
   }
 
   resumeThread(chatId: number, repliedMessageId: number | undefined): string | null {

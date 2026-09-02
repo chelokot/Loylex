@@ -14,6 +14,8 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
   bot token.
 - `loylex send CHAT_ID 'RICH MARKDOWN'` sends to a chat already present in the
   archive.
+- `loylex ban CHAT_ID USER_ID` permanently bans a member from an archived chat through
+  Telegram's moderation API.
 - `loylex upload CHAT_ID FILE [CAPTION]` uploads a local file as a document.
 
 The runtime automatically delivers the final Codex response to the current request. Do not

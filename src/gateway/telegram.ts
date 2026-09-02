@@ -151,6 +151,13 @@ export class TelegramClient {
     return this.call<boolean>("sendChatAction", body);
   }
 
+  banMember(chatId: number, userId: number): Promise<boolean> {
+    return this.call<boolean>("banChatMember", {
+      chat_id: chatId,
+      user_id: userId,
+    });
+  }
+
   setThinkingReaction(chatId: number, messageId: number): Promise<boolean> {
     return this.call<boolean>("setMessageReaction", {
       chat_id: chatId,

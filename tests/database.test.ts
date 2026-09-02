@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,6 +41,141 @@ function botMessage(id: number, text: string): TelegramMessage {
 }
 
 describe("LoylexDatabase", () => {
+  test("migrates the normalized archive schema used by the previous gateway", () => {
+    const directory = mkdtempSync(join(tmpdir(), "loylex-normalized-"));
+    directories.push(directory);
+    const path = join(directory, "test.sqlite");
+    const legacy = new Database(path);
+    legacy.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE chats (
+        chat_id INTEGER PRIMARY KEY,
+        chat_type TEXT NOT NULL,
+        chat_title TEXT
+      );
+      CREATE TABLE users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        display_name TEXT
+      );
+      CREATE TABLE messages (
+        chat_id INTEGER NOT NULL,
+        message_id INTEGER NOT NULL,
+        message_thread_id INTEGER,
+        date INTEGER NOT NULL,
+        edit_date INTEGER,
+        from_user_id INTEGER,
+        text TEXT,
+        reply_to_message_id INTEGER,
+        media_group_id TEXT,
+        media_json TEXT NOT NULL,
+        raw_json TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'bot_api',
+        PRIMARY KEY (chat_id, message_id),
+        FOREIGN KEY (chat_id) REFERENCES chats(chat_id),
+        FOREIGN KEY (from_user_id) REFERENCES users(user_id)
+      );
+      CREATE VIRTUAL TABLE messages_fts USING fts5(
+        text,
+        from_display_name,
+        from_username,
+        content='',
+        contentless_delete=1,
+        tokenize='unicode61'
+      );
+      CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT new.rowid, new.text, users.display_name, users.username
+        FROM (SELECT 1) AS one
+        LEFT JOIN users ON users.user_id = new.from_user_id;
+      END;
+      CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+        DELETE FROM messages_fts WHERE rowid = old.rowid;
+      END;
+      CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+        DELETE FROM messages_fts WHERE rowid = old.rowid;
+        INSERT INTO messages_fts(rowid, text, from_display_name, from_username)
+        SELECT new.rowid, new.text, users.display_name, users.username
+        FROM (SELECT 1) AS one
+        LEFT JOIN users ON users.user_id = new.from_user_id;
+      END;
+      INSERT INTO chats VALUES (-10042, 'supergroup', 'Test');
+      INSERT INTO users VALUES (7, 'legacyuser', 'Legacy');
+    `);
+    const legacyMessage = {
+      ...message(1, "legacy message"),
+      from: { id: 7, is_bot: false, first_name: "Legacy", username: "legacyuser" },
+    };
+    legacy
+      .query(`
+        INSERT INTO messages (
+          chat_id, message_id, message_thread_id, date, edit_date, from_user_id, text,
+          reply_to_message_id, media_group_id, media_json, raw_json, source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        legacyMessage.chat.id,
+        legacyMessage.message_id,
+        null,
+        legacyMessage.date,
+        null,
+        legacyMessage.from.id,
+        legacyMessage.text ?? null,
+        null,
+        null,
+        "[]",
+        JSON.stringify(legacyMessage),
+        "bot_api",
+      );
+    legacy.close();
+
+    const database = new LoylexDatabase(path);
+    const columns = database.connection
+      .query<{ name: string }, []>("PRAGMA table_info(messages)")
+      .all()
+      .map((column) => column.name);
+    expect(columns).toEqual(
+      expect.arrayContaining(["chat_type", "chat_title", "from_username", "from_display_name"]),
+    );
+    expect(
+      database.connection
+        .query<
+          {
+            chat_type: string;
+            chat_title: string | null;
+            from_username: string | null;
+            from_display_name: string | null;
+          },
+          [number, number]
+        >(
+          "SELECT chat_type, chat_title, from_username, from_display_name FROM messages WHERE chat_id = ? AND message_id = ?",
+        )
+        .get(-10042, 1),
+    ).toEqual({
+      chat_type: "supergroup",
+      chat_title: "Test",
+      from_username: "legacyuser",
+      from_display_name: "Legacy",
+    });
+    expect(database.search("legacyuser", null, 10).map((result) => result.messageId)).toEqual([1]);
+
+    const newMessage = message(2, "new message");
+    newMessage.chat = { id: -10043, type: "group", title: "New chat" };
+    newMessage.from = { id: 8, is_bot: false, first_name: "New", username: "newuser" };
+    expect(() => database.archiveMessage(newMessage, "bot_api")).not.toThrow();
+    expect(database.search("newuser", -10043, 10).map((result) => result.messageId)).toEqual([2]);
+    expect(
+      database.connection
+        .query("SELECT chat_type, chat_title FROM messages WHERE chat_id = ?")
+        .get(-10043),
+    ).toEqual({ chat_type: "group", chat_title: "New chat" });
+    database.close();
+
+    const reopened = new LoylexDatabase(path);
+    expect(reopened.search("newuser", -10043, 10).map((result) => result.messageId)).toEqual([2]);
+    reopened.close();
+  });
+
   test("archives, indexes, claims, and resumes a thread", () => {
     const database = setup();
     database.archiveMessage(message(1, "предыдущий контекст"), "bot_api");

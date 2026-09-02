@@ -44,6 +44,24 @@ test("treats an idempotent rich edit as success", async () => {
   expect(result.chat.id).toBe(42);
 });
 
+test("bans a member through the Telegram moderation method", async () => {
+  const requests: Array<{ url: string; body: unknown }> = [];
+  globalThis.fetch = (async (input, init) => {
+    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return Response.json({ ok: true, result: true });
+  }) as typeof fetch;
+
+  const result = await new TelegramClient("test-token").banMember(-10042, 426043802);
+
+  expect(result).toBe(true);
+  expect(requests).toEqual([
+    {
+      url: "https://api.telegram.org/bottest-token/banChatMember",
+      body: { chat_id: -10042, user_id: 426043802 },
+    },
+  ]);
+});
+
 test("shows operator exec only in the hardcoded private chat menu", async () => {
   const requests: Array<Record<string, unknown>> = [];
   globalThis.fetch = (async (_input, init) => {

@@ -89,6 +89,26 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(await response.json(), null, 2));
     return;
   }
+  if (command === "ban") {
+    const [chatId, userId] = arguments_;
+    const parsedChatId = Number(chatId);
+    const parsedUserId = Number(userId);
+    if (
+      !chatId ||
+      !userId ||
+      !Number.isSafeInteger(parsedChatId) ||
+      !Number.isSafeInteger(parsedUserId)
+    ) {
+      throw new Error("Usage: loylex ban CHAT_ID USER_ID");
+    }
+    const response = await request("/v1/telegram/ban", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chatId: parsedChatId, userId: parsedUserId }),
+    });
+    console.log(JSON.stringify(await response.json(), null, 2));
+    return;
+  }
   if (command === "media") {
     const [fileId, output] = arguments_;
     if (!fileId || !output) {
@@ -114,7 +134,7 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(await response.json(), null, 2));
     return;
   }
-  throw new Error("Usage: loylex <status|search|recent|send|media|upload|system>");
+  throw new Error("Usage: loylex <status|search|recent|send|ban|media|upload|system>");
 }
 
 await run();

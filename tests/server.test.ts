@@ -203,3 +203,64 @@ test("uses the same editable details flow in private chats", async () => {
   );
   expect(completedMessageId as number | null).toBe(21);
 });
+
+test("bans a member only in an archived chat", async () => {
+  const calls: Array<{ chatId: number; userId: number }> = [];
+  const database = {
+    chatExists: (chatId: number) => chatId === -10042,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    banMember: async (chatId: number, userId: number) => {
+      calls.push({ chatId, userId });
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/ban", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer unused",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ chatId: -10042, userId: 426043802 }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    chatId: -10042,
+    userId: 426043802,
+    banned: true,
+  });
+  expect(calls).toEqual([{ chatId: -10042, userId: 426043802 }]);
+});
+
+test("rejects moderation for an unknown chat", async () => {
+  const database = {
+    chatExists: () => false,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    banMember: async () => true,
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/ban", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer unused",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ chatId: -10099, userId: 426043802 }),
+    }),
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: "unknown chat" });
+});

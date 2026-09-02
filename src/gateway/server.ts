@@ -212,6 +212,18 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/telegram/ban") {
+        const payload = await body<{ chatId: number; userId: number }>(request);
+        if (!Number.isSafeInteger(payload.chatId) || !Number.isSafeInteger(payload.userId)) {
+          return json({ error: "chatId and userId must be safe integers" }, 400);
+        }
+        if (!this.database.chatExists(payload.chatId)) {
+          return json({ error: "unknown chat" }, 403);
+        }
+        const banned = await this.telegram.banMember(payload.chatId, payload.userId);
+        return json({ chatId: payload.chatId, userId: payload.userId, banned });
+      }
+
       return json({ error: "not found" }, 404);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

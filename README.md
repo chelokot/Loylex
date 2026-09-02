@@ -31,7 +31,8 @@ gateway container                 agent blue / agent green
 ```
 
 The bridge exposes jobs, archive search, media transfer, status, and scoped outbound
-Telegram operations. It never exposes the Telegram token. The agent has no host Podman
+Telegram operations, including member bans restricted to chats already present in the archive. It
+never exposes the Telegram token. The agent has no host Podman
 socket, host PID namespace, host devices, privileged mode, or host mounts. The gateway image
 is pinned by digest, and `main` requires review, so an agent-authored branch cannot replace
 the component holding the secret.
