@@ -239,6 +239,32 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(await response.json(), null, 2));
     return;
   }
+  if (command === "send-thread") {
+    const [chatId, rawThreadId, ...markdown] = arguments_;
+    const parsedChatId = Number(chatId);
+    const parsedThreadId = Number(rawThreadId);
+    if (
+      !chatId ||
+      !rawThreadId ||
+      markdown.length === 0 ||
+      !Number.isSafeInteger(parsedChatId) ||
+      !Number.isSafeInteger(parsedThreadId) ||
+      parsedThreadId <= 0
+    ) {
+      throw new Error("Usage: loylex send-thread CHAT_ID THREAD_ID MARKDOWN");
+    }
+    const response = await request("/v1/telegram/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chatId: parsedChatId,
+        threadId: parsedThreadId,
+        markdown: markdown.join(" ").replaceAll("\\n", "\n"),
+      }),
+    });
+    console.log(JSON.stringify(await response.json(), null, 2));
+    return;
+  }
   if (command === "delete") {
     const [chatId, messageId] = arguments_;
     const parsedChatId = Number(chatId);
@@ -328,7 +354,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|recent|media-list|message|messages|import|send|delete|media|upload|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|recent|media-list|message|messages|import|send|send-thread|delete|media|upload|upload-album|system>",
   );
 }
 

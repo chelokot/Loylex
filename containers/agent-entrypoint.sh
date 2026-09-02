@@ -38,4 +38,35 @@ git config --global pull.rebase true
 git config --global --add safe.directory "$repository_path"
 
 cd "$repository_path"
-exec bun "$repository_path/src/agent/main.ts"
+cron_pid=""
+agent_pid=""
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$cron_pid" ]]; then
+    sudo -n kill -TERM "$cron_pid" 2>/dev/null || true
+    wait "$cron_pid" 2>/dev/null || true
+  fi
+  exit "$status"
+}
+
+forward_signal() {
+  if [[ -n "$agent_pid" ]]; then
+    kill -TERM "$agent_pid" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
+trap 'forward_signal' INT TERM
+if command -v crond >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 \
+  && [[ -x /usr/local/bin/loylex-dm-overview ]] \
+  && [[ -f /etc/cron.d/loylex-dm-overview ]]; then
+  sudo -n crond -n -s >/dev/null 2>&1 &
+  cron_pid=$!
+fi
+bun "$repository_path/src/agent/main.ts" &
+agent_pid=$!
+agent_status=0
+wait "$agent_pid" || agent_status=$?
+exit "$agent_status"

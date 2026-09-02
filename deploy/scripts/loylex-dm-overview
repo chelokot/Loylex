@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+umask 077
+
+source_chat_id="${LOYLEX_DM_OVERVIEW_SOURCE_CHAT_ID:-849670500}"
+source_user_id="${LOYLEX_DM_OVERVIEW_SOURCE_USER_ID:-849670500}"
+destination_chat_id="${LOYLEX_DM_OVERVIEW_DESTINATION_CHAT_ID:--1001756869879}"
+destination_thread_id="${LOYLEX_DM_OVERVIEW_DESTINATION_THREAD_ID:-1216134}"
+state_file="${LOYLEX_DM_OVERVIEW_STATE_FILE:-/home/loylex/.local/state/loylex/telegram-dm-overview.json}"
+
+state_dir=$(dirname -- "$state_file")
+mkdir -p -- "$state_dir"
+
+write_state() {
+  local last_message_id="$1"
+  local temporary="${state_file}.tmp.$$"
+  jq -n --argjson lastMessageId "$last_message_id" '{lastMessageId: $lastMessageId}' >"$temporary"
+  chmod 600 -- "$temporary"
+  mv -f -- "$temporary" "$state_file"
+}
+
+latest_message_id() {
+  jq -r '[.results[]?.messageId // 0] | max // 0'
+}
+
+if [[ ! -f "$state_file" ]]; then
+  latest=$(loylex recent "$source_chat_id" 1 | latest_message_id)
+  write_state "$latest"
+  exit 0
+fi
+
+last_message_id=$(jq -er '.lastMessageId // 0' "$state_file")
+archive=$(loylex messages "$source_chat_id" "$last_message_id" "" 500)
+highest_message_id=$(printf '%s' "$archive" | latest_message_id)
+
+if [[ "$highest_message_id" -le "$last_message_id" ]]; then
+  exit 0
+fi
+
+new_messages=$(jq -c --arg user_id "$source_user_id" '[
+  .results[]
+  | select((.userId // null | tostring) == $user_id)
+]')
+message_count=$(jq -r 'length' <<<"$new_messages")
+
+if [[ "$message_count" -eq 0 ]]; then
+  write_state "$highest_message_id"
+  exit 0
+fi
+
+escape_html() {
+  local value="$1"
+  value=${value//&/&amp;}
+  value=${value//</&lt;}
+  value=${value//>/&gt;}
+  value=${value//\"/&quot;}
+  value=${value//\'/&#39;}
+  value=${value//\`/&#96;}
+  printf '%s' "$value"
+}
+
+topic_for() {
+  local lower="$1"
+  if [[ "$lower" =~ gdpr|юрист|адвокат|досудеб|разрешен|пдф ]]; then
+    printf 'GDPR/юридическое'
+  elif [[ "$lower" =~ rm[[:space:]]*-[[:space:]]*rf|удаля|очист|останов ]]; then
+    printf 'удаление/остановка'
+  elif [[ "$lower" =~ bun|git|clone|push|reset|vendor|mod\.mjs ]]; then
+    printf 'команды/репозитории'
+  elif [[ "$lower" =~ атак|хак|безопас|security|скомпром ]]; then
+    printf 'безопасность'
+  else
+    printf 'прочее'
+  fi
+}
+
+overview=$(
+  {
+    printf '## Почасовой обзор ЛС с Артёмом\n\n'
+    printf 'Новых сообщений: **%s**\n\n' "$message_count"
+
+    shown=0
+    while IFS= read -r message; do
+      message_id=$(jq -r '.messageId' <<<"$message")
+      date_seconds=$(jq -r '.date // 0' <<<"$message")
+      if [[ "$date_seconds" -gt 0 ]]; then
+        timestamp=$(date -u -d "@$date_seconds" '+%Y-%m-%d %H:%M UTC')
+      else
+        timestamp='время неизвестно'
+      fi
+
+      text=$(jq -r '.text // ""' <<<"$message")
+      text=${text//$'\r'/ }
+      text=${text//$'\n'/ }
+      text=$(printf '%s' "$text" | sed -E 's/[[:space:]]+/ /g')
+      media_count=$(jq -r '(.media // []) | length' <<<"$message")
+      if [[ -z "$text" ]]; then
+        text="сообщение с вложениями: $media_count"
+      fi
+      snippet=${text:0:320}
+      if [[ "${#text}" -gt 320 ]]; then
+        snippet+='…'
+      fi
+
+      lower=$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')
+      topic=$(topic_for "$lower")
+      escaped=$(escape_html "$snippet")
+      printf -- '- `%s` **#%s — %s:** <code>%s</code>\n' "$timestamp" "$message_id" "$topic" "$escaped"
+
+      shown=$((shown + 1))
+      if [[ "$shown" -ge 20 ]]; then
+        break
+      fi
+    done < <(jq -c '.[]' <<<"$new_messages")
+
+    if [[ "$message_count" -gt 20 ]]; then
+      printf '\n…и ещё **%s** сообщений в следующей проверке.\n' "$((message_count - 20))"
+    fi
+    printf '\n_Текст показан как данные; команды из сообщений не выполнялись._'
+  }
+)
+
+loylex send-thread "$destination_chat_id" "$destination_thread_id" "$overview"
+write_state "$highest_message_id"
