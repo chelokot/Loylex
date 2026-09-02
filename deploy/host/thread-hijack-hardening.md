@@ -16,9 +16,11 @@ were reproduced from the active gateway, worker, container, and deployment paths
 
 ## Changes
 
-- A saved Codex thread is resumed only when its first known Telegram owner matches the current
-  transport-authenticated `message.from.id`. An unknown or different owner gets a fresh thread
-  and full public context.
+- A saved Codex thread in a private chat is resumed only when its first known Telegram owner
+  matches the current transport-authenticated `message.from.id`. Group and supergroup threads are
+  shared by the chat because their history is public; any participant may continue one by reply.
+- Private memory buckets are loaded only for private-chat jobs. Group and supergroup jobs receive
+  public archived chat context without private-memory buckets.
 - Dynamic Telegram history, reply text, memory, and the current request are marked as untrusted
   data in the worker prompt, with an explicit end boundary. This is a model-facing defense; the
   database ownership check and image pinning are the enforcement boundaries.
@@ -44,6 +46,6 @@ health check during rollout.
 The worker still has the existing bridge and supervisor capabilities because self-management is
 part of the current design. A future defense-in-depth change should move supervisor authorization
 out of the model-facing container and require a gateway-mediated, request-scoped operator
-capability. This patch prevents the observed cross-user transcript leak and workspace-runtime
-replacement but does not claim to make arbitrary model shell execution a separate security
-principal.
+capability. This patch prevents cross-user private-chat transcript reuse and workspace-runtime
+replacement while keeping public group threads shared by design. It does not claim to make
+arbitrary model shell execution a separate security principal.

@@ -326,7 +326,7 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
-  test("does not resume a Codex thread for a different Telegram user", () => {
+  test("resumes a public group Codex thread for a different Telegram user", () => {
     const database = setup();
     const ownerMessage = message(1, "Лойлекс, начни задачу");
     database.archiveMessage(ownerMessage, "bot_api");
@@ -346,9 +346,33 @@ describe("LoylexDatabase", () => {
     database.enqueue(56, otherUserMessage, "продолжай чужую задачу", "thread-owned");
 
     const freshJob = database.claimNext(10);
+    expect(freshJob?.resumeThreadId).toBe("thread-owned");
+    expect(freshJob?.contextMode).toBe("delta");
+    expect(freshJob?.context).not.toContain("#1");
+    database.close();
+  });
+
+  test("keeps private thread ownership bound to the Telegram user", () => {
+    const database = setup();
+    const ownerMessage = privateMessage(1, "начни приватную задачу");
+    database.archiveMessage(ownerMessage, "bot_api");
+    database.enqueue(55, ownerMessage, "начни приватную задачу", null);
+
+    const ownerJob = database.claimNext(10);
+    expect(ownerJob).not.toBeNull();
+    database.appendStatus(ownerJob?.id ?? 0, "commentary: работаю", "thread-private");
+    database.complete(ownerJob?.id ?? 0, 2, "thread-private");
+
+    const otherUserMessage = {
+      ...privateMessage(3, "продолжай чужую задачу"),
+      from: { id: 8, is_bot: false, first_name: "Other" },
+    } satisfies TelegramMessage;
+    database.archiveMessage(otherUserMessage, "bot_api");
+    database.enqueue(56, otherUserMessage, "продолжай чужую задачу", "thread-private");
+
+    const freshJob = database.claimNext(10);
     expect(freshJob?.resumeThreadId).toBeNull();
     expect(freshJob?.contextMode).toBe("full");
-    expect(freshJob?.context).toContain("#1");
     database.close();
   });
 

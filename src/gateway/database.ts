@@ -1134,11 +1134,12 @@ export class LoylexDatabase {
     resumeThreadId: string | null,
     contextMode: AgentContextMode = resumeThreadId === null ? "full" : "delta",
   ): void {
-    const authorizedResumeThreadId = this.authorizedResumeThreadId(
-      message.chat.id,
-      message.from?.id ?? null,
-      resumeThreadId,
-    );
+    // Group and supergroup history is public to the chat, so every participant may continue
+    // the shared Codex thread by replying to it. Keep the ownership boundary for private chats.
+    const authorizedResumeThreadId =
+      message.chat.type === "private"
+        ? this.authorizedResumeThreadId(message.chat.id, message.from?.id ?? null, resumeThreadId)
+        : resumeThreadId;
     const effectiveContextMode =
       contextMode === "none" ? "none" : authorizedResumeThreadId === null ? "full" : contextMode;
     const generation = this.activeWorkerGeneration();

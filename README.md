@@ -137,11 +137,12 @@ append-only audit volume as a minimal record containing its IDs, author ID, Tele
 and text or caption. The gateway refuses to process the update when this append fails. The
 normal Bot API archive then stores updates raw; messages and edits are normalized, reply relationships
 and media file IDs are retained, and text is indexed with FTS5. On a trigger, a new Codex
-thread receives the latest chat window and matching private memory buckets. A reply from the same
-Telegram user resumes the exact Codex thread; a different user replying to that message starts a
-fresh Codex thread with current public chat context, preventing cross-user thread hijacking. A
-resumed thread receives only archived messages since its previous turn because the saved Codex
-transcript already contains the earlier prompt and context.
+thread receives the latest public chat window for group requests; private memory buckets are
+loaded only for private-chat requests. A reply in a group or supergroup resumes the exact shared
+Codex thread for any participant because that history is public. Private-chat thread resumption
+remains bound to the authenticated Telegram user. A resumed thread receives only archived messages
+since its previous turn because the saved Codex transcript already contains the earlier prompt and
+context.
 
 While Codex works, terminal and reasoning events update an ephemeral rich draft in private chats,
 or create/edit one persistent Rich Message with a collapsed `<details>` history in groups.

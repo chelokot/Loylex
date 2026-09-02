@@ -71,7 +71,11 @@ async function processJob(job: AgentJob): Promise<void> {
       return;
     }
     stagedAttachments = await stageAttachments(gateway, job);
-    const buckets = await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`);
+    // Public group context must not pull private memory into a shared Telegram thread.
+    const buckets =
+      job.chatType === "private"
+        ? await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`)
+        : "";
     const prompt = buildPrompt(job, buckets, stagedAttachments.files);
     const result = await runCodex(
       config,
