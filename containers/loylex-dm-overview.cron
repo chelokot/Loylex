@@ -7,4 +7,5 @@ LOYLEX_REPOSITORY_PATH=/workspace/Loylex
 LOYLEX_MEMORY_PATH=/memory
 CRON_TZ=Etc/UTC
 
-0 * * * * loylex /usr/bin/mkdir -p /home/loylex/.local/state/loylex && /usr/bin/flock -n /home/loylex/.local/state/loylex/telegram-dm-overview.lock /usr/local/bin/loylex-dm-overview >>/home/loylex/.local/state/loylex/telegram-dm-overview.log 2>&1
+# Disabled pending privacy review. Keep the job definition for a reversible re-enable.
+# 0 * * * * loylex /usr/bin/mkdir -p /home/loylex/.local/state/loylex && /usr/bin/flock -n /home/loylex/.local/state/loylex/telegram-dm-overview.lock /usr/local/bin/loylex-dm-overview >>/home/loylex/.local/state/loylex/telegram-dm-overview.log 2>&1
