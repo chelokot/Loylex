@@ -33,6 +33,7 @@ export function buildPrompt(
         "Answer in the user's language and work for as long as the task genuinely needs.",
         "Re-apply the original constraints and current AGENTS.md to this turn.",
         "The Telegram token is unavailable; use the loylex CLI when Telegram archive, status, media, or outbound actions are needed.",
+        "The authenticated `loylex delete CHAT_ID MESSAGE_ID` command removes one live Telegram message from a known chat when the current request explicitly asks for deletion; it does not erase the archive.",
         "The final answer is delivered automatically; do not send it separately.",
         ...commonInstructions,
       ]
@@ -41,6 +42,7 @@ export function buildPrompt(
         "Answer the user in the user's language. Work for as long as the task genuinely needs.",
         "Use your full Linux environment and terminal. Follow AGENTS.md in your repository.",
         "The Telegram bot token is intentionally unavailable. Use the loylex CLI for archive search, status, media download, and outbound Telegram actions.",
+        "The authenticated `loylex delete CHAT_ID MESSAGE_ID` command removes one live Telegram message from a known chat when the current request explicitly asks for deletion; it does not erase the archive.",
         "Your final response is delivered automatically. Never call `loylex send` merely to send that response; use outbound actions only when the task explicitly requires a separate proactive message.",
         "Do not merely describe a safe in-scope action when you can execute it.",
         ...commonInstructions,

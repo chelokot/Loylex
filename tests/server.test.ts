@@ -332,3 +332,89 @@ test("uploads an album to a known chat", async () => {
   expect(uploaded.files.map((file) => file.name)).toEqual(["one.png", "two.png"]);
   expect(uploaded.caption).toBe("Графики");
 });
+
+test("deletes a message in a known chat", async () => {
+  const deleted: Array<{ chatId: number; messageId: number }> = [];
+  const database = {
+    chatExists: (chatId: number) => chatId === -10042,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    deleteMessage: async (chatId: number, messageId: number) => {
+      deleted.push({ chatId, messageId });
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/delete", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ chatId: -10042, messageId: 17 }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ chatId: -10042, messageId: 17, deleted: true });
+  expect(deleted).toEqual([{ chatId: -10042, messageId: 17 }]);
+});
+
+test("rejects deletion for an unknown chat before calling Telegram", async () => {
+  let called = false;
+  const database = {
+    chatExists: () => false,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    deleteMessage: async () => {
+      called = true;
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/delete", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ chatId: -10099, messageId: 17 }),
+    }),
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: "unknown chat" });
+  expect(called).toBe(false);
+});
+
+test("rejects invalid deletion IDs before calling Telegram", async () => {
+  let called = false;
+  const database = {
+    chatExists: () => true,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    deleteMessage: async () => {
+      called = true;
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/delete", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ chatId: -10042, messageId: 0 }),
+    }),
+  );
+
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: "chatId and messageId must be valid integer IDs",
+  });
+  expect(called).toBe(false);
+});

@@ -217,6 +217,27 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(await response.json(), null, 2));
     return;
   }
+  if (command === "delete") {
+    const [chatId, messageId] = arguments_;
+    const parsedChatId = Number(chatId);
+    const parsedMessageId = Number(messageId);
+    if (
+      !chatId ||
+      !messageId ||
+      !Number.isSafeInteger(parsedChatId) ||
+      !Number.isSafeInteger(parsedMessageId) ||
+      parsedMessageId <= 0
+    ) {
+      throw new Error("Usage: loylex delete CHAT_ID MESSAGE_ID");
+    }
+    const response = await request("/v1/telegram/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chatId: parsedChatId, messageId: parsedMessageId }),
+    });
+    console.log(JSON.stringify(await response.json(), null, 2));
+    return;
+  }
   if (command === "media") {
     const [fileId, output] = arguments_;
     if (!fileId || !output) {
@@ -285,7 +306,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|search|recent|media-list|message|messages|import|send|media|upload|upload-album|system>",
+    "Usage: loylex <status|search|recent|media-list|message|messages|import|send|delete|media|upload|upload-album|system>",
   );
 }
 
