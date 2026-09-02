@@ -7,7 +7,7 @@ timestamp="$(date --utc +%Y%m%dT%H%M%SZ)"
 destination="$backup_root/$timestamp"
 mkdir -p "$destination"
 
-for volume in loylex-gateway-data loylex-agent-home loylex-memory loylex-workspace; do
+for volume in loylex-gateway-data loylex-audit loylex-agent-home loylex-memory loylex-workspace; do
   podman volume export "$volume" | zstd -T0 -q -o "$destination/$volume.tar.zst"
 done
 

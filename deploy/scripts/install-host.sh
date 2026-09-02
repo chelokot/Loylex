@@ -105,6 +105,7 @@ if [[ -f /etc/rocky-release ]]; then
 fi
 "${dnf_cmd[@]}" install -y \
   curl \
+  e2fsprogs \
   firewalld \
   fuse-overlayfs \
   git \
@@ -287,6 +288,7 @@ fi
 
 for volume in \
   loylex-gateway-data \
+  loylex-audit \
   loylex-agent-home \
   loylex-memory \
   loylex-workspace; do
@@ -294,6 +296,56 @@ for volume in \
     as_loylex podman volume create "$volume"
   fi
 done
+
+prepare_audit_volume() {
+  local mountpoint file attributes flags
+  if ! command -v chattr >/dev/null 2>&1 || ! command -v lsattr >/dev/null 2>&1; then
+    echo "The host e2fsprogs chattr/lsattr tools are required for the inbound audit" >&2
+    exit 1
+  fi
+
+  mountpoint="$(as_loylex podman volume inspect --format '{{.Mountpoint}}' loylex-audit)"
+  if [[ -z "$mountpoint" || "$mountpoint" != /home/loylex/* || ! -d "$mountpoint" || -L "$mountpoint" ]]; then
+    echo "Unexpected loylex-audit volume mountpoint: $mountpoint" >&2
+    exit 1
+  fi
+
+  file="$mountpoint/inbound.ndjson"
+  if [[ -L "$file" ]]; then
+    echo "The inbound audit path must not be a symlink: $file" >&2
+    exit 1
+  fi
+  if [[ ! -e "$file" ]]; then
+    as_loylex podman unshare install -m 0244 -o 1000 -g 1000 /dev/null "$file"
+  fi
+  if [[ ! -f "$file" ]]; then
+    echo "The inbound audit path must be a regular file: $file" >&2
+    exit 1
+  fi
+  if [[ "$(stat -c '%h' -- "$file")" != 1 ]]; then
+    echo "The inbound audit file must not have additional hard links: $file" >&2
+    exit 1
+  fi
+
+  # UID 1000 is the bun user in the gateway image. The directory is owned by
+  # container root and has no write bit, so the gateway can append the file
+  # but cannot create, rename, or remove paths in the audit volume.
+  as_loylex podman unshare chown 1000:1000 "$file"
+  as_loylex podman unshare chmod 0244 "$file"
+  as_loylex podman unshare chown 0:0 "$mountpoint"
+  as_loylex podman unshare chmod 0555 "$mountpoint"
+
+  chattr +a "$file"
+  attributes="$(lsattr -d -- "$file")"
+  flags="${attributes%% *}"
+  if [[ "$flags" != *a* ]]; then
+    echo "The inbound audit file is not append-only: $file" >&2
+    exit 1
+  fi
+}
+
+prepare_audit_volume
+
 if ! as_loylex podman network exists loylex; then
   as_loylex podman network create loylex
 fi
