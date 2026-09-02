@@ -3,8 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LoylexDatabase } from "../src/gateway/database.ts";
-import { chatIdFromUpdate, GDPR_EXCLUDED_CHAT_ID } from "../src/shared/privacy.ts";
-import type { TelegramMessage, TelegramUpdate } from "../src/shared/types.ts";
+import type { TelegramMessage } from "../src/shared/types.ts";
 import type { AgentTokenUsage } from "../src/shared/usage.ts";
 
 const directories: string[] = [];
@@ -40,82 +39,44 @@ const usage: AgentTokenUsage = {
   totalTokens: 13,
 };
 
-test("keeps the excluded live message unarchived and detects nested chat updates", () => {
-  const database = setup();
-  const excluded = message(GDPR_EXCLUDED_CHAT_ID, 1, "секрет");
-  const update: TelegramUpdate = { update_id: 1, message: excluded };
+const formerlyExcludedChatId = 849670500;
 
-  expect(chatIdFromUpdate(update)).toBe(GDPR_EXCLUDED_CHAT_ID);
-  expect(
-    chatIdFromUpdate({
-      update_id: 2,
-      callback_query: { message: excluded },
-    }),
-  ).toBe(GDPR_EXCLUDED_CHAT_ID);
-  expect(database.archiveUpdate(update)).toEqual(excluded);
-  expect(database.archiveExportMessages([excluded])).toBe(0);
-  expect(database.stats()).toEqual({ updates: 0, messages: 0, pendingJobs: 0, runningJobs: 0 });
+test("archives and processes the formerly excluded chat like every other chat", () => {
+  const database = setup();
+  const incoming = message(formerlyExcludedChatId, 1, "секрет");
+  const exported = message(formerlyExcludedChatId, 2, "экспорт");
+
+  expect(database.archiveUpdate({ update_id: 1, message: incoming })).toEqual(incoming);
+  expect(database.archiveExportMessages([exported])).toBe(1);
+  expect(database.stats()).toEqual({ updates: 1, messages: 2, pendingJobs: 0, runningJobs: 0 });
   expect(database.nextUpdateOffset()).toBe(2);
-  database.close();
-});
 
-test("excludes old rows from reads, context, usage, and outbound logging", () => {
-  const database = setup();
-  const allowed = message(-10042, 2, "обычное");
-  const excluded = message(GDPR_EXCLUDED_CHAT_ID, 3, "секрет");
-  database.archiveUpdate({ update_id: 2, message: allowed });
+  expect(database.chatExists(formerlyExcludedChatId)).toBe(true);
+  expect(database.search("секрет", formerlyExcludedChatId, 10)).toHaveLength(1);
+  expect(database.recent(formerlyExcludedChatId, 10)).toHaveLength(2);
+  expect(database.archivedMessage(formerlyExcludedChatId, 1)?.text).toBe("секрет");
+  expect(database.archivedMessages(formerlyExcludedChatId, null, null, 10)).toHaveLength(2);
 
-  database.connection
-    .query("INSERT INTO chats (chat_id, chat_type, chat_title) VALUES (?, ?, ?)")
-    .run(GDPR_EXCLUDED_CHAT_ID, "private", "Privacy test");
-  database.connection
-    .query(
-      `INSERT INTO messages (
-         chat_id, message_id, date, from_user_id, text, media_json, raw_json, source
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      excluded.chat.id,
-      excluded.message_id,
-      excluded.date,
-      excluded.from?.id ?? null,
-      excluded.text ?? null,
-      "[]",
-      JSON.stringify(excluded),
-      "bot_api",
-    );
-  database.connection
-    .query("INSERT INTO updates (update_id, event_type, received_at, raw_json) VALUES (?, ?, ?, ?)")
-    .run(3, "message", Date.now(), JSON.stringify({ update_id: 3, message: excluded }));
-
-  expect(database.chatExists(GDPR_EXCLUDED_CHAT_ID)).toBe(false);
-  expect(database.search("секрет", null, 10)).toEqual([]);
-  expect(database.recent(GDPR_EXCLUDED_CHAT_ID, 10)).toEqual([]);
-  expect(database.archivedMessage(GDPR_EXCLUDED_CHAT_ID, 3)).toBeNull();
-  expect(database.archivedMessages(GDPR_EXCLUDED_CHAT_ID, null, null, 10)).toEqual([]);
-  expect(database.archivedMedia(GDPR_EXCLUDED_CHAT_ID, 10)).toEqual([]);
-  expect(database.stats()).toEqual({ updates: 1, messages: 1, pendingJobs: 0, runningJobs: 0 });
-
-  database.enqueue(4, excluded, "секрет", null);
+  database.enqueue(3, message(formerlyExcludedChatId, 3, "запрос"), "запрос", null);
   const job = database.claimNext(10);
   expect(job).not.toBeNull();
-  expect(job?.context).toBe("");
+  expect(job?.context).toContain("секрет");
   expect(job?.replyContext).toBeNull();
   expect(database.appendStatus(job?.id ?? 0, "секрет", "thread-secret")).toBe("секрет");
-  expect(database.statusLog(job?.id ?? 0)).toBeNull();
-  expect(database.recordUsage(job?.id ?? 0, usage, undefined, "thread-secret")).toBe(false);
+  expect(database.statusLog(job?.id ?? 0)).toBe("секрет");
+  expect(database.recordUsage(job?.id ?? 0, usage, undefined, "thread-secret")).toBe(true);
   database.recordOutboundMessage(job?.id ?? 0, 10, "thread-secret");
   expect(
     database.connection
       .query<{ count: number }, []>("SELECT count(*) AS count FROM outbound_messages")
       .get()?.count,
-  ).toBe(0);
-  expect(database.complete(job?.id ?? 0, 10, "thread-secret", undefined, usage)).toBe(true);
+  ).toBe(1);
+  expect(database.complete(job?.id ?? 0, 11, "thread-secret", undefined, usage)).toBe(true);
   expect(
     database.connection
       .query<{ error: string | null }, [number]>("SELECT error FROM jobs WHERE id = ?")
       .get(job?.id ?? 0)?.error,
   ).toBeNull();
-  expect(database.usageReport().summary.jobs).toBe(0);
+  expect(database.usageReport().summary.jobs).toBe(1);
   database.close();
 });

@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InboundAuditLog } from "../src/gateway/audit.ts";
-import { GDPR_EXCLUDED_CHAT_ID } from "../src/shared/privacy.ts";
 import type { TelegramMessage, TelegramUpdate } from "../src/shared/types.ts";
 
 const directories: string[] = [];
@@ -63,14 +62,14 @@ test("durably appends a minimal message record without names or media", async ()
   expect(Object.keys(parsed)).not.toContain("document");
 });
 
-test("audits the chat covered by the old archive exclusion", async () => {
+test("audits every chat, including the formerly excluded address", async () => {
   const { path } = setup();
   const audit = new InboundAuditLog(path, () => "2026-09-02T12:01:00.000Z");
 
-  await audit.append(update(message(GDPR_EXCLUDED_CHAT_ID, 8), 100));
+  await audit.append(update(message(849670500, 8), 100));
 
   expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
-    chat_id: GDPR_EXCLUDED_CHAT_ID,
+    chat_id: 849670500,
     message_id: 8,
     author_id: 426043802,
   });

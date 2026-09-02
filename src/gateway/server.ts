@@ -1,5 +1,4 @@
 import type { Server } from "bun";
-import { isGdprExcludedChat } from "../shared/privacy.ts";
 import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
 import { isAgentTokenUsage } from "../shared/usage.ts";
 import type { GatewayConfig } from "./config.ts";
@@ -203,9 +202,6 @@ export class GatewayServer {
         if (chat !== null && (chat.trim() === "" || !Number.isSafeInteger(chatId))) {
           return json({ error: "chat must be a valid chat ID" }, 400);
         }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
         const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "20", 10);
         const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(parsedLimit, 1), 100);
         const parsedOffset = Number.parseInt(url.searchParams.get("offset") ?? "0", 10);
@@ -222,9 +218,6 @@ export class GatewayServer {
         const chatId = chat === null ? Number.NaN : Number(chat);
         if (!chat || !Number.isSafeInteger(chatId)) {
           return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
         }
         const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
         const limit = Number.isNaN(parsedLimit) ? 100 : Math.min(Math.max(parsedLimit, 1), 1000);
@@ -244,9 +237,6 @@ export class GatewayServer {
         ) {
           return json({ error: "chat and message must be valid integer IDs" }, 400);
         }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
         const result = this.database.archivedMessage(chatId, messageId);
         return result === null ? json({ error: "message not found" }, 404) : json(result);
       }
@@ -256,9 +246,6 @@ export class GatewayServer {
         const chatId = chat === null ? Number.NaN : Number(chat);
         if (!chat || !Number.isSafeInteger(chatId)) {
           return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
         }
         const parseBound = (name: string): number | null | "invalid" => {
           const value = url.searchParams.get(name);
@@ -290,12 +277,7 @@ export class GatewayServer {
         }
         const chatIds = new Set(payload.messages.map((message) => message.chat.id));
         const chatId = payload.messages[0]?.chat.id;
-        if (
-          chatIds.size !== 1 ||
-          chatId === undefined ||
-          isGdprExcludedChat(chatId) ||
-          !this.database.chatExists(chatId)
-        ) {
+        if (chatIds.size !== 1 || chatId === undefined || !this.database.chatExists(chatId)) {
           return json({ error: "unknown or mixed chat" }, 403);
         }
         return json({ imported: this.database.archiveExportMessages(payload.messages), chatId });
@@ -306,9 +288,6 @@ export class GatewayServer {
         const chatId = chat === null ? Number.NaN : Number(chat);
         if (!chat || !Number.isSafeInteger(chatId)) {
           return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
         }
         const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "500", 10);
         const limit = Number.isNaN(parsedLimit) ? 500 : Math.min(Math.max(parsedLimit, 1), 500);
@@ -324,9 +303,6 @@ export class GatewayServer {
         const chatId = rawChatId === null ? null : Number(rawChatId);
         if (rawChatId !== null && (rawChatId.trim() === "" || !Number.isSafeInteger(chatId))) {
           return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
         }
         const rawLimit = url.searchParams.get("limit");
         const limit = rawLimit === null ? 100 : Number(rawLimit);

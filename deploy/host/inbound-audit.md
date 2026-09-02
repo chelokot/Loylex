@@ -4,7 +4,7 @@ Reviewed: 2026-09-02
 
 Decision: approve a host-prepared append-only audit file for the gateway's inbound Telegram
 messages. This is a security audit trail, not the normal SQLite archive and not a replacement
-for the archive's existing privacy behavior.
+for the normal SQLite archive.
 
 ## Recorded data and ordering
 
@@ -18,8 +18,8 @@ record contains only:
 - the message text or caption.
 
 Names, usernames, raw updates, media objects, file IDs, and attachments are deliberately not
-copied into this audit trail. The audit write is independent of the SQLite archive's chat
-filters, so an excluded archive chat cannot bypass the internal audit.
+copied into this audit trail. The audit write has no per-chat exception and occurs before the
+SQLite archive or any later processing, so no chat can bypass the internal audit.
 
 ## Storage and enforcement
 
@@ -81,7 +81,7 @@ and investigate the filesystem, SELinux label, mount, and free space before retr
 The audit is intentionally minimal and is not cryptographically tamper-evident: a privileged
 host administrator can still alter the volume, and a compromised gateway can append misleading
 records. It materially narrows the ordinary container attack surface and preserves evidence
-before application-side privacy filters or processing.
+before application-side processing.
 
 Rollback is a reviewed revert of the application/deployment commit followed by a normal host
 deployment. The `loylex-audit` volume must remain preserved during rollback; do not remove it or

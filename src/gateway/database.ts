@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite";
-import { chatIdFromUpdate, GDPR_EXCLUDED_CHAT_ID, isGdprExcludedChat } from "../shared/privacy.ts";
 import type {
   AgentContextMode,
   AgentJob,
@@ -379,25 +378,6 @@ function rawRelations(rawJson: string): string {
 function eventType(update: TelegramUpdate): string {
   return Object.keys(update).find((key) => key !== "update_id") ?? "unknown";
 }
-
-const updateChatIdExpression = `COALESCE(
-  json_extract(raw_json, '$.message.chat.id'),
-  json_extract(raw_json, '$.edited_message.chat.id'),
-  json_extract(raw_json, '$.channel_post.chat.id'),
-  json_extract(raw_json, '$.edited_channel_post.chat.id'),
-  json_extract(raw_json, '$.message_reaction.chat.id'),
-  json_extract(raw_json, '$.message_reaction_count.chat.id'),
-  json_extract(raw_json, '$.callback_query.message.chat.id'),
-  json_extract(raw_json, '$.business_message.chat.id'),
-  json_extract(raw_json, '$.edited_business_message.chat.id'),
-  json_extract(raw_json, '$.deleted_business_messages.chat.id'),
-  json_extract(raw_json, '$.my_chat_member.chat.id'),
-  json_extract(raw_json, '$.chat_member.chat.id'),
-  json_extract(raw_json, '$.chat_join_request.chat.id'),
-  json_extract(raw_json, '$.chat_boost.chat.id'),
-  json_extract(raw_json, '$.removed_chat_boost.chat.id'),
-  json_extract(raw_json, '$.stopped_message_generation.chat.id')
-)`;
 
 function displayNameForUser(user: TelegramUser): string {
   return [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "unknown";
@@ -877,9 +857,6 @@ export class LoylexDatabase {
     eventType: "message_reaction" | "message_reaction_count",
     reaction: TelegramMessageReactionUpdated | TelegramMessageReactionCountUpdated,
   ): void {
-    if (isGdprExcludedChat(reaction.chat.id)) {
-      return;
-    }
     if (!this.messageExists(reaction.chat.id, reaction.message_id)) {
       return;
     }
@@ -941,7 +918,6 @@ export class LoylexDatabase {
   archiveUpdate(update: TelegramUpdate): TelegramMessage | null {
     const message =
       update.message ?? update.edited_message ?? update.channel_post ?? update.edited_channel_post;
-    const excluded = isGdprExcludedChat(chatIdFromUpdate(update));
     const transaction = this.connection.transaction(() => {
       this.connection
         .query(`
@@ -950,24 +926,22 @@ export class LoylexDatabase {
         `)
         .run(update.update_id);
 
-      if (!excluded) {
-        this.connection
-          .query("INSERT OR IGNORE INTO updates VALUES (?, ?, ?, ?)")
-          .run(update.update_id, eventType(update), Date.now(), JSON.stringify(update));
+      this.connection
+        .query("INSERT OR IGNORE INTO updates VALUES (?, ?, ?, ?)")
+        .run(update.update_id, eventType(update), Date.now(), JSON.stringify(update));
 
-        if (message) {
-          this.archiveMessage(message, "bot_api");
-        }
-        if (update.message_reaction) {
-          this.archiveReaction(update.update_id, "message_reaction", update.message_reaction);
-        }
-        if (update.message_reaction_count) {
-          this.archiveReaction(
-            update.update_id,
-            "message_reaction_count",
-            update.message_reaction_count,
-          );
-        }
+      if (message) {
+        this.archiveMessage(message, "bot_api");
+      }
+      if (update.message_reaction) {
+        this.archiveReaction(update.update_id, "message_reaction", update.message_reaction);
+      }
+      if (update.message_reaction_count) {
+        this.archiveReaction(
+          update.update_id,
+          "message_reaction_count",
+          update.message_reaction_count,
+        );
       }
       return message ?? null;
     });
@@ -975,9 +949,6 @@ export class LoylexDatabase {
   }
 
   archiveMessage(message: TelegramMessage, source: "bot_api" | "telegram_export"): void {
-    if (isGdprExcludedChat(message.chat.id)) {
-      return;
-    }
     this.upsertChat(message.chat);
     if (message.from) {
       this.upsertUser(message.from);
@@ -1018,20 +989,16 @@ export class LoylexDatabase {
   }
 
   archiveExportMessages(messages: TelegramMessage[]): number {
-    const allowedMessages = messages.filter((message) => !isGdprExcludedChat(message.chat.id));
     const transaction = this.connection.transaction(() => {
-      for (const message of allowedMessages) {
+      for (const message of messages) {
         this.archiveMessage(message, "telegram_export");
       }
-      return allowedMessages.length;
+      return messages.length;
     });
     return transaction.immediate();
   }
 
   archivedMedia(chatId: number, limit: number): ArchivedMedia[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const rows = this.connection
       .query<
         { chat_id: number; message_id: number; date: number; media_json: string; source: string },
@@ -1056,9 +1023,6 @@ export class LoylexDatabase {
   }
 
   archivedMessage(chatId: number, messageId: number): ArchivedMessage | null {
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     const row = this.connection
       .query<ArchivedMessageRow, [number, number]>(`
         SELECT messages.chat_id, messages.message_id, messages.date, messages.from_user_id,
@@ -1079,9 +1043,6 @@ export class LoylexDatabase {
     beforeMessageId: number | null,
     limit: number,
   ): ArchivedMessage[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const rows = this.connection
       .query<
         ArchivedMessageRow,
@@ -1104,7 +1065,7 @@ export class LoylexDatabase {
   }
 
   resumeThread(chatId: number, repliedMessageId: number | undefined): string | null {
-    if (repliedMessageId === undefined || isGdprExcludedChat(chatId)) {
+    if (repliedMessageId === undefined) {
       return null;
     }
     const outbound = this.connection
@@ -1134,9 +1095,6 @@ export class LoylexDatabase {
   }
 
   latestThread(chatId: number): string | null {
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     return (
       this.connection
         .query<{ thread_id: string | null }, [number]>(`
@@ -1152,9 +1110,6 @@ export class LoylexDatabase {
   }
 
   latestContinuableThread(chatId: number): string | null {
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     const threadId = this.latestThread(chatId);
     if (threadId === null) {
       return null;
@@ -1584,9 +1539,6 @@ export class LoylexDatabase {
   }
 
   listRecentJobs(chatId: number, limit = 5): JobSummary[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const rows = this.connection
       .query<JobSummaryRow, [number, number]>(`
         SELECT id, chat_id, chat_type, message_id, prompt, state,
@@ -1615,7 +1567,7 @@ export class LoylexDatabase {
 
   usageReport(chatId: number | null = null, limit = 100): UsageReport {
     const safeLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 1_000) : 100;
-    const filter = `j.chat_id != ${GDPR_EXCLUDED_CHAT_ID} AND (? IS NULL OR j.chat_id = ?)`;
+    const filter = "(? IS NULL OR j.chat_id = ?)";
     const summary = this.connection
       .query<UsageAggregateRow, [number | null, number | null]>(`
         SELECT count(*) AS jobs,
@@ -1810,9 +1762,6 @@ export class LoylexDatabase {
     resumeThreadId: string | null,
     contextMode: AgentContextMode,
   ): ContextResult {
-    if (isGdprExcludedChat(chatId)) {
-      return { mode: "none", text: "" };
-    }
     // A null resume ID also represents a normal first turn, so /newchat needs an explicit
     // mode to prevent that request from falling through to the recent chat history.
     if (contextMode === "none") {
@@ -1845,9 +1794,6 @@ export class LoylexDatabase {
     threadId: string,
     beforeMessageId: number,
   ): number | null {
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     return (
       this.connection
         .query<{ message_id: number }, [number, string, string, number]>(`
@@ -1864,9 +1810,6 @@ export class LoylexDatabase {
   }
 
   private recentContext(chatId: number, beforeMessageId: number, limit: number): string {
-    if (isGdprExcludedChat(chatId)) {
-      return "";
-    }
     const rows = this.connection
       .query<MessageContextRow, [number, number, number]>(`
         SELECT messages.date, messages.edit_date, messages.from_user_id,
@@ -1891,9 +1834,6 @@ export class LoylexDatabase {
     threadId: string,
     limit: number,
   ): string {
-    if (isGdprExcludedChat(chatId)) {
-      return "";
-    }
     const rows = this.connection
       .query<MessageContextRow, [number, number, number, string, number]>(`
         SELECT messages.date, messages.edit_date, messages.from_user_id,
@@ -1944,9 +1884,6 @@ export class LoylexDatabase {
   }
 
   private replyContext(chatId: number, messageId: number, context: string): string | null {
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     const rawJson = this.connection
       .query<{ raw_json: string }, [number, number]>(
         "SELECT raw_json FROM messages WHERE chat_id = ? AND message_id = ?",
@@ -1978,17 +1915,6 @@ export class LoylexDatabase {
     threadId: string | undefined,
     workerId?: string,
   ): string | null {
-    const address = this.jobAddress(jobId);
-    if (isGdprExcludedChat(address.chatId)) {
-      const running = this.connection
-        .query<{ value: number }, [number, string | null, string | null]>(`
-          SELECT 1 AS value
-          FROM jobs
-          WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)
-        `)
-        .get(jobId, workerId ?? null, workerId ?? null);
-      return running ? text : null;
-    }
     const result = this.connection
       .query(`
         UPDATE jobs SET
@@ -2006,7 +1932,7 @@ export class LoylexDatabase {
         .query(
           `UPDATE outbound_messages
            SET codex_thread_id = ?
-           WHERE job_id = ? AND codex_thread_id IS NULL AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`,
+           WHERE job_id = ? AND codex_thread_id IS NULL`,
         )
         .run(threadId, jobId);
     }
@@ -2034,12 +1960,6 @@ export class LoylexDatabase {
   }
 
   thinkingMessage(jobId: number): number | null {
-    const chatId = this.connection
-      .query<{ chat_id: number }, [number]>("SELECT chat_id FROM jobs WHERE id = ?")
-      .get(jobId)?.chat_id;
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     return (
       this.connection
         .query<{ thinking_message_id: number | null }, [number]>(
@@ -2050,12 +1970,6 @@ export class LoylexDatabase {
   }
 
   statusLog(jobId: number): string | null {
-    const chatId = this.connection
-      .query<{ chat_id: number }, [number]>("SELECT chat_id FROM jobs WHERE id = ?")
-      .get(jobId)?.chat_id;
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     return (
       this.connection
         .query<{ status_log: string }, [number]>("SELECT status_log FROM jobs WHERE id = ?")
@@ -2064,12 +1978,6 @@ export class LoylexDatabase {
   }
 
   jobThreadId(jobId: number): string | null {
-    const chatId = this.connection
-      .query<{ chat_id: number }, [number]>("SELECT chat_id FROM jobs WHERE id = ?")
-      .get(jobId)?.chat_id;
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     return (
       this.connection
         .query<{ thread_id: string | null }, [number]>(
@@ -2080,10 +1988,6 @@ export class LoylexDatabase {
   }
 
   setThinkingMessage(jobId: number, messageId: number): void {
-    const address = this.jobAddress(jobId);
-    if (isGdprExcludedChat(address.chatId)) {
-      return;
-    }
     this.connection
       .query("UPDATE jobs SET thinking_message_id = ? WHERE id = ?")
       .run(messageId, jobId);
@@ -2096,9 +2000,6 @@ export class LoylexDatabase {
     codexThreadId: string | null = null,
   ): void {
     const address = this.jobAddress(jobId);
-    if (isGdprExcludedChat(address.chatId)) {
-      return;
-    }
     this.connection
       .query(`
         INSERT INTO outbound_messages (chat_id, message_id, job_id, codex_thread_id, sent_at)
@@ -2112,9 +2013,6 @@ export class LoylexDatabase {
   }
 
   cancelJobsForMessage(chatId: number, messageId: number): number[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const transaction = this.connection.transaction(() => {
       const outbound = this.connection
         .query<{ job_id: number | null; codex_thread_id: string | null }, [number, number]>(
@@ -2178,9 +2076,6 @@ export class LoylexDatabase {
   }
 
   cancelJobsForDraft(chatId: number, draftId: number): number[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const messageId = this.connection
       .query<{ message_id: number }, [number, number]>(
         "SELECT message_id FROM jobs WHERE id = ? AND chat_id = ?",
@@ -2190,9 +2085,6 @@ export class LoylexDatabase {
   }
 
   resumableThread(chatId: number, messageId: number): string | null {
-    if (isGdprExcludedChat(chatId)) {
-      return null;
-    }
     return (
       this.connection
         .query<{ thread_id: string | null }, [number, number, number]>(`
@@ -2266,7 +2158,6 @@ export class LoylexDatabase {
           reasoning_output_tokens = ?,
           total_tokens = ?
         WHERE id = ?
-          AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}
           AND state IN ('pending', 'running', 'completed', 'failed', 'cancelled')
           AND (? IS NULL OR worker_id = ?)
       `)
@@ -2293,8 +2184,6 @@ export class LoylexDatabase {
     usage: AgentTokenUsage | null = null,
   ): boolean {
     const address = this.jobAddress(jobId);
-    const excluded = isGdprExcludedChat(address.chatId);
-    const storedUsage = excluded ? null : usage;
     const transaction = this.connection.transaction(() => {
       const result = this.connection
         .query(`
@@ -2314,14 +2203,14 @@ export class LoylexDatabase {
         `)
         .run(
           Date.now(),
-          excluded ? null : codexThreadId,
-          excluded ? null : answerMessageId,
-          storedUsage?.inputTokens ?? null,
-          storedUsage?.cachedInputTokens ?? null,
-          storedUsage?.cacheWriteInputTokens ?? null,
-          storedUsage?.outputTokens ?? null,
-          storedUsage?.reasoningOutputTokens ?? null,
-          storedUsage?.totalTokens ?? null,
+          codexThreadId,
+          answerMessageId,
+          usage?.inputTokens ?? null,
+          usage?.cachedInputTokens ?? null,
+          usage?.cacheWriteInputTokens ?? null,
+          usage?.outputTokens ?? null,
+          usage?.reasoningOutputTokens ?? null,
+          usage?.totalTokens ?? null,
           jobId,
           workerId ?? null,
           workerId ?? null,
@@ -2329,14 +2218,12 @@ export class LoylexDatabase {
       if (result.changes === 0) {
         return false;
       }
-      if (!excluded) {
-        this.connection
-          .query("UPDATE outbound_messages SET codex_thread_id = ? WHERE job_id = ?")
-          .run(codexThreadId, jobId);
-        this.connection
-          .query("INSERT OR REPLACE INTO outbound_messages VALUES (?, ?, ?, ?, ?)")
-          .run(address.chatId, answerMessageId, jobId, codexThreadId, Date.now());
-      }
+      this.connection
+        .query("UPDATE outbound_messages SET codex_thread_id = ? WHERE job_id = ?")
+        .run(codexThreadId, jobId);
+      this.connection
+        .query("INSERT OR REPLACE INTO outbound_messages VALUES (?, ?, ?, ?, ?)")
+        .run(address.chatId, answerMessageId, jobId, codexThreadId, Date.now());
       return true;
     });
     return transaction.immediate();
@@ -2349,10 +2236,6 @@ export class LoylexDatabase {
     codexThreadId?: string | null,
     usage: AgentTokenUsage | null = null,
   ): void {
-    const address = this.jobAddress(jobId);
-    const excluded = isGdprExcludedChat(address.chatId);
-    const storedUsage = excluded ? null : usage;
-    const storedError = excluded ? null : error;
     const transaction = this.connection.transaction(() => {
       const result = this.connection
         .query(
@@ -2373,24 +2256,24 @@ export class LoylexDatabase {
         )
         .run(
           Date.now(),
-          storedError,
-          excluded ? null : (codexThreadId ?? null),
-          storedUsage?.inputTokens ?? null,
-          storedUsage?.cachedInputTokens ?? null,
-          storedUsage?.cacheWriteInputTokens ?? null,
-          storedUsage?.outputTokens ?? null,
-          storedUsage?.reasoningOutputTokens ?? null,
-          storedUsage?.totalTokens ?? null,
+          error,
+          codexThreadId ?? null,
+          usage?.inputTokens ?? null,
+          usage?.cachedInputTokens ?? null,
+          usage?.cacheWriteInputTokens ?? null,
+          usage?.outputTokens ?? null,
+          usage?.reasoningOutputTokens ?? null,
+          usage?.totalTokens ?? null,
           jobId,
           workerId ?? null,
           workerId ?? null,
         );
-      if (result.changes > 0 && codexThreadId && !excluded) {
+      if (result.changes > 0 && codexThreadId) {
         this.connection
           .query(
             `UPDATE outbound_messages
              SET codex_thread_id = ?
-             WHERE job_id = ? AND codex_thread_id IS NULL AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`,
+             WHERE job_id = ? AND codex_thread_id IS NULL`,
           )
           .run(codexThreadId, jobId);
       }
@@ -2399,9 +2282,6 @@ export class LoylexDatabase {
   }
 
   chatExists(chatId: number): boolean {
-    if (isGdprExcludedChat(chatId)) {
-      return false;
-    }
     return Boolean(
       this.connection
         .query<{ value: number }, [number]>(
@@ -2412,9 +2292,6 @@ export class LoylexDatabase {
   }
 
   search(query: string, chatId: number | null, limit: number, offset = 0): SearchResult[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const rows = this.connection
       .query<SearchRow, [string, number | null, number | null, number, number]>(`
         SELECT m.chat_id, m.message_id, m.date, m.from_user_id,
@@ -2424,7 +2301,6 @@ export class LoylexDatabase {
         JOIN messages m ON m.rowid = f.rowid
         LEFT JOIN users u ON u.user_id = m.from_user_id
         WHERE messages_fts MATCH ?
-          AND m.chat_id != ${GDPR_EXCLUDED_CHAT_ID}
           AND (? IS NULL OR m.chat_id = ?)
         ORDER BY bm25(messages_fts), m.date DESC
         LIMIT ? OFFSET ?
@@ -2434,9 +2310,6 @@ export class LoylexDatabase {
   }
 
   recent(chatId: number, limit: number): SearchResult[] {
-    if (isGdprExcludedChat(chatId)) {
-      return [];
-    }
     const rows = this.connection
       .query<SearchRow, [number, number]>(`
         SELECT messages.chat_id, messages.message_id, messages.date, messages.from_user_id,
@@ -2459,15 +2332,11 @@ export class LoylexDatabase {
           `SELECT count(*) AS count FROM ${table}${where ? ` WHERE ${where}` : ""}`,
         )
         .get()?.count ?? 0;
-    const updates = count(
-      "updates",
-      `(${updateChatIdExpression}) IS NULL OR (${updateChatIdExpression}) != ${GDPR_EXCLUDED_CHAT_ID}`,
-    );
     return {
-      updates,
-      messages: count("messages", `chat_id != ${GDPR_EXCLUDED_CHAT_ID}`),
-      pendingJobs: count("jobs", `state = 'pending' AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`),
-      runningJobs: count("jobs", `state = 'running' AND chat_id != ${GDPR_EXCLUDED_CHAT_ID}`),
+      updates: count("updates"),
+      messages: count("messages"),
+      pendingJobs: count("jobs", "state = 'pending'"),
+      runningJobs: count("jobs", "state = 'running'"),
     };
   }
 }
