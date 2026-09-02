@@ -49,6 +49,12 @@ socket, host PID namespace, host devices, privileged mode, or host mounts. The g
 is pinned by digest, and `main` requires review, so an agent-authored branch cannot replace
 the component holding the secret.
 
+The worker runtime is loaded from the image's root-owned `/opt/loylex/app`, not the writable
+workspace volume. Before registering, it compares the workspace `AGENTS.md` with the image-pinned
+copy and refuses to process jobs on any mismatch or when required security clauses are missing.
+Worker root filesystems are read-only; `/tmp`, the persistent home, memory, and workspace are the
+only writable areas.
+
 PM3 runs the host's rootless Podman Compose projects as a user service. The gateway and both
 worker slots have separate PM3 registrations, while only one worker registration is enabled
 at a time. An authenticated host-local supervisor lets the agent restart or deploy only the
@@ -78,9 +84,11 @@ The repository contains public skills and personality/instructions. Private memo
 mounted into the gateway and is never committed. Daily compressed volume backups are kept
 for 14 days.
 
-The agent starts its TypeScript runtime from the mounted `/workspace/Loylex` repository.
-After checks pass, a supervised restart therefore applies its self-authored agent changes
-without replacing memory, Codex sessions, or the workspace.
+The image-pinned worker runtime and `loylex` control CLI run from the root-owned image layer.
+The mounted workspace remains available for projects, experiments, and reviewed source changes,
+but changing it cannot replace the running worker or the CLI used for bridge and supervisor calls.
+After checks pass, a supervised rollout replaces the image while preserving memory, Codex sessions,
+and the workspace.
 
 ## Usage analytics
 
@@ -129,9 +137,11 @@ append-only audit volume as a minimal record containing its IDs, author ID, Tele
 and text or caption. The gateway refuses to process the update when this append fails. The
 normal Bot API archive then stores updates raw; messages and edits are normalized, reply relationships
 and media file IDs are retained, and text is indexed with FTS5. On a trigger, a new Codex
-thread receives the latest chat window and matching private memory buckets. A resumed thread
-receives only archived messages since its previous turn because the saved Codex transcript
-already contains the earlier prompt and context.
+thread receives the latest chat window and matching private memory buckets. A reply from the same
+Telegram user resumes the exact Codex thread; a different user replying to that message starts a
+fresh Codex thread with current public chat context, preventing cross-user thread hijacking. A
+resumed thread receives only archived messages since its previous turn because the saved Codex
+transcript already contains the earlier prompt and context.
 
 While Codex works, terminal and reasoning events update an ephemeral rich draft in private chats,
 or create/edit one persistent Rich Message with a collapsed `<details>` history in groups.

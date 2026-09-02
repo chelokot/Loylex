@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repository_path="${LOYLEX_REPOSITORY_PATH:-/workspace/Loylex}"
-exec bun "$repository_path/src/agent/cli.ts" "$@"
+exec bun /opt/loylex/app/src/agent/cli.ts "$@"

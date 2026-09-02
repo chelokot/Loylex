@@ -1134,6 +1134,13 @@ export class LoylexDatabase {
     resumeThreadId: string | null,
     contextMode: AgentContextMode = resumeThreadId === null ? "full" : "delta",
   ): void {
+    const authorizedResumeThreadId = this.authorizedResumeThreadId(
+      message.chat.id,
+      message.from?.id ?? null,
+      resumeThreadId,
+    );
+    const effectiveContextMode =
+      contextMode === "none" ? "none" : authorizedResumeThreadId === null ? "full" : contextMode;
     const generation = this.activeWorkerGeneration();
     this.connection
       .query(`
@@ -1150,12 +1157,34 @@ export class LoylexDatabase {
         message.message_thread_id ?? null,
         message.from?.id ?? null,
         prompt,
-        resumeThreadId,
-        contextMode,
+        authorizedResumeThreadId,
+        effectiveContextMode,
         JSON.stringify(jobMedia(message)),
         generation,
         Date.now(),
       );
+  }
+
+  private authorizedResumeThreadId(
+    chatId: number,
+    userId: number | null,
+    resumeThreadId: string | null,
+  ): string | null {
+    if (userId === null || resumeThreadId === null) {
+      return null;
+    }
+    const owner = this.connection
+      .query<{ user_id: number }, [number, string, string]>(`
+        SELECT user_id
+        FROM jobs
+        WHERE chat_id = ?
+          AND user_id IS NOT NULL
+          AND (codex_thread_id = ? OR resume_thread_id = ?)
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      `)
+      .get(chatId, resumeThreadId, resumeThreadId)?.user_id;
+    return owner === userId ? resumeThreadId : null;
   }
 
   private activeWorkerGeneration(): number {

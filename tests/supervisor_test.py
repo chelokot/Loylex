@@ -75,6 +75,18 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(compose.count("/run/secrets/loylex-bridge-token"), 3)
         self.assertEqual(compose.count("/run/secrets/loylex-supervisor-token"), 2)
 
+    def test_worker_root_filesystems_are_read_only(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        self.assertEqual(compose.count("    read_only: true"), 3)
+        self.assertEqual(compose.count("/tmp:rw,nodev,nosuid,noexec,size=256m"), 2)
+
+    def test_agent_runtime_and_cli_use_image_pinned_sources(self) -> None:
+        root = SCRIPT_PATH.parents[1].parent
+        entrypoint = (root / "containers/agent-entrypoint.sh").read_text()
+        cli = (root / "containers/loylex-cli").read_text()
+        self.assertIn("bun /opt/loylex/app/src/agent/main.ts", entrypoint)
+        self.assertIn("exec bun /opt/loylex/app/src/agent/cli.ts", cli)
+
     def test_persistent_worker_volumes_relabel_and_map_ownership(self) -> None:
         compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
         self.assertEqual(compose.count("agent-home:/home/loylex:Z,U"), 2)

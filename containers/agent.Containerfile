@@ -68,11 +68,11 @@ RUN python3 -m pip install \
       --target /opt/loylex/python \
       "pybooru==4.2.2"
 
-COPY --chown=loylex:loylex package.json bun.lock tsconfig.json /opt/loylex/app/
-COPY --chown=loylex:loylex src /opt/loylex/app/src
-COPY --chown=loylex:loylex AGENTS.md /opt/loylex/seed/AGENTS.md
-COPY --chown=loylex:loylex skills /opt/loylex/seed/skills
-COPY --chown=loylex:loylex memory-seed /opt/loylex/memory-seed
+COPY --chown=root:root package.json bun.lock tsconfig.json /opt/loylex/app/
+COPY --chown=root:root src /opt/loylex/app/src
+COPY --chown=root:root AGENTS.md /opt/loylex/seed/AGENTS.md
+COPY --chown=root:root skills /opt/loylex/seed/skills
+COPY --chown=root:root memory-seed /opt/loylex/memory-seed
 COPY --chmod=0755 containers/agent-entrypoint.sh /usr/local/bin/loylex-agent
 COPY --chmod=0755 containers/loylex-cli /usr/local/bin/loylex
 COPY --chmod=0644 containers/loylex-pumpkin.cron /etc/cron.d/loylex-pumpkin

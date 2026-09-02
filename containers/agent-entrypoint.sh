@@ -64,7 +64,7 @@ if command -v crond >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 \
   sudo -n crond -n -s >/dev/null 2>&1 &
   cron_pid=$!
 fi
-bun "$repository_path/src/agent/main.ts" &
+bun /opt/loylex/app/src/agent/main.ts &
 agent_pid=$!
 agent_status=0
 wait "$agent_pid" || agent_status=$?

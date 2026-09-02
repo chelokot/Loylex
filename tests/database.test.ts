@@ -326,6 +326,32 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("does not resume a Codex thread for a different Telegram user", () => {
+    const database = setup();
+    const ownerMessage = message(1, "Лойлекс, начни задачу");
+    database.archiveMessage(ownerMessage, "bot_api");
+    database.enqueue(55, ownerMessage, "начни задачу", null);
+
+    const ownerJob = database.claimNext(10);
+    expect(ownerJob).not.toBeNull();
+    database.appendStatus(ownerJob?.id ?? 0, "commentary: работаю", "thread-owned");
+    database.complete(ownerJob?.id ?? 0, 2, "thread-owned");
+    database.archiveMessage(botMessage(2, "Готово"), "bot_api");
+
+    const otherUserMessage = {
+      ...message(3, "продолжай чужую задачу"),
+      from: { id: 8, is_bot: false, first_name: "Artem", username: "ExposedCat" },
+    } satisfies TelegramMessage;
+    database.archiveMessage(otherUserMessage, "bot_api");
+    database.enqueue(56, otherUserMessage, "продолжай чужую задачу", "thread-owned");
+
+    const freshJob = database.claimNext(10);
+    expect(freshJob?.resumeThreadId).toBeNull();
+    expect(freshJob?.contextMode).toBe("full");
+    expect(freshJob?.context).toContain("#1");
+    database.close();
+  });
+
   test("does not include prior chat context for a clean new chat", () => {
     const database = setup();
     const first = privateMessage(1, "старое сообщение из предыдущего чата");
@@ -407,12 +433,13 @@ describe("LoylexDatabase", () => {
     const first = message(1, "первая задача");
     const second = message(2, "вторая задача");
     const unrelated = message(3, "другая задача");
-    database.enqueue(55, first, "первая", "thread-123");
-    database.enqueue(56, second, "вторая", "thread-123");
-    database.enqueue(57, unrelated, "другая", "thread-456");
-
+    database.enqueue(55, first, "первая", null);
     const firstJob = database.claimNext(10, "worker-a");
     expect(firstJob?.messageId).toBe(1);
+    database.appendStatus(firstJob?.id ?? 0, "commentary: работаю", "thread-123", "worker-a");
+    database.enqueue(56, second, "вторая", "thread-123");
+    database.enqueue(57, unrelated, "другая", null);
+
     const unrelatedJob = database.claimNext(10, "worker-b");
     expect(unrelatedJob?.messageId).toBe(3);
     expect(database.claimNext(10, "worker-c")).toBeNull();
@@ -431,11 +458,11 @@ describe("LoylexDatabase", () => {
     const old = message(1, "старая задача");
     const oldFollowUp = message(2, "старое продолжение");
     database.enqueue(55, old, "старая", null);
-    database.enqueue(56, oldFollowUp, "продолжай старое", "thread-old");
 
     const oldJob = database.claimNext(10, "blue");
     expect(oldJob?.messageId).toBe(1);
     database.appendStatus(oldJob?.id ?? 0, "commentary: работаю", "thread-old", "blue");
+    database.enqueue(56, oldFollowUp, "продолжай старое", "thread-old");
 
     expect(database.registerWorker("green", 2_000)).toEqual({ generation: 2, state: "active" });
     const newMessage = message(3, "новая задача");

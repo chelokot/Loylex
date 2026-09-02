@@ -6,6 +6,7 @@ import { loadBuckets } from "./buckets.ts";
 import { runCodex } from "./codex.ts";
 import { loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
+import { assertTrustedInstructions } from "./instruction-integrity.ts";
 import { buildPrompt } from "./prompt.ts";
 
 const config = loadAgentConfig();
@@ -14,6 +15,8 @@ let stopping = false;
 const leaseHeartbeatIntervalMs = 20_000;
 const workerHeartbeatIntervalMs = 5_000;
 const workerReadyPath = process.env.LOYLEX_WORKER_READY_PATH ?? "/tmp/loylex-worker-ready";
+const trustedInstructionsPath =
+  process.env.LOYLEX_TRUSTED_AGENTS_PATH ?? "/opt/loylex/seed/AGENTS.md";
 
 process.once("SIGINT", () => {
   stopping = true;
@@ -126,6 +129,7 @@ function startJob(job: AgentJob): void {
   activeJobs.add(task);
 }
 
+await assertTrustedInstructions(config.repositoryPath, trustedInstructionsPath);
 await unlink(workerReadyPath).catch(() => {});
 const registration = await gateway.registerWorker();
 await writeFile(workerReadyPath, `${process.pid}\n`);

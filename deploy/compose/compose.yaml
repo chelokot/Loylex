@@ -76,6 +76,9 @@ services:
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nodev,nosuid,noexec,size=256m
     environment:
       LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
@@ -116,6 +119,9 @@ services:
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nodev,nosuid,noexec,size=256m
     environment:
       LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
