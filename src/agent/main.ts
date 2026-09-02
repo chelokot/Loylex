@@ -1,11 +1,12 @@
-import { unlink, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentJob } from "../shared/types.ts";
-import type { AgentTokenUsage } from "../shared/usage.ts";
 import { stageAttachments } from "./attachments.ts";
 import { loadBuckets } from "./buckets.ts";
 import { runCodex } from "./codex.ts";
 import { loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
+import { executeOperatorCommand, formatOperatorExecResult } from "./operator-exec.ts";
 import { buildPrompt } from "./prompt.ts";
 
 const config = loadAgentConfig();
@@ -59,12 +60,23 @@ async function cancellationRequested(jobId: number, controller: AbortController)
 
 async function processJob(job: AgentJob): Promise<void> {
   const cancellation = new AbortController();
-  const cancellationMonitor = monitorCancellation(job.id, cancellation);
+  let cancellationMonitor: Promise<void> | null = null;
   let stagedAttachments: Awaited<ReturnType<typeof stageAttachments>> | null = null;
-  let usage: AgentTokenUsage | null = null;
-  let codexThreadId = job.resumeThreadId;
   try {
+    await readFile(join(config.repositoryPath, "AGENTS.md"), "utf8");
+    cancellationMonitor = monitorCancellation(job.id, cancellation);
     if (await cancellationRequested(job.id, cancellation)) {
+      return;
+    }
+    if (job.kind === "operator_exec") {
+      const result = await executeOperatorCommand(job.command ?? "", config.repositoryPath);
+      if (await cancellationRequested(job.id, cancellation)) {
+        return;
+      }
+      await gateway.complete(job.id, {
+        answer: formatOperatorExecResult(result),
+        threadId: null,
+      });
       return;
     }
     stagedAttachments = await stageAttachments(gateway, job);
@@ -75,31 +87,10 @@ async function processJob(job: AgentJob): Promise<void> {
       prompt,
       job.resumeThreadId,
       async (event) => {
-        if (event.threadId) {
-          codexThreadId = event.threadId;
-        }
         await gateway.event(job.id, event);
       },
       cancellation.signal,
-      async (observedUsage, observedThreadId) => {
-        usage = observedUsage;
-        if (observedThreadId) {
-          codexThreadId = observedThreadId;
-        }
-        await gateway.recordUsage(job.id, observedUsage, codexThreadId).catch((error) => {
-          console.error(
-            JSON.stringify({
-              level: "warn",
-              jobId: job.id,
-              event: "usage_record_failed",
-              message: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        });
-      },
     );
-    usage = result.usage ?? usage;
-    codexThreadId = result.threadId;
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
@@ -110,11 +101,13 @@ async function processJob(job: AgentJob): Promise<void> {
     }
     const message = error instanceof Error ? error.message : String(error);
     console.error(JSON.stringify({ level: "error", jobId: job.id, message }));
-    await gateway.fail(job.id, message, usage, codexThreadId);
+    await gateway.fail(job.id, message);
   } finally {
     await stagedAttachments?.cleanup();
     cancellation.abort();
-    await cancellationMonitor;
+    if (cancellationMonitor) {
+      await cancellationMonitor;
+    }
   }
 }
 

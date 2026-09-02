@@ -1,11 +1,8 @@
 import type { Server } from "bun";
-import { isGdprExcludedChat } from "../shared/privacy.ts";
-import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
-import { isAgentTokenUsage } from "../shared/usage.ts";
+import type { AgentCompletion, AgentEvent } from "../shared/types.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
-import { responseOptions } from "./message-options.ts";
-import { completedDocuments, failedDocument, workDocument } from "./presentation.ts";
+import { completedDocuments, failureMessage, workDocument } from "./presentation.ts";
 import type { TelegramClient } from "./telegram.ts";
 
 function json(value: unknown, status = 200): Response {
@@ -20,27 +17,6 @@ function bearer(request: Request): string | null {
 function workerId(request: Request): string | undefined {
   const value = request.headers.get("x-loylex-worker-id")?.trim();
   return value || undefined;
-}
-
-function importMessage(value: unknown): value is TelegramMessage {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const message = value as { message_id?: unknown; date?: unknown; chat?: unknown };
-  if (!Number.isSafeInteger(message.message_id) || !Number.isSafeInteger(message.date)) {
-    return false;
-  }
-  if (typeof message.chat !== "object" || message.chat === null || Array.isArray(message.chat)) {
-    return false;
-  }
-  const chat = message.chat as { id?: unknown; type?: unknown };
-  return (
-    Number.isSafeInteger(chat.id) &&
-    (chat.type === "channel" ||
-      chat.type === "group" ||
-      chat.type === "private" ||
-      chat.type === "supergroup")
-  );
 }
 
 async function body<T>(request: Request): Promise<T> {
@@ -141,55 +117,20 @@ export class GatewayServer {
         return json({ ok: true });
       }
 
-      const usageMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/usage$/);
-      if (request.method === "POST" && usageMatch?.[1]) {
-        const payload = await body<{ usage?: unknown; threadId?: unknown }>(request);
-        if (!isAgentTokenUsage(payload.usage)) {
-          return json({ error: "usage must contain non-negative integer token counts" }, 400);
-        }
-        if (payload.threadId !== undefined && typeof payload.threadId !== "string") {
-          return json({ error: "threadId must be a string" }, 400);
-        }
-        return json({
-          ok: true,
-          recorded: this.database.recordUsage(
-            Number.parseInt(usageMatch[1], 10),
-            payload.usage,
-            workerId(request),
-            payload.threadId ?? null,
-          ),
-        });
-      }
-
       const completionMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/complete$/);
       if (request.method === "POST" && completionMatch?.[1]) {
-        const payload = await body<AgentCompletion>(request);
-        if (payload.usage !== undefined && !isAgentTokenUsage(payload.usage)) {
-          return json({ error: "usage must contain non-negative integer token counts" }, 400);
-        }
-        await this.complete(Number.parseInt(completionMatch[1], 10), payload, workerId(request));
+        await this.complete(
+          Number.parseInt(completionMatch[1], 10),
+          await body<AgentCompletion>(request),
+          workerId(request),
+        );
         return json({ ok: true });
       }
 
       const failureMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/fail$/);
       if (request.method === "POST" && failureMatch?.[1]) {
-        const payload = await body<{ error: string; usage?: unknown; threadId?: unknown }>(request);
-        if (typeof payload.error !== "string") {
-          return json({ error: "error must be a string" }, 400);
-        }
-        if (payload.usage !== undefined && !isAgentTokenUsage(payload.usage)) {
-          return json({ error: "usage must contain non-negative integer token counts" }, 400);
-        }
-        if (payload.threadId !== undefined && typeof payload.threadId !== "string") {
-          return json({ error: "threadId must be a string" }, 400);
-        }
-        await this.fail(
-          Number.parseInt(failureMatch[1], 10),
-          payload.error,
-          workerId(request),
-          payload.usage ?? null,
-          payload.threadId ?? null,
-        );
+        const payload = await body<{ error: string }>(request);
+        await this.fail(Number.parseInt(failureMatch[1], 10), payload.error, workerId(request));
         return json({ ok: true });
       }
 
@@ -199,106 +140,11 @@ export class GatewayServer {
           return json({ error: "q is required" }, 400);
         }
         const chat = url.searchParams.get("chat");
-        const chatId = chat === null ? null : Number(chat);
-        if (chat !== null && (chat.trim() === "" || !Number.isSafeInteger(chatId))) {
-          return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
         const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "20", 10);
         const limit = Number.isNaN(parsedLimit) ? 20 : Math.min(Math.max(parsedLimit, 1), 100);
-        const parsedOffset = Number.parseInt(url.searchParams.get("offset") ?? "0", 10);
-        if (!Number.isInteger(parsedOffset) || parsedOffset < 0) {
-          return json({ error: "offset must be a non-negative integer" }, 400);
-        }
         return json({
-          results: this.database.search(query, chatId, limit, parsedOffset),
+          results: this.database.search(query, chat ? Number(chat) : null, limit),
         });
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/archive/media") {
-        const chat = url.searchParams.get("chat");
-        const chatId = chat === null ? Number.NaN : Number(chat);
-        if (!chat || !Number.isSafeInteger(chatId)) {
-          return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
-        const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
-        const limit = Number.isNaN(parsedLimit) ? 100 : Math.min(Math.max(parsedLimit, 1), 1000);
-        return json({ results: this.database.archivedMedia(chatId, limit) });
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/archive/message") {
-        const chat = url.searchParams.get("chat");
-        const message = url.searchParams.get("message");
-        const chatId = chat === null ? Number.NaN : Number(chat);
-        const messageId = message === null ? Number.NaN : Number(message);
-        if (
-          !chat ||
-          !Number.isSafeInteger(chatId) ||
-          !message ||
-          !Number.isSafeInteger(messageId)
-        ) {
-          return json({ error: "chat and message must be valid integer IDs" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
-        const result = this.database.archivedMessage(chatId, messageId);
-        return result === null ? json({ error: "message not found" }, 404) : json(result);
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/archive/messages") {
-        const chat = url.searchParams.get("chat");
-        const chatId = chat === null ? Number.NaN : Number(chat);
-        if (!chat || !Number.isSafeInteger(chatId)) {
-          return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
-        const parseBound = (name: string): number | null | "invalid" => {
-          const value = url.searchParams.get(name);
-          if (value === null || value === "") {
-            return null;
-          }
-          const parsed = Number(value);
-          return Number.isSafeInteger(parsed) ? parsed : "invalid";
-        };
-        const after = parseBound("after");
-        const before = parseBound("before");
-        if (after === "invalid" || before === "invalid") {
-          return json({ error: "after and before must be valid integer message IDs" }, 400);
-        }
-        const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
-        const limit = Number.isNaN(parsedLimit) ? 100 : Math.min(Math.max(parsedLimit, 1), 500);
-        return json({ results: this.database.archivedMessages(chatId, after, before, limit) });
-      }
-
-      if (request.method === "POST" && url.pathname === "/v1/archive/import") {
-        const payload = await body<{ messages?: unknown }>(request);
-        if (
-          !Array.isArray(payload.messages) ||
-          payload.messages.length === 0 ||
-          payload.messages.length > 250 ||
-          !payload.messages.every(importMessage)
-        ) {
-          return json({ error: "messages must contain 1-250 valid Telegram messages" }, 400);
-        }
-        const chatIds = new Set(payload.messages.map((message) => message.chat.id));
-        const chatId = payload.messages[0]?.chat.id;
-        if (
-          chatIds.size !== 1 ||
-          chatId === undefined ||
-          isGdprExcludedChat(chatId) ||
-          !this.database.chatExists(chatId)
-        ) {
-          return json({ error: "unknown or mixed chat" }, 403);
-        }
-        return json({ imported: this.database.archiveExportMessages(payload.messages), chatId });
       }
 
       if (request.method === "GET" && url.pathname === "/v1/archive/recent") {
@@ -307,9 +153,6 @@ export class GatewayServer {
         if (!chat || !Number.isSafeInteger(chatId)) {
           return json({ error: "chat must be a valid chat ID" }, 400);
         }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
         const parsedLimit = Number.parseInt(url.searchParams.get("limit") ?? "500", 10);
         const limit = Number.isNaN(parsedLimit) ? 500 : Math.min(Math.max(parsedLimit, 1), 500);
         return json({ results: this.database.recent(chatId, limit) });
@@ -317,23 +160,6 @@ export class GatewayServer {
 
       if (request.method === "GET" && url.pathname === "/v1/status") {
         return json(this.database.stats());
-      }
-
-      if (request.method === "GET" && url.pathname === "/v1/usage") {
-        const rawChatId = url.searchParams.get("chat");
-        const chatId = rawChatId === null ? null : Number(rawChatId);
-        if (rawChatId !== null && (rawChatId.trim() === "" || !Number.isSafeInteger(chatId))) {
-          return json({ error: "chat must be a valid chat ID" }, 400);
-        }
-        if (isGdprExcludedChat(chatId)) {
-          return json({ error: "chat excluded by privacy policy" }, 403);
-        }
-        const rawLimit = url.searchParams.get("limit");
-        const limit = rawLimit === null ? 100 : Number(rawLimit);
-        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
-          return json({ error: "limit must be an integer from 1 to 1000" }, 400);
-        }
-        return json(this.database.usageReport(chatId, limit));
       }
 
       if (request.method === "GET" && url.pathname === "/v1/media") {
@@ -369,27 +195,6 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
-      if (request.method === "POST" && url.pathname === "/v1/telegram/upload-album") {
-        const form = await request.formData();
-        const chatId = Number(form.get("chat_id"));
-        const files = form.getAll("file").filter((value) => value instanceof File) as Array<
-          Blob & { readonly name: string }
-        >;
-        const caption = form.get("caption");
-        if (!Number.isSafeInteger(chatId) || !this.database.chatExists(chatId)) {
-          return json({ error: "unknown chat" }, 403);
-        }
-        if (files.length < 2 || files.length > 10) {
-          return json({ error: "album must contain 2-10 files" }, 400);
-        }
-        const messages = await this.telegram.sendMediaGroup(
-          chatId,
-          files,
-          typeof caption === "string" ? caption : null,
-        );
-        return json({ chatId, messageIds: messages.map((message) => message.message_id) });
-      }
-
       if (request.method === "POST" && url.pathname === "/v1/telegram/send") {
         const payload = await body<{
           chatId: number;
@@ -405,28 +210,6 @@ export class GatewayServer {
           ...(payload.threadId === undefined ? {} : { threadId: payload.threadId }),
         });
         return json({ chatId: message.chat.id, messageId: message.message_id });
-      }
-
-      if (request.method === "POST" && url.pathname === "/v1/telegram/delete") {
-        const payload = await body<{ chatId?: number; messageId?: number }>(request);
-        if (
-          typeof payload.chatId !== "number" ||
-          typeof payload.messageId !== "number" ||
-          !Number.isSafeInteger(payload.chatId) ||
-          !Number.isSafeInteger(payload.messageId) ||
-          payload.messageId <= 0
-        ) {
-          return json({ error: "chatId and messageId must be valid integer IDs" }, 400);
-        }
-        if (!this.database.chatExists(payload.chatId)) {
-          return json({ error: "unknown chat" }, 403);
-        }
-        const deleted = await this.telegram.deleteMessage(payload.chatId, payload.messageId);
-        return json({
-          chatId: payload.chatId,
-          messageId: payload.messageId,
-          deleted,
-        });
       }
 
       return json({ error: "not found" }, 404);
@@ -450,25 +233,10 @@ export class GatewayServer {
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const now = Date.now();
     const document = workDocument(status);
-    if (address.chatType === "private") {
-      if (this.#lastStreamDocument.get(jobId) === document) {
-        return;
-      }
-      if (now - (this.#lastStreamEdit.get(jobId) ?? 0) < 1_500) {
-        return;
-      }
-      await this.telegram.sendRichMessageDraft(address.chatId, document, {
-        draftId: jobId,
-        threadId: address.threadId,
-        canStop: true,
-      });
-      this.#lastStreamEdit.set(jobId, now);
-      this.#lastStreamDocument.set(jobId, document);
-      return;
-    }
     if (thinkingMessageId === null) {
       const message = await this.telegram.sendRich(address.chatId, document, {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
+        replyTo: address.messageId,
+        threadId: address.threadId,
       });
       this.database.setThinkingMessage(jobId, message.message_id);
       this.#lastStreamEdit.set(jobId, now);
@@ -500,47 +268,29 @@ export class GatewayServer {
       return;
     }
     const documents = completedDocuments(status, completion.answer);
-    let message: TelegramMessage;
-    if (thinkingMessageId === null) {
-      message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
-      });
-    } else {
-      // Keep the final answer at the bottom of the chat. In groups it replies to the user's
-      // request even when other messages arrived while Codex was working; private chats omit
-      // reply markers by design.
-      message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
-      });
-      await this.telegram.deleteMessage(address.chatId, thinkingMessageId);
-    }
+    const message =
+      thinkingMessageId === null
+        ? await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
+            replyTo: address.messageId,
+            threadId: address.threadId,
+          })
+        : await this.telegram.editRich(address.chatId, thinkingMessageId, documents[0] ?? "");
     this.database.recordOutboundMessage(jobId, message.message_id, completion.threadId);
     let replyTo = message.message_id;
     for (const document of documents.slice(1)) {
       const followUp = await this.telegram.sendRich(address.chatId, document, {
-        ...responseOptions(address.chatType, replyTo, address.threadId),
+        replyTo,
+        threadId: address.threadId,
       });
       this.database.recordOutboundMessage(jobId, followUp.message_id, completion.threadId);
       replyTo = followUp.message_id;
     }
-    this.database.complete(
-      jobId,
-      message.message_id,
-      completion.threadId,
-      workerId,
-      completion.usage ?? null,
-    );
+    this.database.complete(jobId, message.message_id, completion.threadId, workerId);
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);
   }
 
-  private async fail(
-    jobId: number,
-    error: string,
-    workerId?: string,
-    usage: AgentCompletion["usage"] | null = null,
-    threadId: string | null = null,
-  ): Promise<void> {
+  private async fail(jobId: number, error: string, workerId?: string): Promise<void> {
     if (this.database.isJobCancelled(jobId)) {
       return;
     }
@@ -549,18 +299,19 @@ export class GatewayServer {
     }
     const address = this.database.jobAddress(jobId);
     const thinkingMessageId = this.database.thinkingMessage(jobId);
-    const currentThreadId = threadId ?? this.database.jobThreadId(jobId);
-    const markdown = failedDocument(this.database.statusLog(jobId) ?? "", error);
+    const threadId = this.database.jobThreadId(jobId);
+    const markdown = failureMessage(error);
     let message: { message_id: number };
     if (thinkingMessageId === null) {
       message = await this.telegram.sendRich(address.chatId, markdown, {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
+        replyTo: address.messageId,
+        threadId: address.threadId,
       });
     } else {
       message = await this.telegram.editRich(address.chatId, thinkingMessageId, markdown);
     }
-    this.database.recordOutboundMessage(jobId, message.message_id, currentThreadId);
-    this.database.fail(jobId, error.slice(0, 8_000), workerId, currentThreadId, usage);
+    this.database.recordOutboundMessage(jobId, message.message_id, threadId);
+    this.database.fail(jobId, error.slice(0, 8_000), workerId, threadId);
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);
   }

@@ -44,120 +44,19 @@ test("treats an idempotent rich edit as success", async () => {
   expect(result.chat.id).toBe(42);
 });
 
-test("sends rich message drafts with a stable draft ID", async () => {
-  let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendRichMessageDraft");
-    requestBody = JSON.parse(String(init?.body));
+test("shows operator exec only in the hardcoded private chat menu", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  globalThis.fetch = (async (_input, init) => {
+    requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
     return Response.json({ ok: true, result: true });
   }) as typeof fetch;
 
-  const client = new TelegramClient("test-token");
-  await expect(
-    client.sendRichMessageDraft(42, "<details>working</details>", {
-      draftId: 7,
-      threadId: null,
-      canStop: true,
-    }),
-  ).resolves.toBe(true);
+  await new TelegramClient("test-token").setCommands();
 
-  expect(requestBody).toEqual({
-    chat_id: 42,
-    draft_id: 7,
-    rich_message: { markdown: "<details>working</details>" },
-    can_stop: true,
+  expect(requests).toHaveLength(2);
+  expect(JSON.stringify(requests[0])).not.toContain('"exec"');
+  expect(requests[1]).toMatchObject({
+    scope: { type: "chat", chat_id: 849670500 },
   });
-});
-
-test("deletes a Telegram message", async () => {
-  let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/deleteMessage");
-    requestBody = JSON.parse(String(init?.body));
-    return Response.json({ ok: true, result: true });
-  }) as typeof fetch;
-
-  const client = new TelegramClient("test-token");
-  await expect(client.deleteMessage(42, 17)).resolves.toBe(true);
-  expect(requestBody).toEqual({ chat_id: 42, message_id: 17 });
-});
-
-test("sets a custom emoji reaction on a Telegram message", async () => {
-  let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/setMessageReaction");
-    requestBody = JSON.parse(String(init?.body));
-    return Response.json({ ok: true, result: true });
-  }) as typeof fetch;
-
-  const client = new TelegramClient("test-token");
-  await expect(client.setMessageReaction(42, 17, "🥴")).resolves.toBe(true);
-  expect(requestBody).toEqual({
-    chat_id: 42,
-    message_id: 17,
-    reaction: [{ type: "emoji", emoji: "🥴" }],
-  });
-});
-
-test("sends a photo album with a caption on the first photo", async () => {
-  let requestBody: FormData | undefined;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
-    requestBody = init?.body as FormData;
-    return Response.json({
-      ok: true,
-      result: [
-        { message_id: 18, date: 1, chat: { id: 42, type: "supergroup" } },
-        { message_id: 19, date: 1, chat: { id: 42, type: "supergroup" } },
-      ],
-    });
-  }) as typeof fetch;
-
-  const client = new TelegramClient("test-token");
-  await expect(
-    client.sendMediaGroup(
-      42,
-      [new File(["one"], "one.png", { type: "image/png" }), new File(["two"], "two.png")],
-      "Графики",
-    ),
-  ).resolves.toHaveLength(2);
-
-  expect(requestBody).toBeDefined();
-  expect(requestBody?.get("chat_id")).toBe("42");
-  expect(JSON.parse(String(requestBody?.get("media")))).toEqual([
-    { type: "photo", media: "attach://file0", caption: "Графики" },
-    { type: "photo", media: "attach://file1" },
-  ]);
-  expect((requestBody?.get("file0") as File).name).toBe("one.png");
-  expect((requestBody?.get("file1") as File).name).toBe("two.png");
-});
-
-test("sends video files as video media in an album", async () => {
-  let requestBody: FormData | undefined;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendMediaGroup");
-    requestBody = init?.body as FormData;
-    return Response.json({
-      ok: true,
-      result: [
-        { message_id: 20, date: 1, chat: { id: 42, type: "supergroup" } },
-        { message_id: 21, date: 1, chat: { id: 42, type: "supergroup" } },
-      ],
-    });
-  }) as typeof fetch;
-
-  const client = new TelegramClient("test-token");
-  await expect(
-    client.sendMediaGroup(
-      42,
-      [new File(["one"], "one.mp4", { type: "video/mp4" }), new File(["two"], "two.mp4")],
-      "Видео",
-    ),
-  ).resolves.toHaveLength(2);
-
-  expect(requestBody).toBeDefined();
-  expect(JSON.parse(String(requestBody?.get("media")))).toEqual([
-    { type: "video", media: "attach://file0", caption: "Видео" },
-    { type: "video", media: "attach://file1" },
-  ]);
+  expect(JSON.stringify(requests[1])).toContain('"exec"');
 });

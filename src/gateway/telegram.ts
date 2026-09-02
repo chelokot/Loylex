@@ -1,3 +1,4 @@
+import { ADMIN_TELEGRAM_ID } from "../shared/operator-exec.ts";
 import type {
   JsonObject,
   JsonValue,
@@ -13,28 +14,6 @@ type TelegramResponse<T> = {
   error_code?: number;
   parameters?: { retry_after?: number };
 };
-
-const videoExtensions = new Set([
-  "3gp",
-  "avi",
-  "gif",
-  "m4v",
-  "mkv",
-  "mov",
-  "mp4",
-  "mpeg",
-  "mpg",
-  "ogv",
-  "webm",
-]);
-
-function mediaGroupType(file: Blob & { readonly name: string }): "photo" | "video" {
-  if (file.type.toLowerCase().startsWith("video/")) {
-    return "video";
-  }
-  const extension = file.name.toLowerCase().split(".").pop() ?? "";
-  return videoExtensions.has(extension) ? "video" : "photo";
-}
 
 export class TelegramApiError extends Error {
   constructor(
@@ -139,25 +118,6 @@ export class TelegramClient {
     return this.call<TelegramMessage>("sendRichMessage", body);
   }
 
-  sendRichMessageDraft(
-    chatId: number,
-    markdown: string,
-    options: { draftId: number; threadId?: number | null; canStop?: boolean },
-  ): Promise<boolean> {
-    const body: JsonObject = {
-      chat_id: chatId,
-      draft_id: options.draftId,
-      rich_message: { markdown },
-    };
-    if (options.threadId !== undefined && options.threadId !== null) {
-      body.message_thread_id = options.threadId;
-    }
-    if (options.canStop) {
-      body.can_stop = true;
-    }
-    return this.call<boolean>("sendRichMessageDraft", body);
-  }
-
   async editRich(chatId: number, messageId: number, markdown: string): Promise<TelegramMessage> {
     try {
       return await this.call<TelegramMessage>("editMessageText", {
@@ -183,13 +143,6 @@ export class TelegramClient {
     }
   }
 
-  deleteMessage(chatId: number, messageId: number): Promise<boolean> {
-    return this.call<boolean>("deleteMessage", {
-      chat_id: chatId,
-      message_id: messageId,
-    });
-  }
-
   sendTyping(chatId: number, threadId: number | null = null): Promise<boolean> {
     const body: JsonObject = { chat_id: chatId, action: "typing" };
     if (threadId !== null) {
@@ -199,27 +152,27 @@ export class TelegramClient {
   }
 
   setThinkingReaction(chatId: number, messageId: number): Promise<boolean> {
-    return this.setMessageReaction(chatId, messageId, "🤔");
-  }
-
-  setMessageReaction(chatId: number, messageId: number, emoji: string): Promise<boolean> {
     return this.call<boolean>("setMessageReaction", {
       chat_id: chatId,
       message_id: messageId,
-      reaction: [{ type: "emoji", emoji }] as JsonValue[],
+      reaction: [{ type: "emoji", emoji: "🤔" }] as JsonValue[],
     });
   }
 
   setCommands(): Promise<boolean> {
-    return this.call<boolean>("setMyCommands", {
-      commands: [
-        { command: "start", description: "Как обратиться к Loylex" },
-        { command: "help", description: "Возможности и синтаксис" },
-        { command: "stop", description: "Остановить работу" },
-        { command: "tasks", description: "Показать последние задачи" },
-        { command: "resume", description: "Продолжить задачу по ID" },
-        { command: "newchat", description: "Начать новый тред в личке" },
-      ] as JsonValue[],
+    const commands = [
+      { command: "start", description: "Как обратиться к Loylex" },
+      { command: "help", description: "Возможности и синтаксис" },
+      { command: "stop", description: "Остановить работу" },
+      { command: "tasks", description: "Показать последние задачи" },
+      { command: "resume", description: "Продолжить задачу по ID" },
+    ] as JsonValue[];
+    return this.call<boolean>("setMyCommands", { commands }).then(async () => {
+      await this.call<boolean>("setMyCommands", {
+        scope: { type: "chat", chat_id: ADMIN_TELEGRAM_ID },
+        commands: [...commands, { command: "exec", description: "Команда в агент-контейнере" }],
+      });
+      return true;
     });
   }
 
@@ -255,42 +208,6 @@ export class TelegramClient {
     if (!response.ok || !payload.ok || !payload.result) {
       throw new TelegramApiError(
         "sendDocument",
-        payload.error_code ?? response.status,
-        payload.description ?? response.statusText,
-      );
-    }
-    return payload.result;
-  }
-
-  async sendMediaGroup(
-    chatId: number,
-    files: ReadonlyArray<Blob & { readonly name: string }>,
-    caption: string | null,
-  ): Promise<TelegramMessage[]> {
-    const form = new FormData();
-    form.set("chat_id", String(chatId));
-    form.set(
-      "media",
-      JSON.stringify(
-        files.map((file, index) => ({
-          type: mediaGroupType(file),
-          media: `attach://file${index}`,
-          ...(index === 0 && caption ? { caption: caption.slice(0, 1_024) } : {}),
-        })),
-      ),
-    );
-    files.forEach((file, index) => {
-      form.set(`file${index}`, file, file.name);
-    });
-    const response = await fetch(`${this.#baseUrl}/sendMediaGroup`, {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(120_000),
-    });
-    const payload = (await response.json()) as TelegramResponse<TelegramMessage[]>;
-    if (!response.ok || !payload.ok || !payload.result) {
-      throw new TelegramApiError(
-        "sendMediaGroup",
         payload.error_code ?? response.status,
         payload.description ?? response.statusText,
       );

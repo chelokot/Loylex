@@ -1,45 +1,16 @@
 import type { TelegramMessage } from "../shared/types.ts";
 
-const prefixPattern =
-  /^\s*(?:loylex|лойлекс|лойликс|чмох|чипа|сипа|лилс)(?=$|[\s:;,—–-])[\s:;,—–-]*/iu;
+const prefixPattern = /^\s*(?:loylex|лойлекс|лойликс)(?=$|[\s:;,—–-])[\s:;,—–-]*/iu;
 const stopPattern = /^\/stop(?:@[a-z0-9_]+)?$/iu;
 const tasksPattern = /^\/tasks(?:@[a-z0-9_]+)?$/iu;
 const cancelPattern = /^\/cancel_(\d+)(?:@([a-z0-9_]+))?$/iu;
 const resumePattern = /^\/resume_(\d+)(?:@([a-z0-9_]+))?$/iu;
 const helpPattern = /^\/(?:start|help)(?:@([a-z0-9_]+))?$/iu;
-const newChatCommandPattern = /^\/newchat(?:@[a-z0-9_]+)?(?:\s+[\s\S]*)?$/iu;
-const newChatPattern = /^\/newchat(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 
 export type TriggerDecision = {
   prompt: string;
-  kind: "prefix" | "private" | "reply";
+  kind: "prefix" | "reply";
 };
-
-function messageText(message: TelegramMessage): string {
-  return message.text ?? message.caption ?? "";
-}
-
-export function isSlashCommand(message: TelegramMessage): boolean {
-  return messageText(message).trimStart().startsWith("/");
-}
-
-function mentionsAnotherBot(mention: string | undefined, botUsername: string | undefined): boolean {
-  return Boolean(
-    mention && botUsername && mention.toLocaleLowerCase() !== botUsername.toLocaleLowerCase(),
-  );
-}
-
-export function isNewChatCommand(message: TelegramMessage): boolean {
-  return newChatCommandPattern.test(messageText(message).trim());
-}
-
-export function newChatPrompt(message: TelegramMessage, botUsername?: string): string | null {
-  const match = messageText(message).trim().match(newChatPattern);
-  if (!match || mentionsAnotherBot(match[1], botUsername)) {
-    return null;
-  }
-  return match[2]?.trim() || "Ответь на это сообщение.";
-}
 
 export function isStopCommand(
   message: TelegramMessage,
@@ -49,7 +20,7 @@ export function isStopCommand(
   if (message.reply_to_message?.from?.id !== botUserId) {
     return false;
   }
-  const text = messageText(message).trim();
+  const text = (message.text ?? message.caption ?? "").trim();
   const match = text.match(stopPattern);
   if (!match) {
     return false;
@@ -62,7 +33,7 @@ export function isStopCommand(
 }
 
 export function isTasksCommand(message: TelegramMessage, botUsername?: string): boolean {
-  const text = messageText(message).trim();
+  const text = (message.text ?? message.caption ?? "").trim();
   if (!tasksPattern.test(text)) {
     return false;
   }
@@ -74,7 +45,7 @@ export function isTasksCommand(message: TelegramMessage, botUsername?: string): 
 }
 
 export function isHelpCommand(message: TelegramMessage, botUsername?: string): boolean {
-  const text = messageText(message).trim();
+  const text = (message.text ?? message.caption ?? "").trim();
   const match = text.match(helpPattern);
   if (!match) {
     return false;
@@ -86,7 +57,7 @@ export function isHelpCommand(message: TelegramMessage, botUsername?: string): b
 }
 
 export function cancelTaskMessageId(message: TelegramMessage, botUsername?: string): number | null {
-  const text = messageText(message).trim();
+  const text = (message.text ?? message.caption ?? "").trim();
   const match = text.match(cancelPattern);
   if (!match) {
     return null;
@@ -100,7 +71,7 @@ export function cancelTaskMessageId(message: TelegramMessage, botUsername?: stri
 }
 
 export function resumeTaskMessageId(message: TelegramMessage, botUsername?: string): number | null {
-  const text = messageText(message).trim();
+  const text = (message.text ?? message.caption ?? "").trim();
   const match = text.match(resumePattern);
   if (!match) {
     return null;
@@ -114,10 +85,7 @@ export function resumeTaskMessageId(message: TelegramMessage, botUsername?: stri
 }
 
 export function detectTrigger(message: TelegramMessage, botUserId: number): TriggerDecision | null {
-  const text = messageText(message);
-  if (isSlashCommand(message)) {
-    return null;
-  }
+  const text = message.text ?? message.caption ?? "";
   const prefix = text.match(prefixPattern);
   if (prefix) {
     const prompt = text.slice(prefix[0].length).trim();
@@ -126,10 +94,6 @@ export function detectTrigger(message: TelegramMessage, botUserId: number): Trig
 
   if (message.reply_to_message?.from?.id === botUserId) {
     return { kind: "reply", prompt: text.trim() || "Продолжай по вложению." };
-  }
-
-  if (message.chat.type === "private") {
-    return { kind: "private", prompt: text.trim() || "Ответь на это сообщение." };
   }
 
   return null;
