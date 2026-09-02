@@ -1,4 +1,5 @@
 import type { TelegramMessage } from "../shared/types.ts";
+import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { LoylexDatabase } from "./database.ts";
 import { responseOptions } from "./message-options.ts";
@@ -20,6 +21,8 @@ import {
 } from "./triggers.ts";
 
 const config = loadGatewayConfig();
+const audit = new InboundAuditLog(config.auditPath);
+await audit.assertReady();
 const database = new LoylexDatabase(config.databasePath);
 const telegram = new TelegramClient(config.botToken);
 const bot = await telegram.getMe();
@@ -76,6 +79,7 @@ async function poll(): Promise<void> {
     try {
       const updates = await telegram.getUpdates(offset, config.pollTimeoutSeconds);
       for (const update of updates) {
+        await audit.append(update);
         const message = database.archiveUpdate(update);
         offset = update.update_id + 1;
         const stopped = update.stopped_message_generation;

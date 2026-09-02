@@ -30,6 +30,7 @@ services:
       - loylex
     volumes:
       - gateway-data:/data:Z,U
+      - audit-data:/audit:Z
     secrets:
       - loylex-telegram-token
       - loylex-bridge-token
@@ -37,6 +38,7 @@ services:
       TELEGRAM_BOT_TOKEN_FILE: /run/secrets/loylex-telegram-token
       LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_DATABASE_PATH: /data/loylex.sqlite
+      LOYLEX_AUDIT_PATH: /audit/inbound.ndjson
       LOYLEX_CONTEXT_MESSAGES: "80"
     read_only: true
     security_opt:
@@ -143,6 +145,9 @@ services:
 volumes:
   gateway-data:
     name: loylex-gateway-data
+    external: true
+  audit-data:
+    name: loylex-audit
     external: true
   agent-home:
     name: loylex-agent-home

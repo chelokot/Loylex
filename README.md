@@ -64,11 +64,12 @@ computer but cannot reboot or kill the Rocky Linux host.
 
 ## Persistence
 
-Four named volumes survive image replacement:
+Five named volumes survive image replacement:
 
 | Volume | Contents |
 | --- | --- |
 | `loylex-gateway-data` | SQLite archive, jobs, Telegram/Codex thread mapping |
+| `loylex-audit` | Host-prepared append-only NDJSON record of inbound Telegram messages |
 | `loylex-agent-home` | Codex auth and sessions, SSH deploy key, user config |
 | `loylex-memory` | Private memories, journals, knowledge, conditional buckets |
 | `loylex-workspace` | Loylex repo and all agent projects/experiments |
@@ -123,7 +124,10 @@ simultaneously. The supervisor itself stays outside both containers.
 
 ## Telegram behavior
 
-Every Bot API update is stored raw. Messages and edits are normalized, reply relationships
+Every inbound Telegram message and edit is first written and fsynced to the host-prepared
+append-only audit volume as a minimal record containing its IDs, author ID, Telegram timestamp,
+and text or caption. The gateway refuses to process the update when this append fails. The
+normal Bot API archive then stores updates raw; messages and edits are normalized, reply relationships
 and media file IDs are retained, and text is indexed with FTS5. On a trigger, a new Codex
 thread receives the latest chat window and matching private memory buckets. A resumed thread
 receives only archived messages since its previous turn because the saved Codex transcript
@@ -212,7 +216,8 @@ Podman Compose (from EPEL on Rocky) and the exact pinned PM3 RPM (from the `expo
 adds a 4 GiB swap file when
 the server has no swap, opens only SSH, and enables backups plus the narrow self-management
 supervisor. Existing Quadlet units and exact old container names are stopped during migration;
-the four named volumes are preserved.
+the five named volumes are preserved. The installer creates and verifies the host-managed
+append-only audit file; see [`deploy/host/inbound-audit.md`](deploy/host/inbound-audit.md).
 
 Critical dependency updates are deliberate: update [`deploy/host/versions.env`](deploy/host/versions.env)
 only after the due-diligence gate in `AGENTS.md`, then run the installer explicitly on the host.

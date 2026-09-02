@@ -19,6 +19,7 @@ function config(): GatewayConfig {
     botToken: "unused",
     bridgeToken: "unused",
     databasePath: ":memory:",
+    auditPath: "/audit/inbound.ndjson",
     listenHost: "127.0.0.1",
     listenPort: 8787,
     pollTimeoutSeconds: 1,

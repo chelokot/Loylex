@@ -4,6 +4,7 @@ export type GatewayConfig = {
   botToken: string;
   bridgeToken: string;
   databasePath: string;
+  auditPath: string;
   listenHost: string;
   listenPort: number;
   pollTimeoutSeconds: number;
@@ -38,6 +39,7 @@ export function loadGatewayConfig(): GatewayConfig {
     botToken: requiredSecret("TELEGRAM_BOT_TOKEN_FILE", "TELEGRAM_BOT_TOKEN"),
     bridgeToken: requiredSecret("LOYLEX_BRIDGE_TOKEN_FILE", "LOYLEX_BRIDGE_TOKEN"),
     databasePath: process.env.LOYLEX_DATABASE_PATH ?? "/data/loylex.sqlite",
+    auditPath: process.env.LOYLEX_AUDIT_PATH ?? "/audit/inbound.ndjson",
     listenHost: process.env.LOYLEX_LISTEN_HOST ?? "0.0.0.0",
     listenPort: integer("LOYLEX_LISTEN_PORT", 8787),
     pollTimeoutSeconds: integer("LOYLEX_POLL_TIMEOUT_SECONDS", 45),
