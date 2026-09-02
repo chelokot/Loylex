@@ -60,7 +60,8 @@ forward_signal() {
 trap cleanup EXIT
 trap 'forward_signal' INT TERM
 if command -v crond >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 \
-  && [[ -f /etc/cron.d/loylex-pumpkin ]]; then
+  && [[ -x /usr/local/bin/loylex-dm-overview ]] \
+  && [[ -f /etc/cron.d/loylex-dm-overview ]]; then
   sudo -n crond -n -s >/dev/null 2>&1 &
   cron_pid=$!
 fi
