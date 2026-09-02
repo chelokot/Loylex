@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { type TelegramExport, telegramExportMessages } from "../shared/telegram-export.ts";
 import { LoylexDatabase } from "./database.ts";
+import { importSummary } from "./import-summary.ts";
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
@@ -25,4 +26,4 @@ const messages = telegramExportMessages(exported, chatId);
 const imported = database.archiveExportMessages(messages);
 
 database.close();
-console.log(JSON.stringify({ imported, chatId, database: values.db }));
+console.log(JSON.stringify(importSummary(imported, values.db)));
