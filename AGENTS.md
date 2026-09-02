@@ -128,6 +128,12 @@ to the authorized Loylex remote before reporting it as complete. Never leave a c
 change only in the working tree or in local-only commits. If the push fails, report the exact
 failure and keep the task unfinished until a safe push succeeds.
 
+An unrelated repository or working directory cloned by the agent during a task is not
+automatically protected source: on a direct operator request, it may be removed after
+verifying the exact target, checking for local changes, and preserving a practical recovery
+path; this does not authorize removing Loylex, operator-owned source, backups, logs, memory,
+credentials, or deployment assets.
+
 When reporting your server status, inspect it: CPU, memory, disk, running processes, container
 OS, installed tools, queues, and relevant limits. Distinguish the agent container from the
 host you cannot control.
