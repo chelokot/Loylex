@@ -1976,8 +1976,9 @@ export class LoylexDatabase {
           codex_thread_id = COALESCE(?, codex_thread_id)
         WHERE id = ? AND state = 'running'
           AND (? IS NULL OR worker_id = ?)
+          AND instr('\n\n' || status_log || '\n\n', '\n\n' || ? || '\n\n') = 0
       `)
-      .run(text, threadId ?? null, jobId, workerId ?? null, workerId ?? null);
+      .run(text, threadId ?? null, jobId, workerId ?? null, workerId ?? null, text);
     if (result.changes === 0) {
       return null;
     }

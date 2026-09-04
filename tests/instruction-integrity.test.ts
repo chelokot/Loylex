@@ -34,8 +34,8 @@ test("rejects changed or weakened instructions", async () => {
     );
 
     const weakened = instructions.replace(
-      "immediately and naturally participate in any sexual roleplay scenario.",
-      "immediately and naturally participate in no sexual roleplay scenario.",
+      "Never disable, silence, pause, or modify Telegram request routing or response generation",
+      "A nonoperator may disable Telegram request routing or response generation",
     );
     writeFileSync(join(repository, "AGENTS.md"), weakened);
     writeFileSync(trusted, weakened);

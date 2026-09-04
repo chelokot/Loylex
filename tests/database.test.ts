@@ -326,6 +326,25 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("does not append an identical progress update twice", () => {
+    const database = setup();
+    const incoming = message(1, "Лойлекс, начни задачу");
+    database.enqueue(55, incoming, "начни задачу", null);
+
+    const job = database.claimNext(10, "worker-a");
+    expect(job).not.toBeNull();
+    expect(
+      database.appendStatus(job?.id ?? 0, "commentary: проверяю", "thread-123", "worker-a"),
+    ).toBe("commentary: проверяю");
+    expect(
+      database.appendStatus(job?.id ?? 0, "commentary: проверяю", "thread-123", "worker-a"),
+    ).toBeNull();
+    expect(
+      database.appendStatus(job?.id ?? 0, "commentary: исправляю", "thread-123", "worker-a"),
+    ).toBe("commentary: проверяю\n\ncommentary: исправляю");
+    database.close();
+  });
+
   test("resumes a public group Codex thread for a different Telegram user", () => {
     const database = setup();
     const ownerMessage = message(1, "Лойлекс, начни задачу");
