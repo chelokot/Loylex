@@ -56,11 +56,15 @@ https://t.me/c/1756869879/1218950"
           </div>
 
           <div class="actions">
-            <button id="parse-button" class="primary-button" type="button">
-              Разобрать ссылки <span aria-hidden="true">→</span>
+            <button id="delete-button" class="primary-button" type="button" title="Скопировать список для удаления через Loylex">
+              Удалить <span aria-hidden="true">×</span>
+            </button>
+            <button id="like-button" class="secondary-button" type="button" disabled title="Инструмент лайков пока не подключён">
+              Лайкнуть
             </button>
             <button id="clear-button" class="secondary-button" type="button">Очистить</button>
           </div>
+          <p id="action-message" class="action-message" role="status" hidden></p>
         </section>
 
         <section id="result-card" class="panel result-panel" aria-labelledby="result-title" hidden>
