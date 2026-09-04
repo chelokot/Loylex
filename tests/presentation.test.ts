@@ -52,12 +52,12 @@ describe("activityLines", () => {
 describe("completedDocuments", () => {
   test("keeps work history even when it contains at most one visible item", () => {
     expect(completedDocuments("status: Готово", "Ответ пользователю")).toEqual([
-      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю',
+      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Ход работы</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю',
     ]);
     expect(
       completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю"),
     ).toEqual([
-      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю',
+      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Ход работы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю',
     ]);
   });
 
@@ -68,7 +68,7 @@ describe("completedDocuments", () => {
         "Ответ пользователю",
       ),
     ).toEqual([
-      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю',
+      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Ход работы</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю',
     ]);
   });
 });
@@ -92,7 +92,7 @@ test("keeps the work history in a failure document", () => {
   );
 
   expect(message).toContain(
-    '<summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>',
+    '<summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Ход работы</summary>',
   );
   expect(message).toContain("- Проверяю архив");
   expect(message).toContain("Не получилось завершить задачу.");
