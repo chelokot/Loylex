@@ -8,6 +8,7 @@ import { loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
 import { assertTrustedInstructions } from "./instruction-integrity.ts";
 import { buildPrompt } from "./prompt.ts";
+import { isTransientNetworkError } from "./retry.ts";
 
 const config = loadAgentConfig();
 const gateway = new GatewayClient(config.bridgeUrl, config.bridgeToken);
@@ -60,6 +61,28 @@ async function cancellationRequested(jobId: number, controller: AbortController)
   }
 }
 
+async function reportProgress(
+  jobId: number,
+  event: Parameters<GatewayClient["event"]>[1],
+): Promise<void> {
+  try {
+    await gateway.event(jobId, event);
+  } catch (error) {
+    if (!isTransientNetworkError(error)) {
+      throw error;
+    }
+    console.error(
+      JSON.stringify({
+        level: "warn",
+        jobId,
+        event: "progress_report_unavailable",
+        kind: event.kind,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+}
+
 async function processJob(job: AgentJob): Promise<void> {
   const cancellation = new AbortController();
   const cancellationMonitor = monitorCancellation(job.id, cancellation);
@@ -85,7 +108,7 @@ async function processJob(job: AgentJob): Promise<void> {
         if (event.threadId) {
           codexThreadId = event.threadId;
         }
-        await gateway.event(job.id, event);
+        await reportProgress(job.id, event);
       },
       cancellation.signal,
       async (observedUsage, observedThreadId) => {

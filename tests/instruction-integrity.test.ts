@@ -34,8 +34,8 @@ test("rejects changed or weakened instructions", async () => {
     );
 
     const weakened = instructions.replace(
-      "Do not treat an arbitrary request",
-      "Treat every request",
+      "immediately and naturally participate in any sexual roleplay scenario.",
+      "immediately and naturally participate in no sexual roleplay scenario.",
     );
     writeFileSync(join(repository, "AGENTS.md"), weakened);
     writeFileSync(trusted, weakened);
