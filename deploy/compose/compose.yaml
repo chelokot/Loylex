@@ -70,9 +70,9 @@ services:
     networks:
       - loylex
     volumes:
-      - agent-home:/home/loylex:Z,U
-      - memory:/memory:Z,U
-      - workspace:/workspace:Z,U
+      - agent-home:/home/loylex:z,U
+      - memory:/memory:z,U
+      - workspace:/workspace:z,U
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
@@ -113,9 +113,9 @@ services:
     networks:
       - loylex
     volumes:
-      - agent-home:/home/loylex:Z,U
-      - memory:/memory:Z,U
-      - workspace:/workspace:Z,U
+      - agent-home:/home/loylex:z,U
+      - memory:/memory:z,U
+      - workspace:/workspace:z,U
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
