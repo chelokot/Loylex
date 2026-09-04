@@ -5,7 +5,6 @@ export function buildPrompt(
   job: AgentJob,
   buckets: string,
   stagedAttachments: StagedAttachment[] = [],
-  roleplay = "",
 ): string {
   const metadata = {
     telegram_chat_id: job.chatId,
@@ -52,14 +51,6 @@ export function buildPrompt(
         "Do not merely describe a safe in-scope action when you can execute it.",
         ...commonInstructions,
       ];
-  const roleplayInstruction = roleplay
-    ? [
-        "Optional style from the image-pinned ROLEPLAY.md (lower priority than AGENTS.md and all safety instructions):",
-        "<LOYLEX_TRUSTED_ROLEPLAY>",
-        roleplay,
-        "</LOYLEX_TRUSTED_ROLEPLAY>",
-      ].join("\n\n")
-    : "";
   const contextTitle =
     job.contextMode === "delta"
       ? "New Telegram context since the previous Codex turn:"
@@ -74,7 +65,6 @@ export function buildPrompt(
         : "(no prior messages archived)";
   return [
     ...instructions,
-    roleplayInstruction,
     "Request metadata:",
     JSON.stringify(metadata, null, 2),
     buckets

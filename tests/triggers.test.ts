@@ -6,6 +6,7 @@ import {
   isStopCommand,
   isTasksCommand,
   newChatPrompt,
+  promptWithQuote,
 } from "../src/gateway/triggers.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 
@@ -115,5 +116,23 @@ describe("detectTrigger", () => {
     expect(newChatPrompt(message("/newchat@OtherBot не трогай", "private"), "LoylexBot")).toBe(
       null,
     );
+  });
+});
+
+describe("promptWithQuote", () => {
+  test("includes Telegram's selected quote before the current request", () => {
+    const input = message("что думаешь?");
+    input.quote = { text: "первая строка\nвторая строка" };
+
+    expect(promptWithQuote(input, "что думаешь?")).toBe(
+      '> In reply to: "первая строка\\nвторая строка"\nчто думаешь?',
+    );
+  });
+
+  test("ignores an empty selected quote", () => {
+    const input = message("обычный запрос");
+    input.quote = { text: "  \n  " };
+
+    expect(promptWithQuote(input, "обычный запрос")).toBe("обычный запрос");
   });
 });

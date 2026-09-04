@@ -80,6 +80,9 @@ export type TelegramMessage = {
   sender_chat?: TelegramChat;
   text?: string;
   caption?: string;
+  quote?: {
+    text: string;
+  };
   media_group_id?: string;
   forward_origin?: TelegramMessageOrigin;
   reply_to_message?: TelegramMessage;

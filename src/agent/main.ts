@@ -1,4 +1,4 @@
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentJob } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
@@ -20,7 +20,6 @@ const workerHeartbeatIntervalMs = 5_000;
 const workerReadyPath = process.env.LOYLEX_WORKER_READY_PATH ?? "/tmp/loylex-worker-ready";
 const trustedInstructionsPath =
   process.env.LOYLEX_TRUSTED_AGENTS_PATH ?? "/opt/loylex/seed/AGENTS.md";
-const roleplayPath = process.env.LOYLEX_ROLEPLAY_PATH ?? "/opt/loylex/seed/ROLEPLAY.md";
 
 process.once("SIGINT", () => {
   stopping = true;
@@ -106,7 +105,7 @@ async function processJob(job: AgentJob): Promise<void> {
       job.chatType === "private"
         ? await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`)
         : "";
-    const prompt = buildPrompt(job, buckets, stagedAttachments.files, roleplay);
+    const prompt = buildPrompt(job, buckets, stagedAttachments.files);
     const generatedImagesRoot = join(config.codexHome, "generated_images");
     const generatedImagesBefore = await snapshotGeneratedImages(generatedImagesRoot);
     let explicitMediaUpload = false;
@@ -190,7 +189,6 @@ function startJob(job: AgentJob): void {
 }
 
 await assertTrustedInstructions(config.repositoryPath, trustedInstructionsPath);
-const roleplay = (await readFile(roleplayPath, "utf8")).trim();
 await unlink(workerReadyPath).catch(() => {});
 const registration = await gateway.registerWorker();
 await writeFile(workerReadyPath, `${process.pid}\n`);

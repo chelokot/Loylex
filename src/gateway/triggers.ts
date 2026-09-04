@@ -19,6 +19,11 @@ function messageText(message: TelegramMessage): string {
   return message.text ?? message.caption ?? "";
 }
 
+export function promptWithQuote(message: TelegramMessage, prompt: string): string {
+  const quote = message.quote?.text.trim();
+  return quote ? `> In reply to: ${JSON.stringify(quote)}\n${prompt}` : prompt;
+}
+
 export function isSlashCommand(message: TelegramMessage): boolean {
   return messageText(message).trimStart().startsWith("/");
 }
