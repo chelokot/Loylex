@@ -3,6 +3,8 @@ set -euo pipefail
 
 umask 077
 repository_path="${LOYLEX_REPOSITORY_PATH:-/workspace/Loylex}"
+worker_ready_path="${LOYLEX_WORKER_READY_PATH:-/tmp/loylex-worker-ready}"
+rm -f "$worker_ready_path"
 mkdir -p "$CODEX_HOME" /memory/buckets /memory/journal /memory/knowledge "$(dirname "$repository_path")"
 
 if [[ ! -f /memory/buckets/index.json ]]; then
@@ -35,7 +37,7 @@ done
 git config --global user.name "Loylex"
 git config --global user.email "loylex@users.noreply.github.com"
 git config --global pull.rebase true
-git config --global --add safe.directory "$repository_path"
+git config --global --replace-all safe.directory "$repository_path"
 
 cd "$repository_path"
 cron_pid=""

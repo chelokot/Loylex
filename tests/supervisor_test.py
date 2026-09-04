@@ -85,6 +85,9 @@ class SupervisorTest(unittest.TestCase):
         entrypoint = (root / "containers/agent-entrypoint.sh").read_text()
         cli = (root / "containers/loylex-cli").read_text()
         self.assertIn("bun /opt/loylex/app/src/agent/main.ts", entrypoint)
+        self.assertIn('rm -f "$worker_ready_path"', entrypoint)
+        self.assertIn('git config --global --replace-all safe.directory "$repository_path"', entrypoint)
+        self.assertNotIn("--add safe.directory", entrypoint)
         self.assertIn("exec bun /opt/loylex/app/src/agent/cli.ts", cli)
 
     def test_persistent_worker_volumes_relabel_and_map_ownership(self) -> None:
