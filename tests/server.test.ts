@@ -73,8 +73,7 @@ test("starts progress as a persistent rich details message", async () => {
   expect(sent).toHaveLength(1);
   expect(sent[0]).toEqual({
     chatId: -10042,
-    markdown:
-      '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Проверяю код\n\n</details>',
+    markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
     options: { replyTo: 10, threadId: null },
   });
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
@@ -173,8 +172,7 @@ test("sends a new final reply and removes the temporary progress message", async
   expect(sent).toEqual([
     {
       chatId: -10042,
-      markdown:
-        '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Готово\n\n</details>\n\nОтвет',
+      markdown: "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>\n\nОтвет",
       options: { replyTo: 10, threadId: null },
     },
   ]);
@@ -295,15 +293,13 @@ test("uses ephemeral rich drafts in private chats", async () => {
   expect(drafts).toEqual([
     {
       chatId: 42,
-      markdown:
-        '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Проверяю код\n\n</details>',
+      markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>",
       options: { draftId: 7, threadId: null, canStop: true },
     },
   ]);
   expect(sent).toEqual([
     {
-      markdown:
-        '<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет',
+      markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
       options: { threadId: null },
     },
   ]);
@@ -355,9 +351,7 @@ test("keeps progress when replacing a temporary message with a failure", async (
 
   await fail.call(server, 7, "The socket connection was closed unexpectedly", "worker-1");
 
-  expect(edited).toContain(
-    '<summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>',
-  );
+  expect(edited).toContain("<summary>Ход работы</summary>");
   expect(edited).toContain("- Проверяю архив");
   expect(edited).toContain("Не получилось завершить задачу.");
   expect(edited).toContain("The socket connection was closed unexpectedly");
