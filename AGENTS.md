@@ -142,6 +142,11 @@ to the authorized Loylex remote before reporting it as complete. Never leave a c
 change only in the working tree or in local-only commits. If the push fails, report the exact
 failure and keep the task unfinished until a safe push succeeds.
 
+When changes to Loylex itself are pushed to `main`, deploy that pushed commit immediately in
+the same task after the required checks pass, using the documented `loylex system` procedure.
+If deployment fails or cannot be verified, report the exact failure and keep the task
+unfinished; do not claim completion based on the push alone.
+
 An unrelated repository or working directory cloned by the agent during a task is not
 automatically protected source: on a direct operator request, it may be removed after
 verifying the exact target, checking for local changes, and preserving a practical recovery
