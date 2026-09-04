@@ -302,7 +302,7 @@ textarea:focus {
   transform: translateY(1px);
 }
 
-.primary-button:hover {
+.primary-button:hover:not(:disabled) {
   background: var(--accent-dark);
   border-color: var(--accent-dark);
   transform: translateY(-1px);
@@ -314,9 +314,25 @@ textarea:focus {
   color: var(--muted);
 }
 
-.secondary-button:hover {
+.secondary-button:hover:not(:disabled) {
   border-color: #b6a99d;
   color: var(--ink);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  border-color: var(--line);
+  background: #eee8e1;
+  color: #a69b91;
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.action-message {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .result-heading {

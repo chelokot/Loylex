@@ -7,9 +7,10 @@ const resultOutput = document.getElementById("result-output");
 const resultSummary = document.getElementById("result-summary");
 const errorMessage = document.getElementById("error-message");
 const copyButton = document.getElementById("copy-button");
-const parseButton = document.getElementById("parse-button");
+const deleteButton = document.getElementById("delete-button");
 const clearButton = document.getElementById("clear-button");
 const exampleButton = document.getElementById("example-button");
+const actionMessage = document.getElementById("action-message");
 
 const example = ["https://t.me/c/1756869879/1218947", "https://t.me/c/1756869879/1218950"].join(
   "\n",
@@ -29,6 +30,8 @@ const output = getElement(resultOutput, "result-output");
 const summary = getElement(resultSummary, "result-summary");
 const errors = getElement(errorMessage, "error-message");
 const copy = getElement(copyButton, "copy-button");
+const deleteAction = getElement(deleteButton, "delete-button");
+const actionStatus = getElement(actionMessage, "action-message");
 
 function pluralize(count, one, few, many) {
   const lastTwo = count % 100;
@@ -53,16 +56,20 @@ function copyFallback(text) {
   }
 }
 
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+  } else {
+    copyFallback(text);
+  }
+}
+
 async function copyOutput() {
   const text = output.textContent ?? "";
   if (!text) return;
 
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      copyFallback(text);
-    }
+    await copyText(text);
     copy.textContent = "Скопировано ✓";
     window.setTimeout(() => {
       copy.textContent = "Скопировать";
@@ -78,10 +85,12 @@ async function copyOutput() {
 function render() {
   const result = parseTelegramLinks(input.value);
   counter.textContent = `${result.linkCount} ${pluralize(result.linkCount, "ссылка", "ссылки", "ссылок")}`;
+  actionStatus.hidden = true;
 
   if (!input.value.trim()) {
     card.hidden = true;
     copy.disabled = true;
+    deleteAction.disabled = true;
     output.textContent = "";
     return;
   }
@@ -90,6 +99,7 @@ function render() {
   card.hidden = false;
   output.textContent = formatted || "Пока нечего копировать";
   copy.disabled = !formatted;
+  deleteAction.disabled = !formatted;
 
   if (formatted) {
     summary.textContent = `${result.groups.length} ${pluralize(result.groups.length, "чат", "чата", "чатов")} · ${result.uniqueMessageCount} ${pluralize(result.uniqueMessageCount, "уникальный ID", "уникальных ID", "уникальных ID")}`;
@@ -111,11 +121,25 @@ function render() {
   }
 }
 
+async function prepareDelete() {
+  const text = formatTelegramLinks(parseTelegramLinks(input.value));
+  if (!text) {
+    actionStatus.textContent = "Сначала вставь ссылки формата t.me/c/…/….";
+    actionStatus.hidden = false;
+    return;
+  }
+
+  try {
+    await copyText(text);
+    actionStatus.textContent = "ID скопированы для удаления через Loylex.";
+  } catch {
+    actionStatus.textContent = "Не удалось скопировать ID. Используй кнопку «Скопировать».";
+  }
+  actionStatus.hidden = false;
+}
+
 input.addEventListener("input", render);
-parseButton?.addEventListener("click", () => {
-  render();
-  input.focus();
-});
+deleteAction.addEventListener("click", prepareDelete);
 clearButton?.addEventListener("click", () => {
   input.value = "";
   render();

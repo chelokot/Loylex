@@ -36,4 +36,15 @@ describe("Telegram link parser", () => {
       { lineNumber: 2, text: "not a link" },
     ]);
   });
+
+  test("exposes delete and disabled like actions", async () => {
+    const html = await Bun.file(
+      new URL("../tools/telegram-links/index.html", import.meta.url),
+    ).text();
+
+    expect(html).toContain('id="delete-button"');
+    expect(html).toContain(">\n              Удалить ");
+    expect(html).toContain('id="like-button" class="secondary-button" type="button" disabled');
+    expect(html).not.toContain("Разобрать");
+  });
 });
