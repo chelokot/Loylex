@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename, extname } from "node:path";
 import type { AgentCompletion, AgentEvent, AgentJob, WorkerRegistration } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import { retryTransient } from "./retry.ts";
+
+const generatedImageMimeTypes: Record<string, string> = {
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+const maximumTelegramDocumentBytes = 50 * 1024 * 1024;
 
 export class GatewayClient {
   private readonly workerId = randomUUID();
@@ -20,7 +31,9 @@ export class GatewayClient {
       ...init,
       headers: {
         authorization: `Bearer ${this.token}`,
-        ...(init.body ? { "content-type": "application/json" } : {}),
+        ...(init.body !== undefined && !(init.body instanceof FormData)
+          ? { "content-type": "application/json" }
+          : {}),
         ...init.headers,
       },
       signal: init.signal ?? AbortSignal.timeout(timeoutMs),
@@ -106,6 +119,43 @@ export class GatewayClient {
       }
       return bytes;
     });
+  }
+
+  async uploadFile(
+    chatId: number,
+    path: string,
+    options: { caption?: string | null; replyTo?: number; threadId?: number | null } = {},
+  ): Promise<{ chatId: number; messageId: number }> {
+    const bytes = await readFile(path);
+    if (bytes.byteLength > maximumTelegramDocumentBytes) {
+      throw new Error(`file is larger than ${maximumTelegramDocumentBytes} bytes`);
+    }
+    const filename = basename(path);
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set(
+      "file",
+      new File([bytes], filename, {
+        type:
+          generatedImageMimeTypes[extname(filename).toLowerCase()] ?? "application/octet-stream",
+      }),
+    );
+    if (options.caption) {
+      form.set("caption", options.caption);
+    }
+    if (options.replyTo !== undefined) {
+      form.set("reply_to", String(options.replyTo));
+    }
+    if (options.threadId !== undefined && options.threadId !== null) {
+      form.set("thread_id", String(options.threadId));
+    }
+    return retryTransient(() =>
+      this.request<{ chatId: number; messageId: number }>(
+        "/v1/telegram/upload",
+        { method: "POST", body: form },
+        120_000,
+      ),
+    );
   }
 
   event(jobId: number, event: AgentEvent): Promise<{ ok: true }> {

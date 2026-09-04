@@ -1,4 +1,5 @@
 import { unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentJob } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import { stageAttachments } from "./attachments.ts";
@@ -6,8 +7,10 @@ import { loadBuckets } from "./buckets.ts";
 import { runCodex } from "./codex.ts";
 import { loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
+import { newGeneratedImages, snapshotGeneratedImages } from "./generated-images.ts";
 import { assertTrustedInstructions } from "./instruction-integrity.ts";
 import { buildPrompt } from "./prompt.ts";
+import { isTransientNetworkError } from "./retry.ts";
 
 const config = loadAgentConfig();
 const gateway = new GatewayClient(config.bridgeUrl, config.bridgeToken);
@@ -60,6 +63,32 @@ async function cancellationRequested(jobId: number, controller: AbortController)
   }
 }
 
+async function reportProgress(
+  jobId: number,
+  event: Parameters<GatewayClient["event"]>[1],
+): Promise<void> {
+  try {
+    await gateway.event(jobId, event);
+  } catch (error) {
+    if (!isTransientNetworkError(error)) {
+      throw error;
+    }
+    console.error(
+      JSON.stringify({
+        level: "warn",
+        jobId,
+        event: "progress_report_unavailable",
+        kind: event.kind,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+}
+
+function isMediaUploadCommand(event: Parameters<GatewayClient["event"]>[1]): boolean {
+  return event.kind === "command" && /\bloylex\s+upload(?:-album)?\b/i.test(event.text);
+}
+
 async function processJob(job: AgentJob): Promise<void> {
   const cancellation = new AbortController();
   const cancellationMonitor = monitorCancellation(job.id, cancellation);
@@ -77,15 +106,19 @@ async function processJob(job: AgentJob): Promise<void> {
         ? await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`)
         : "";
     const prompt = buildPrompt(job, buckets, stagedAttachments.files);
+    const generatedImagesRoot = join(config.codexHome, "generated_images");
+    const generatedImagesBefore = await snapshotGeneratedImages(generatedImagesRoot);
+    let explicitMediaUpload = false;
     const result = await runCodex(
       config,
       prompt,
       job.resumeThreadId,
       async (event) => {
+        explicitMediaUpload ||= isMediaUploadCommand(event);
         if (event.threadId) {
           codexThreadId = event.threadId;
         }
-        await gateway.event(job.id, event);
+        await reportProgress(job.id, event);
       },
       cancellation.signal,
       async (observedUsage, observedThreadId) => {
@@ -107,6 +140,28 @@ async function processJob(job: AgentJob): Promise<void> {
     );
     usage = result.usage ?? usage;
     codexThreadId = result.threadId;
+    if (await cancellationRequested(job.id, cancellation)) {
+      return;
+    }
+    if (!explicitMediaUpload) {
+      const generatedImages = await newGeneratedImages(
+        generatedImagesRoot,
+        generatedImagesBefore,
+        result.threadId,
+      );
+      const generatedImage = generatedImages.at(-1);
+      if (generatedImage) {
+        await reportProgress(job.id, {
+          kind: "commentary",
+          text: "Изображение готово — отправляю его в Telegram.",
+          ...(codexThreadId ? { threadId: codexThreadId } : {}),
+        });
+        await gateway.uploadFile(job.chatId, generatedImage.path, {
+          ...(job.chatType === "private" ? {} : { replyTo: job.messageId }),
+          threadId: job.messageThreadId,
+        });
+      }
+    }
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }

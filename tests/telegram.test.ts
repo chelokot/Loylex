@@ -161,3 +161,35 @@ test("sends video files as video media in an album", async () => {
     { type: "video", media: "attach://file1" },
   ]);
 });
+
+test("sends a document in the requested Telegram thread and reply", async () => {
+  let requestBody: FormData | undefined;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendDocument");
+    requestBody = init?.body as FormData;
+    return Response.json({
+      ok: true,
+      result: { message_id: 22, date: 1, chat: { id: 42, type: "supergroup" } },
+    });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(
+    client.sendDocument(
+      42,
+      new File(["image"], "result.png", { type: "image/png" }),
+      "result.png",
+      null,
+      { replyTo: 17, threadId: 12 },
+    ),
+  ).resolves.toMatchObject({ message_id: 22 });
+
+  expect(requestBody).toBeDefined();
+  expect(requestBody?.get("chat_id")).toBe("42");
+  expect((requestBody?.get("document") as File).name).toBe("result.png");
+  expect(JSON.parse(String(requestBody?.get("reply_parameters")))).toEqual({
+    message_id: 17,
+    allow_sending_without_reply: true,
+  });
+  expect(requestBody?.get("message_thread_id")).toBe("12");
+});

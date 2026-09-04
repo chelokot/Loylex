@@ -32,6 +32,14 @@ async function request(path: string, init: RequestInit = {}, retry = false): Pro
   return retry ? retryTransient(() => requestOnce(path, init)) : requestOnce(path, init);
 }
 
+async function requestJson<T>(path: string, init: RequestInit = {}, retry = false): Promise<T> {
+  const operation = async (): Promise<T> => {
+    const response = await requestOnce(path, init);
+    return (await response.json()) as T;
+  };
+  return retry ? retryTransient(operation) : operation();
+}
+
 async function downloadMedia(fileId: string, output: string): Promise<void> {
   const temporary = `${output}.loylex-part`;
   try {
@@ -71,7 +79,7 @@ async function run(): Promise<void> {
     return;
   }
   if (command === "status") {
-    console.log(JSON.stringify(await (await request("/v1/status", {}, true)).json(), null, 2));
+    console.log(JSON.stringify(await requestJson("/v1/status", {}, true), null, 2));
     return;
   }
   if (command === "usage" || command === "stats") {
@@ -88,12 +96,12 @@ async function run(): Promise<void> {
     }
     const chat = chatId === null ? "" : `?chat=${encodeURIComponent(String(chatId))}`;
     const separator = chat === "" ? "?" : "&";
-    const response = await request(
+    const result = await requestJson(
       `/v1/usage${chat}${separator}limit=${encodeURIComponent(String(limit))}`,
       {},
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "search") {
@@ -104,12 +112,12 @@ async function run(): Promise<void> {
     const chat = arguments_[1] ? `&chat=${encodeURIComponent(arguments_[1])}` : "";
     const limit = arguments_[2] ? `&limit=${encodeURIComponent(arguments_[2])}` : "";
     const offset = arguments_[3] ? `&offset=${encodeURIComponent(arguments_[3])}` : "";
-    const response = await request(
+    const result = await requestJson(
       `/v1/archive/search?q=${encodeURIComponent(query)}${chat}${limit}${offset}`,
       {},
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "query") {
@@ -130,7 +138,7 @@ async function run(): Promise<void> {
     if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > maxReadQueryRows) {
       throw new Error(`MAX_ROWS must be an integer from 1 to ${maxReadQueryRows}`);
     }
-    const response = await request(
+    const result = await requestJson(
       "/v1/archive/query",
       {
         method: "POST",
@@ -139,7 +147,7 @@ async function run(): Promise<void> {
       },
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "recent") {
@@ -149,12 +157,12 @@ async function run(): Promise<void> {
     if (!chatId || !Number.isSafeInteger(parsedChatId) || !Number.isInteger(parsedLimit)) {
       throw new Error("Usage: loylex recent CHAT_ID [LIMIT]");
     }
-    const response = await request(
+    const result = await requestJson(
       `/v1/archive/recent?chat=${encodeURIComponent(chatId)}&limit=${encodeURIComponent(String(parsedLimit))}`,
       {},
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "media-list") {
@@ -164,12 +172,12 @@ async function run(): Promise<void> {
     if (!chatId || !Number.isSafeInteger(parsedChatId) || !Number.isInteger(parsedLimit)) {
       throw new Error("Usage: loylex media-list CHAT_ID [LIMIT]");
     }
-    const response = await request(
+    const result = await requestJson(
       `/v1/archive/media?chat=${encodeURIComponent(chatId)}&limit=${encodeURIComponent(String(parsedLimit))}`,
       {},
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "message") {
@@ -184,12 +192,12 @@ async function run(): Promise<void> {
     ) {
       throw new Error("Usage: loylex message CHAT_ID MESSAGE_ID");
     }
-    const response = await request(
+    const result = await requestJson(
       `/v1/archive/message?chat=${encodeURIComponent(chatId)}&message=${encodeURIComponent(messageId)}`,
       {},
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "messages") {
@@ -212,12 +220,12 @@ async function run(): Promise<void> {
     const after = parsedAfter === null ? "" : `&after=${encodeURIComponent(String(parsedAfter))}`;
     const before =
       parsedBefore === null ? "" : `&before=${encodeURIComponent(String(parsedBefore))}`;
-    const response = await request(
+    const result = await requestJson(
       `/v1/archive/messages?chat=${encodeURIComponent(chatId)}${after}${before}&limit=${encodeURIComponent(String(parsedLimit))}`,
       {},
       true,
     );
-    console.log(JSON.stringify(await response.json(), null, 2));
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "import") {
@@ -263,15 +271,19 @@ async function run(): Promise<void> {
     if (!chatId || markdown.length === 0) {
       throw new Error("Usage: loylex send CHAT_ID MARKDOWN");
     }
-    const response = await request("/v1/telegram/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chatId: Number(chatId),
-        markdown: markdown.join(" ").replaceAll("\\n", "\n"),
-      }),
-    });
-    console.log(JSON.stringify(await response.json(), null, 2));
+    const result = await requestJson(
+      "/v1/telegram/send",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chatId: Number(chatId),
+          markdown: markdown.join(" ").replaceAll("\\n", "\n"),
+        }),
+      },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "send-thread") {
@@ -288,16 +300,20 @@ async function run(): Promise<void> {
     ) {
       throw new Error("Usage: loylex send-thread CHAT_ID THREAD_ID MARKDOWN");
     }
-    const response = await request("/v1/telegram/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chatId: parsedChatId,
-        threadId: parsedThreadId,
-        markdown: markdown.join(" ").replaceAll("\\n", "\n"),
-      }),
-    });
-    console.log(JSON.stringify(await response.json(), null, 2));
+    const result = await requestJson(
+      "/v1/telegram/send",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chatId: parsedChatId,
+          threadId: parsedThreadId,
+          markdown: markdown.join(" ").replaceAll("\\n", "\n"),
+        }),
+      },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "delete") {
@@ -313,12 +329,16 @@ async function run(): Promise<void> {
     ) {
       throw new Error("Usage: loylex delete CHAT_ID MESSAGE_ID");
     }
-    const response = await request("/v1/telegram/delete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chatId: parsedChatId, messageId: parsedMessageId }),
-    });
-    console.log(JSON.stringify(await response.json(), null, 2));
+    const result = await requestJson(
+      "/v1/telegram/delete",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chatId: parsedChatId, messageId: parsedMessageId }),
+      },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "media") {
@@ -341,8 +361,8 @@ async function run(): Promise<void> {
     if (caption.length > 0) {
       form.set("caption", caption.join(" "));
     }
-    const response = await request("/v1/telegram/upload", { method: "POST", body: form });
-    console.log(JSON.stringify(await response.json(), null, 2));
+    const result = await requestJson("/v1/telegram/upload", { method: "POST", body: form }, false);
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === "upload-album") {
@@ -381,11 +401,15 @@ async function run(): Promise<void> {
     if (caption !== undefined) {
       form.set("caption", caption);
     }
-    const response = await request("/v1/telegram/upload-album", {
-      method: "POST",
-      body: form,
-    });
-    console.log(JSON.stringify(await response.json(), null, 2));
+    const result = await requestJson(
+      "/v1/telegram/upload-album",
+      {
+        method: "POST",
+        body: form,
+      },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   throw new Error(

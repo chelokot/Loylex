@@ -52,6 +52,17 @@ async function body<T>(request: Request): Promise<T> {
   return (await request.json()) as T;
 }
 
+function optionalPositiveInteger(value: string | File | null): number | undefined | null {
+  if (value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export class GatewayServer {
   readonly #lastStreamEdit = new Map<number, number>();
   readonly #lastStreamDocument = new Map<number, string>();
@@ -376,8 +387,13 @@ export class GatewayServer {
         const chatId = Number(form.get("chat_id"));
         const file = form.get("file");
         const caption = form.get("caption");
+        const replyTo = optionalPositiveInteger(form.get("reply_to"));
+        const threadId = optionalPositiveInteger(form.get("thread_id"));
         if (!Number.isSafeInteger(chatId) || !this.database.chatExists(chatId)) {
           return json({ error: "unknown chat" }, 403);
+        }
+        if (replyTo === null || threadId === null) {
+          return json({ error: "reply_to and thread_id must be positive integer IDs" }, 400);
         }
         if (!(file instanceof File)) {
           return json({ error: "file is required" }, 400);
@@ -387,6 +403,10 @@ export class GatewayServer {
           file,
           file.name,
           typeof caption === "string" ? caption : null,
+          {
+            ...(replyTo === undefined ? {} : { replyTo }),
+            ...(threadId === undefined ? {} : { threadId }),
+          },
         );
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }

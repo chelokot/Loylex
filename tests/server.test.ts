@@ -341,6 +341,57 @@ test("uploads an album to a known chat", async () => {
   expect(uploaded.caption).toBe("Графики");
 });
 
+test("uploads a document with thread and reply options", async () => {
+  let upload:
+    | {
+        chatId: number;
+        file: File;
+        caption: string | null;
+        options: { replyTo?: number; threadId?: number | null };
+      }
+    | undefined;
+  const database = {
+    chatExists: (chatId: number) => chatId === -10042,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    sendDocument: async (
+      chatId: number,
+      file: File,
+      _filename: string,
+      caption: string | null,
+      options: { replyTo?: number; threadId?: number | null },
+    ) => {
+      upload = { chatId, file, caption, options };
+      return botMessage(20);
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+  const form = new FormData();
+  form.set("chat_id", "-10042");
+  form.set("file", new File(["image"], "result.png", { type: "image/png" }));
+  form.set("reply_to", "17");
+  form.set("thread_id", "12");
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/upload", {
+      method: "POST",
+      headers: { authorization: "Bearer unused" },
+      body: form,
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ chatId: -10042, messageId: 20 });
+  expect(upload).toMatchObject({
+    chatId: -10042,
+    caption: null,
+    options: { replyTo: 17, threadId: 12 },
+  });
+  expect(upload?.file.name).toBe("result.png");
+});
+
 test("deletes a message in a known chat", async () => {
   const deleted: Array<{ chatId: number; messageId: number }> = [];
   const database = {
