@@ -80,6 +80,43 @@ test("starts progress as a persistent rich details message", async () => {
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
+test("replaces a progress message that no longer exists", async () => {
+  let thinkingMessageId: number | null = 11;
+  const sent: number[] = [];
+  const database = {
+    jobAddress: () => ({
+      chatId: -10042,
+      chatType: "supergroup" as const,
+      messageId: 10,
+      threadId: null,
+    }),
+    thinkingMessage: () => thinkingMessageId,
+    isJobCancelled: () => false,
+    appendStatus: () => "commentary: продолжаю",
+    setThinkingMessage: (_jobId: number, messageId: number) => {
+      thinkingMessageId = messageId;
+    },
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    editRich: async () => null,
+    sendRich: async () => {
+      sent.push(12);
+      return botMessage(12);
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const event = (
+    server as unknown as {
+      event: (jobId: number, event: { kind: "commentary"; text: string }) => Promise<void>;
+    }
+  ).event;
+
+  await event.call(server, 7, { kind: "commentary", text: "продолжаю" });
+
+  expect(sent).toEqual([12]);
+  expect(thinkingMessageId as number | null).toBe(12);
+});
+
 test("sends a new final reply and removes the temporary progress message", async () => {
   const sent: Array<{
     chatId: number;
@@ -147,6 +184,41 @@ test("sends a new final reply and removes the temporary progress message", async
     messageId: 12,
     threadId: "thread-1",
   });
+});
+
+test("finishes a completion retry after its final status was already recorded", async () => {
+  let completed = false;
+  const database = {
+    jobAddress: () => ({
+      chatId: -10042,
+      chatType: "supergroup" as const,
+      messageId: 10,
+      threadId: null,
+    }),
+    thinkingMessage: () => 11,
+    isJobCancelled: () => false,
+    isJobOwned: () => true,
+    appendStatus: () => null,
+    statusLog: () => "Готово",
+    recordOutboundMessage: () => {},
+    complete: () => {
+      completed = true;
+    },
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    sendRich: async () => botMessage(12),
+    deleteMessage: async () => true,
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const complete = (
+    server as unknown as {
+      complete: (jobId: number, completion: AgentCompletion, workerId?: string) => Promise<void>;
+    }
+  ).complete;
+
+  await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" }, "worker-1");
+
+  expect(completed).toBe(true);
 });
 
 test("uses ephemeral rich drafts in private chats", async () => {

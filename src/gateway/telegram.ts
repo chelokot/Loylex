@@ -158,7 +158,11 @@ export class TelegramClient {
     return this.call<boolean>("sendRichMessageDraft", body);
   }
 
-  async editRich(chatId: number, messageId: number, markdown: string): Promise<TelegramMessage> {
+  async editRich(
+    chatId: number,
+    messageId: number,
+    markdown: string,
+  ): Promise<TelegramMessage | null> {
     try {
       return await this.call<TelegramMessage>("editMessageText", {
         chat_id: chatId,
@@ -179,15 +183,33 @@ export class TelegramClient {
           chat: { id: chatId, type: "private" },
         };
       }
+      if (
+        error instanceof TelegramApiError &&
+        error.errorCode === 400 &&
+        /message to edit not found/i.test(error.message)
+      ) {
+        return null;
+      }
       throw error;
     }
   }
 
-  deleteMessage(chatId: number, messageId: number): Promise<boolean> {
-    return this.call<boolean>("deleteMessage", {
-      chat_id: chatId,
-      message_id: messageId,
-    });
+  async deleteMessage(chatId: number, messageId: number): Promise<boolean> {
+    try {
+      return await this.call<boolean>("deleteMessage", {
+        chat_id: chatId,
+        message_id: messageId,
+      });
+    } catch (error) {
+      if (
+        error instanceof TelegramApiError &&
+        error.errorCode === 400 &&
+        /message to delete not found/i.test(error.message)
+      ) {
+        return true;
+      }
+      throw error;
+    }
   }
 
   sendTyping(chatId: number, threadId: number | null = null): Promise<boolean> {

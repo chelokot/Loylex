@@ -40,8 +40,23 @@ test("treats an idempotent rich edit as success", async () => {
   const client = new TelegramClient("test-token");
   const result = await client.editRich(42, 17, "<details>same</details>");
 
-  expect(result.message_id).toBe(17);
-  expect(result.chat.id).toBe(42);
+  expect(result?.message_id).toBe(17);
+  expect(result?.chat.id).toBe(42);
+});
+
+test("reports a missing rich message without failing the job", async () => {
+  globalThis.fetch = (async (_input: string | URL | Request) =>
+    Response.json(
+      {
+        ok: false,
+        error_code: 400,
+        description: "Bad Request: message to edit not found",
+      },
+      { status: 400 },
+    )) as unknown as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.editRich(42, 17, "<details>working</details>")).resolves.toBeNull();
 });
 
 test("sends rich message drafts with a stable draft ID", async () => {
@@ -80,6 +95,21 @@ test("deletes a Telegram message", async () => {
   const client = new TelegramClient("test-token");
   await expect(client.deleteMessage(42, 17)).resolves.toBe(true);
   expect(requestBody).toEqual({ chat_id: 42, message_id: 17 });
+});
+
+test("treats an already deleted Telegram message as success", async () => {
+  globalThis.fetch = (async (_input: string | URL | Request) =>
+    Response.json(
+      {
+        ok: false,
+        error_code: 400,
+        description: "Bad Request: message to delete not found",
+      },
+      { status: 400 },
+    )) as unknown as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.deleteMessage(42, 17)).resolves.toBe(true);
 });
 
 test("sets a custom emoji reaction on a Telegram message", async () => {

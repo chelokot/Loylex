@@ -521,7 +521,13 @@ export class GatewayServer {
       return;
     }
     if (now - (this.#lastStreamEdit.get(jobId) ?? 0) >= 1_500) {
-      await this.telegram.editRich(address.chatId, thinkingMessageId, document);
+      const edited = await this.telegram.editRich(address.chatId, thinkingMessageId, document);
+      if (edited === null) {
+        const message = await this.telegram.sendRich(address.chatId, document, {
+          ...responseOptions(address.chatType, address.messageId, address.threadId),
+        });
+        this.database.setThinkingMessage(jobId, message.message_id);
+      }
       this.#lastStreamEdit.set(jobId, now);
       this.#lastStreamDocument.set(jobId, document);
     }
@@ -537,7 +543,19 @@ export class GatewayServer {
     }
     const address = this.database.jobAddress(jobId);
     const thinkingMessageId = this.database.thinkingMessage(jobId);
-    const status = this.database.appendStatus(jobId, "Готово", completion.threadId, workerId);
+    const appendedStatus = this.database.appendStatus(
+      jobId,
+      "Готово",
+      completion.threadId,
+      workerId,
+    );
+    if (
+      appendedStatus === null &&
+      (workerId === undefined || !this.database.isJobOwned(jobId, workerId))
+    ) {
+      return;
+    }
+    const status = appendedStatus ?? this.database.statusLog(jobId);
     if (status === null) {
       return;
     }
@@ -599,7 +617,12 @@ export class GatewayServer {
         ...responseOptions(address.chatType, address.messageId, address.threadId),
       });
     } else {
-      message = await this.telegram.editRich(address.chatId, thinkingMessageId, markdown);
+      const edited = await this.telegram.editRich(address.chatId, thinkingMessageId, markdown);
+      message =
+        edited ??
+        (await this.telegram.sendRich(address.chatId, markdown, {
+          ...responseOptions(address.chatType, address.messageId, address.threadId),
+        }));
     }
     this.database.recordOutboundMessage(jobId, message.message_id, currentThreadId);
     this.database.fail(jobId, error.slice(0, 8_000), workerId, currentThreadId, usage);
