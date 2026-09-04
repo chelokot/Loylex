@@ -3,6 +3,7 @@ import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { LoylexDatabase } from "./database.ts";
 import { responseOptions } from "./message-options.ts";
+import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
 import { helpMessage, resumeUnavailableMessage, stopResultMessage } from "./presentation.ts";
 import { GatewayServer } from "./server.ts";
 import { sendTasks } from "./tasks.ts";
@@ -38,6 +39,7 @@ let offset = database.nextUpdateOffset();
 function acknowledgeWork(message: TelegramMessage): void {
   void Promise.allSettled([
     telegram.sendTyping(message.chat.id, message.message_thread_id ?? null),
+    telegram.setThinkingReaction(message.chat.id, message.message_id),
   ]).then((results) => {
     const failures = results.filter((result) => result.status === "rejected");
     if (failures.length > 0) {
@@ -53,6 +55,23 @@ function acknowledgeWork(message: TelegramMessage): void {
         }),
       );
     }
+  });
+}
+
+function acknowledgeNameMistake(message: TelegramMessage): void {
+  if (!hasDanyaWrittenLoylexNameMistake(message)) {
+    return;
+  }
+  void telegram.setMessageReaction(message.chat.id, message.message_id, "🥴").catch((error) => {
+    console.log(
+      JSON.stringify({
+        level: "warn",
+        component: "poller",
+        event: "name_mistake_reaction_unavailable",
+        messageId: message.message_id,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   });
 }
 
@@ -87,6 +106,7 @@ async function poll(): Promise<void> {
         if (!message || message.from?.is_bot) {
           continue;
         }
+        acknowledgeNameMistake(message);
         const cancelledMessageId = cancelTaskMessageId(message, bot.username);
         if (cancelledMessageId !== null) {
           const cancelledJobIds = database.cancelJobsForMessage(

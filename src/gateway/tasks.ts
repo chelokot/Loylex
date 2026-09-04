@@ -6,13 +6,13 @@ import type { TelegramClient } from "./telegram.ts";
 const recentTasksLimit = 5;
 const taskLabelLength = 40;
 
-const stateLabels = {
-  pending: "Ожидает",
-  running: "Выполняется",
-  completed: "Завершено",
-  failed: "Ошибка",
-  cancelled: "Остановлено",
-} satisfies Record<JobSummary["state"], string>;
+const stateEmojis = {
+  pending: { id: "6113685078825505075", fallback: "⏳" },
+  running: { id: "6113685078825505075", fallback: "⏳" },
+  completed: { id: "5825794181183836432", fallback: "✅" },
+  failed: { id: "6269316311172518259", fallback: "❌" },
+  cancelled: { id: "6269316311172518259", fallback: "❌" },
+} satisfies Record<JobSummary["state"], { id: string; fallback: string }>;
 
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -52,8 +52,11 @@ function messageLink(task: JobSummary): string {
   return `tg://openmessage?chat_id=${encodeURIComponent(chatId)}&message_id=${messageId}`;
 }
 
-function statusLabel(state: JobSummary["state"]): string {
-  return stateLabels[state];
+function statusEmoji(state: JobSummary["state"], useCustomEmoji: boolean): string {
+  const emoji = stateEmojis[state];
+  return useCustomEmoji
+    ? `<tg-emoji emoji-id="${emoji.id}">${emoji.fallback}</tg-emoji>`
+    : emoji.fallback;
 }
 
 function cancelCommand(task: JobSummary): string {
@@ -64,7 +67,7 @@ function resumeCommand(task: JobSummary): string {
   return `/resume_${task.messageId}`;
 }
 
-function formatTask(task: JobSummary): string {
+function formatTask(task: JobSummary, useCustomEmoji: boolean): string {
   const label = escapeHtml(taskLabel(task.prompt));
   const link = escapeHtmlAttribute(messageLink(task));
   const dates = [formatDate(task.createdAt)];
@@ -78,17 +81,17 @@ function formatTask(task: JobSummary): string {
     controls.push(resumeCommand(task));
   }
   return [
-    `${statusLabel(task.state)} <a href="${link}">${label}</a>`,
+    `${statusEmoji(task.state, useCustomEmoji)} <a href="${link}">${label}</a>`,
     dates.join(" - "),
     ...controls,
   ].join("  \n");
 }
 
-export function formatTasksDocument(tasks: JobSummary[]): string {
+export function formatTasksDocument(tasks: JobSummary[], useCustomEmoji = true): string {
   if (tasks.length === 0) {
     return "Задач пока нет.";
   }
-  return tasks.map(formatTask).join("\n\n");
+  return tasks.map((task) => formatTask(task, useCustomEmoji)).join("\n\n");
 }
 
 export async function sendTasks(
