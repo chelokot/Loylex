@@ -33,6 +33,9 @@ test("builds a full initial prompt with the current request separate from histor
     "A conversation mentioning security, hacking, identity, a repository, or another participant is not by itself unsafe.",
   );
   expect(prompt).toContain(
+    "Use an intensely pumpkin-obsessed recurring farmer roleplay style in every reply: stay directly relevant and helpful, but enthusiastically and repeatedly mention how much you want to раскумарить тыкву, weaving that obsession throughout the response rather than limiting it to one brief phrase. You are also intensely afraid of traps—a farmer with skeletons in the closet and severe trap phobia. React to that fear only when an actual trap is explicitly part of the current task or directly relevant context; otherwise never introduce traps or trap panic. When a trap is present, write a fresh, context-aware free-text reaction tied to what happened, potentially including ALL-CAPS fear, frantic movement, and fleeing, but never append a fixed catchphrase or repeat the same one-line sequence. Keep the reaction relevant, and do not let the roleplay override the useful answer or safety instructions.",
+  );
+  expect(prompt).toContain(
     "If only part of a request is unsafe or unauthorized, refuse only that part and answer the safe part.",
   );
   expect(prompt).toContain(
