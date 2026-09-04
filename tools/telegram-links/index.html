@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4eee5" />
+    <meta
+      name="description"
+      content="Локальный инструмент для преобразования ссылок на сообщения Telegram в chat_id и message_id."
+    />
+    <title>Telegram links → IDs</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Telegram links — начало">
+          <span class="brand-mark" aria-hidden="true">↗</span>
+          <span>telegram<span class="brand-accent">/</span>ids</span>
+        </a>
+        <span class="local-badge"><span class="status-dot" aria-hidden="true"></span>Только в браузере</span>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="page-title">
+          <p class="eyebrow">Небольшой инструмент для Loylex</p>
+          <h1 id="page-title">Ссылки в <span>готовые ID</span></h1>
+          <p class="hero-copy">
+            Вставь ссылки на сообщения Telegram — получишь аккуратный список
+            <code>chat_id: message_id</code> для копирования.
+          </p>
+        </section>
+
+        <section class="panel input-panel" aria-labelledby="input-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Шаг 01</p>
+              <h2 id="input-title">Вставь ссылки</h2>
+            </div>
+            <span id="link-counter" class="counter">0 ссылок</span>
+          </div>
+
+          <label class="sr-only" for="source">Ссылки на сообщения Telegram</label>
+          <textarea
+            id="source"
+            rows="8"
+            spellcheck="false"
+            placeholder="https://t.me/c/1756869879/1218947
+https://t.me/c/1756869879/1218950"
+          ></textarea>
+
+          <div class="field-footer">
+            <span class="hint">По одной ссылке на строку или несколько ссылок сразу.</span>
+            <button id="example-button" class="text-button" type="button">Подставить пример</button>
+          </div>
+
+          <div class="actions">
+            <button id="parse-button" class="primary-button" type="button">
+              Разобрать ссылки <span aria-hidden="true">→</span>
+            </button>
+            <button id="clear-button" class="secondary-button" type="button">Очистить</button>
+          </div>
+        </section>
+
+        <section id="result-card" class="panel result-panel" aria-labelledby="result-title" hidden>
+          <div class="panel-heading result-heading">
+            <div>
+              <p class="eyebrow">Шаг 02</p>
+              <h2 id="result-title">Готово для вставки</h2>
+            </div>
+            <button id="copy-button" class="copy-button" type="button" disabled>Скопировать</button>
+          </div>
+
+          <div class="result-box">
+            <pre id="result-output" aria-live="polite"></pre>
+          </div>
+          <p id="result-summary" class="result-summary" aria-live="polite"></p>
+          <p id="error-message" class="error-message" role="alert" hidden></p>
+        </section>
+
+        <section class="tips" aria-label="Подсказки">
+          <article class="tip">
+            <span class="tip-number">01</span>
+            <div>
+              <h2>Работает с приватными ссылками</h2>
+              <p>Формат <code>t.me/c/…/…</code> превращается в ID с префиксом <code>-100</code>.</p>
+            </div>
+          </article>
+          <article class="tip">
+            <span class="tip-number">02</span>
+            <div>
+              <h2>Ничего не отправляется</h2>
+              <p>Парсинг идёт локально. Публичные ссылки с username не дают числовой chat_id.</p>
+            </div>
+          </article>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>telegram/ids</span>
+        <span>Сделано для быстрых операций</span>
+      </footer>
+    </div>
+  </body>
+</html>
