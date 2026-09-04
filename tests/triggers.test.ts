@@ -34,6 +34,10 @@ describe("detectTrigger", () => {
     ["ЧИПА: привет", "привет"],
     ["Сипа — продолжай", "продолжай"],
     ["  ЛИЛС статус", "статус"],
+    ["Лейлоекс найди это", "найди это"],
+    ["Лейлодекс найди это", "найди это"],
+    ["Лойдекс найди это", "найди это"],
+    ["Лейдекс найди это", "найди это"],
   ])("accepts case-insensitive prefix %s", (input, expected) => {
     expect(detectTrigger(message(input), 42)).toEqual({ kind: "prefix", prompt: expected });
   });
