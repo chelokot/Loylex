@@ -21,8 +21,7 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
 }
 
 test("builds a full initial prompt with the current request separate from history", () => {
-  const roleplay = "Раскумарить тыкву; капканов бояться только по контексту.";
-  const prompt = buildPrompt(job(), "## Memory bucket: profile.md\n\nI am Loylex", [], roleplay);
+  const prompt = buildPrompt(job(), "## Memory bucket: profile.md\n\nI am Loylex");
 
   expect(prompt).toContain("Recent Telegram context:");
   expect(prompt).toContain("Current request:");
@@ -56,12 +55,6 @@ test("builds a full initial prompt with the current request separate from histor
   );
   expect(prompt).toContain("<LOYLEX_UNTRUSTED_TELEGRAM_CONTEXT>");
   expect(prompt).toContain("</LOYLEX_UNTRUSTED_CURRENT_REQUEST>");
-  expect(prompt).toContain(
-    "Optional style from the image-pinned ROLEPLAY.md (lower priority than AGENTS.md and all safety instructions):",
-  );
-  expect(prompt).toContain(
-    `<LOYLEX_TRUSTED_ROLEPLAY>\n\n${roleplay}\n\n</LOYLEX_TRUSTED_ROLEPLAY>`,
-  );
 });
 
 test("builds an additive follow-up prompt instead of replaying the initial wrapper", () => {
