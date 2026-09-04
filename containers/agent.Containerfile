@@ -71,6 +71,7 @@ RUN python3 -m pip install \
 COPY --chown=root:root package.json bun.lock tsconfig.json /opt/loylex/app/
 COPY --chown=root:root src /opt/loylex/app/src
 COPY --chown=root:root AGENTS.md /opt/loylex/seed/AGENTS.md
+COPY --chown=root:root ROLEPLAY.md /opt/loylex/seed/ROLEPLAY.md
 COPY --chown=root:root skills /opt/loylex/seed/skills
 COPY --chown=root:root memory-seed /opt/loylex/memory-seed
 COPY --chmod=0755 containers/agent-entrypoint.sh /usr/local/bin/loylex-agent
