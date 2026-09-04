@@ -31,10 +31,31 @@ function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+const workProgressEmojiIds = [
+  "5253913917012330081",
+  "5224350527537567128",
+  "5244538304052870400",
+  "5323776628143178606",
+  "5271923883115559452",
+  "5237847543869646963",
+  "5289811519960285465",
+  "5226458067989711457",
+  "5303344012722188431",
+  "5272017461863002447",
+  "5278346366756601772",
+  "5458767596285369713",
+  "5237692723183501078",
+] as const;
+
+const workProgressEmojiId =
+  workProgressEmojiIds[Math.floor(Math.random() * workProgressEmojiIds.length)] ??
+  workProgressEmojiIds[0];
+const workProgressSummary = `<tg-emoji emoji-id="${workProgressEmojiId}">🛠️</tg-emoji> Работаю~~`;
+
 export function workDocument(status: string): string {
   const activity = visibleActivity(status);
   const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
-  return `<details><summary>Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
+  return `<details><summary>${workProgressSummary}</summary>\n\n${history || "- Готово"}\n\n</details>`;
 }
 
 function visibleActivity(status: string): string[] {

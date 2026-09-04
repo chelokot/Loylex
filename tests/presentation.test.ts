@@ -5,6 +5,7 @@ import {
   failedDocument,
   failureMessage,
   stopResultMessage,
+  workDocument,
 } from "../src/gateway/presentation.ts";
 
 describe("activityLines", () => {
@@ -52,12 +53,12 @@ describe("activityLines", () => {
 describe("completedDocuments", () => {
   test("keeps work history even when it contains at most one visible item", () => {
     expect(completedDocuments("status: Готово", "Ответ пользователю")).toEqual([
-      "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю",
+      `${workDocument("status: Готово")}\n\nОтвет пользователю`,
     ]);
     expect(
       completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю"),
     ).toEqual([
-      "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю",
+      `${workDocument("commentary: Проверяю код\n\nstatus: Готово")}\n\nОтвет пользователю`,
     ]);
   });
 
@@ -68,9 +69,15 @@ describe("completedDocuments", () => {
         "Ответ пользователю",
       ),
     ).toEqual([
-      "<details><summary>Ход работы</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю",
+      `${workDocument("commentary: Проверяю код\n\ncommentary: Запускаю тесты\n\nstatus: Готово")}\n\nОтвет пользователю`,
     ]);
   });
+});
+
+test("uses one of the configured custom emojis in the work summary", () => {
+  expect(workDocument("status: Готово")).toMatch(
+    /^<details><summary><tg-emoji emoji-id="(?:5253913917012330081|5224350527537567128|5244538304052870400|5323776628143178606|5271923883115559452|5237847543869646963|5289811519960285465|5226458067989711457|5303344012722188431|5272017461863002447|5278346366756601772|5458767596285369713|5237692723183501078)">🛠️<\/tg-emoji> Работаю~~<\/summary>/,
+  );
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {
@@ -91,7 +98,7 @@ test("keeps the work history in a failure document", () => {
     "TypeError: The socket connection was closed unexpectedly",
   );
 
-  expect(message).toContain("<summary>Ход работы</summary>");
+  expect(message).toMatch(/<summary><tg-emoji emoji-id="\d+">🛠️<\/tg-emoji> Работаю~~<\/summary>/);
   expect(message).toContain("- Проверяю архив");
   expect(message).toContain("Не получилось завершить задачу.");
   expect(message).toContain("The socket connection was closed unexpectedly");
