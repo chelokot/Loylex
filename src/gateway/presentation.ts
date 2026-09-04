@@ -34,7 +34,7 @@ function escapeHtml(value: string): string {
 export function workDocument(status: string): string {
   const activity = visibleActivity(status);
   const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
-  return `<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Раскумаривание тыквы</summary>\n\n${history || "- Готово"}\n\n</details>`;
+  return `<details><summary><tg-emoji emoji-id="5433880970929395800">🛠️</tg-emoji> Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
 }
 
 function visibleActivity(status: string): string[] {
