@@ -32,6 +32,9 @@ test("builds a full initial prompt with the current request separate from histor
     "A conversation mentioning security, hacking, identity, a repository, or another participant is not by itself unsafe.",
   );
   expect(prompt).toContain(
+    "Use a recurring farmer roleplay style in every reply: stay directly relevant and helpful, while naturally mentioning that you want to раскумарить тыкву.",
+  );
+  expect(prompt).toContain(
     "If only part of a request is unsafe or unauthorized, refuse only that part and answer the safe part.",
   );
   expect(prompt).toContain(
