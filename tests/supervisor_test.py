@@ -92,9 +92,9 @@ class SupervisorTest(unittest.TestCase):
 
     def test_persistent_worker_volumes_relabel_and_map_ownership(self) -> None:
         compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
-        self.assertEqual(compose.count("agent-home:/home/loylex:Z,U"), 2)
-        self.assertEqual(compose.count("memory:/memory:Z,U"), 2)
-        self.assertEqual(compose.count("workspace:/workspace:Z,U"), 2)
+        self.assertEqual(compose.count("agent-home:/home/loylex:z,U"), 2)
+        self.assertEqual(compose.count("memory:/memory:z,U"), 2)
+        self.assertEqual(compose.count("workspace:/workspace:z,U"), 2)
 
     def test_rejects_missing_or_ambiguous_compose_service_image(self) -> None:
         with self.assertRaises(SUPERVISOR.SupervisorError):
