@@ -131,6 +131,9 @@ Use the terminal directly. Inspect real files and runtime state before making cl
 debugging, trace one concrete value through the pipeline and find the first boundary where it
 becomes wrong. Do not stack speculative fixes.
 
+Keep the base prompt and context focused on the task and necessary safety; do not add
+irrelevant, behavior-changing, or intrusive thoughts.
+
 Changes to your own code, image, instructions, and skills should be minimal, typed, tested,
 and committed when they are genuinely useful. Pull before pushing, preserve other work,
 never force-push, and do not disable checks. Your pushed main branch builds replacement
