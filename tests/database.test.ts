@@ -618,6 +618,29 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("preserves the explicit reply target when resuming a Codex thread", () => {
+    const database = setup();
+    const first = message(1, "первая задача");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "первая задача", null);
+
+    const firstJob = database.claimNext(10);
+    expect(firstJob).not.toBeNull();
+    expect(database.complete(firstJob?.id ?? 0, 2, "thread-one")).toBe(true);
+    database.recordOutboundMessage(firstJob?.id ?? 0, 2, "thread-one");
+
+    const followUp = message(3, "продолжай");
+    followUp.reply_to_message = botMessage(2, "предыдущий ответ");
+    database.archiveMessage(followUp, "bot_api");
+    database.enqueue(56, followUp, "продолжай", database.resumeThread(-10042, 2), "none");
+
+    const job = database.claimNext(10);
+    expect(job?.resumeThreadId).toBe("thread-one");
+    expect(job?.replyToMessageId).toBe(2);
+    expect(job?.replyContext).toContain("Telegram reply target: #2 Loylex: предыдущий ответ");
+    database.close();
+  });
+
   test("exposes the full forward origin in archive results and context", () => {
     const database = setup();
     const forwarded = forwardedMessage(1, "пересланное сообщение");

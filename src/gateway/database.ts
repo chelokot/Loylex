@@ -1511,10 +1511,11 @@ export class LoylexDatabase {
       resumeThreadId: row.resume_thread_id,
       context: context.text,
       contextMode: context.mode,
+      replyToMessageId: this.replyToMessageId(row.chat_id, row.message_id),
       replyContext:
-        context.mode === "none" || row.resume_thread_id !== null
+        context.mode === "none" && row.resume_thread_id === null
           ? null
-          : this.replyContext(row.chat_id, row.message_id, context.text),
+          : this.replyContext(row.chat_id, row.message_id),
       attachments: JSON.parse(row.attachments_json) as JsonValue[],
     };
   }
@@ -1937,7 +1938,17 @@ export class LoylexDatabase {
       .join("\n");
   }
 
-  private replyContext(chatId: number, messageId: number, context: string): string | null {
+  private replyToMessageId(chatId: number, messageId: number): number | null {
+    return (
+      this.connection
+        .query<{ reply_to_message_id: number | null }, [number, number]>(
+          "SELECT reply_to_message_id FROM messages WHERE chat_id = ? AND message_id = ?",
+        )
+        .get(chatId, messageId)?.reply_to_message_id ?? null
+    );
+  }
+
+  private replyContext(chatId: number, messageId: number): string | null {
     const rawJson = this.connection
       .query<{ raw_json: string }, [number, number]>(
         "SELECT raw_json FROM messages WHERE chat_id = ? AND message_id = ?",
@@ -1955,12 +1966,7 @@ export class LoylexDatabase {
     if (targetId === null) {
       return null;
     }
-    // The normal context window already carries this message. Avoid inserting a second copy
-    // merely because Telegram also sent the nested reply object.
-    if (context.split("\n").some((line) => line.includes(`#${targetId} `))) {
-      return null;
-    }
-    return messageReference(target, "Replied-to Telegram message:");
+    return messageReference(target, "Telegram reply target:");
   }
 
   appendStatus(

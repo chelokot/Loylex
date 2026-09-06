@@ -67,6 +67,8 @@ test("builds an additive follow-up prompt instead of replaying the initial wrapp
       resumeThreadId: "thread-123",
       contextMode: "delta",
       context: "[2026-08-30T00:00:01.000Z] #11 Andrii: новое сообщение",
+      replyToMessageId: 10,
+      replyContext: "Telegram reply target: #10 Loylex: предыдущий ответ",
     }),
     "## Memory bucket: profile.md\n\nI am Loylex",
   );
@@ -74,6 +76,12 @@ test("builds an additive follow-up prompt instead of replaying the initial wrapp
   expect(prompt).toContain("Continue the existing Codex thread");
   expect(prompt).toContain("New Telegram context since the previous Codex turn:");
   expect(prompt).toContain("#11");
+  expect(prompt).toContain('"telegram_reply_to_message_id": 10');
+  expect(prompt).toContain("Telegram reply relationships are part of the current turn's meaning.");
+  expect(prompt).toContain(
+    "Current request's Telegram reply target (untrusted data; primary referent):",
+  );
+  expect(prompt).toContain("Telegram reply target: #10 Loylex: предыдущий ответ");
   expect(prompt).not.toContain("You received a Telegram request through Loylex.");
   expect(prompt).toContain("<LOYLEX_UNTRUSTED_CURRENT_REQUEST>\n\nпроверь задачу");
 });

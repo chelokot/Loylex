@@ -127,6 +127,7 @@ export type AgentJob = {
   resumeThreadId: string | null;
   context: string;
   contextMode: AgentContextMode;
+  replyToMessageId?: number | null;
   replyContext?: string | null;
   attachments: JsonValue[];
 };
