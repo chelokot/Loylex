@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test";
 import type { GatewayConfig } from "../src/gateway/config.ts";
 import type { LoylexDatabase } from "../src/gateway/database.ts";
-import { workDocument } from "../src/gateway/presentation.ts";
 import { GatewayServer } from "../src/gateway/server.ts";
 import type { TelegramClient } from "../src/gateway/telegram.ts";
 import type { AgentCompletion, TelegramMessage } from "../src/shared/types.ts";
 import type { AgentTokenUsage } from "../src/shared/usage.ts";
+
+function normalizeWorkSummary(value: string): string {
+  return value.replace(/<summary>.*<\/summary>/, "<summary>WORK</summary>");
+}
 
 function botMessage(id: number): TelegramMessage {
   return {
@@ -72,9 +75,9 @@ test("starts progress as a persistent rich details message", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
 
   expect(sent).toHaveLength(1);
-  expect(sent[0]).toEqual({
+  expect({ ...sent[0], markdown: normalizeWorkSummary(sent[0]?.markdown ?? "") }).toEqual({
     chatId: -10042,
-    markdown: workDocument("commentary: Проверяю код"),
+    markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>",
     options: { replyTo: 10, threadId: null },
   });
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
@@ -170,10 +173,12 @@ test("sends a new final reply and removes the temporary progress message", async
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
   expect(calls).toEqual(["send", "delete"]);
-  expect(sent).toEqual([
+  expect(
+    sent.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
+  ).toEqual([
     {
       chatId: -10042,
-      markdown: `${workDocument("status: Готово")}\n\nОтвет`,
+      markdown: "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет",
       options: { replyTo: 10, threadId: null },
     },
   ]);
@@ -291,16 +296,20 @@ test("uses ephemeral rich drafts in private chats", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
-  expect(drafts).toEqual([
+  expect(
+    drafts.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
+  ).toEqual([
     {
       chatId: 42,
-      markdown: workDocument("commentary: Проверяю код"),
+      markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>",
       options: { draftId: 7, threadId: null, canStop: true },
     },
   ]);
-  expect(sent).toEqual([
+  expect(
+    sent.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
+  ).toEqual([
     {
-      markdown: `${workDocument("commentary: Проверяю код")}\n\nОтвет`,
+      markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
       options: { threadId: null },
     },
   ]);

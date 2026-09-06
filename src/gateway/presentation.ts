@@ -47,15 +47,17 @@ const workProgressEmojiIds = [
   "5237692723183501078",
 ] as const;
 
-const workProgressEmojiId =
-  workProgressEmojiIds[Math.floor(Math.random() * workProgressEmojiIds.length)] ??
-  workProgressEmojiIds[0];
-const workProgressSummary = `<tg-emoji emoji-id="${workProgressEmojiId}">🛠️</tg-emoji> Работаю~~`;
+function workProgressSummary(): string {
+  const emojiId =
+    workProgressEmojiIds[Math.floor(Math.random() * workProgressEmojiIds.length)] ??
+    workProgressEmojiIds[0];
+  return `<tg-emoji emoji-id="${emojiId}">🛠️</tg-emoji> Работаю~~`;
+}
 
 export function workDocument(status: string): string {
   const activity = visibleActivity(status);
   const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
-  return `<details><summary>${workProgressSummary}</summary>\n\n${history || "- Готово"}\n\n</details>`;
+  return `<details><summary>${workProgressSummary()}</summary>\n\n${history || "- Готово"}\n\n</details>`;
 }
 
 function visibleActivity(status: string): string[] {

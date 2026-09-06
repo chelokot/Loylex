@@ -8,6 +8,10 @@ import {
   workDocument,
 } from "../src/gateway/presentation.ts";
 
+function normalizeWorkSummary(value: string): string {
+  return value.replace(/<summary>.*<\/summary>/, "<summary>WORK</summary>");
+}
+
 describe("activityLines", () => {
   test("turns shell events into concise user-facing activity", () => {
     const status = [
@@ -52,13 +56,15 @@ describe("activityLines", () => {
 
 describe("completedDocuments", () => {
   test("keeps work history even when it contains at most one visible item", () => {
-    expect(completedDocuments("status: Готово", "Ответ пользователю")).toEqual([
-      `${workDocument("status: Готово")}\n\nОтвет пользователю`,
-    ]);
     expect(
-      completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю"),
+      completedDocuments("status: Готово", "Ответ пользователю").map(normalizeWorkSummary),
+    ).toEqual(["<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю"]);
+    expect(
+      completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю").map(
+        normalizeWorkSummary,
+      ),
     ).toEqual([
-      `${workDocument("commentary: Проверяю код\n\nstatus: Готово")}\n\nОтвет пользователю`,
+      "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю",
     ]);
   });
 
@@ -67,9 +73,9 @@ describe("completedDocuments", () => {
       completedDocuments(
         "commentary: Проверяю код\n\ncommentary: Запускаю тесты\n\nstatus: Готово",
         "Ответ пользователю",
-      ),
+      ).map(normalizeWorkSummary),
     ).toEqual([
-      `${workDocument("commentary: Проверяю код\n\ncommentary: Запускаю тесты\n\nstatus: Готово")}\n\nОтвет пользователю`,
+      "<details><summary>WORK</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю",
     ]);
   });
 });
