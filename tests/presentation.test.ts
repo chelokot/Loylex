@@ -5,6 +5,8 @@ import {
   failedDocument,
   failureMessage,
   stopResultMessage,
+  toolsDocument,
+  toolUsages,
   workDocument,
 } from "../src/gateway/presentation.ts";
 
@@ -58,13 +60,15 @@ describe("completedDocuments", () => {
   test("keeps work history even when it contains at most one visible item", () => {
     expect(
       completedDocuments("status: Готово", "Ответ пользователю").map(normalizeWorkSummary),
-    ).toEqual(["<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю"]);
+    ).toEqual([
+      "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
+    ]);
     expect(
       completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю").map(
         normalizeWorkSummary,
       ),
     ).toEqual([
-      "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю",
+      "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
     ]);
   });
 
@@ -75,9 +79,38 @@ describe("completedDocuments", () => {
         "Ответ пользователю",
       ).map(normalizeWorkSummary),
     ).toEqual([
-      "<details><summary>WORK</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю",
+      "<details><summary>WORK</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
     ]);
   });
+});
+
+test("counts tools from status events and renders a collapsed list", () => {
+  const status = [
+    "tool: exec [tool-call:one]",
+    "tool: web.run [tool-call:two]",
+    "tool: exec [tool-call:three]",
+    "status: Готово",
+  ].join("\n\n");
+
+  expect(toolUsages(status)).toEqual([
+    { name: "exec", count: 2 },
+    { name: "web.run", count: 1 },
+  ]);
+  expect(toolsDocument(status)).toBe(
+    "<details><summary>Использованные инструменты</summary>\n\n- exec — 2 раза\n- web.run — 1 раз\n\n</details>",
+  );
+});
+
+test("puts the tools dropdown on the last chunk of a long answer", () => {
+  const status = "tool: exec [tool-call:one]";
+  const documents = completedDocuments(status, "ответ ".repeat(6_000));
+  const firstDocument = normalizeWorkSummary(documents[0] ?? "");
+  const lastDocument = documents.at(-1) ?? "";
+
+  expect(documents.length).toBeGreaterThan(1);
+  expect(firstDocument).toContain("<summary>WORK</summary>");
+  expect(firstDocument).not.toContain("Использованные инструменты");
+  expect(lastDocument).toContain("<summary>Использованные инструменты</summary>");
 });
 
 test("uses one of the configured custom emojis in the work summary", () => {

@@ -132,9 +132,10 @@ export type AgentJob = {
 };
 
 export type AgentEvent = {
-  kind: "command" | "commentary" | "reasoning" | "status";
+  kind: "command" | "commentary" | "reasoning" | "status" | "tool";
   text: string;
   threadId?: string;
+  toolCallId?: string;
 };
 
 export type AgentCompletion = {

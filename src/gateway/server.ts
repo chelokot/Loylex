@@ -27,6 +27,23 @@ function workerId(request: Request): string | undefined {
   return value || undefined;
 }
 
+function eventStatusLine(event: AgentEvent): string {
+  const text = event.text.trim();
+  if (event.kind !== "tool" || !event.toolCallId) {
+    return `${event.kind}: ${text}`;
+  }
+  const toolCallId = Array.from(event.toolCallId)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 0x20 && codePoint !== 0x7f && character !== "[" && character !== "]";
+    })
+    .join("")
+    .replaceAll(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  return toolCallId ? `${event.kind}: ${text} [tool-call:${toolCallId}]` : `${event.kind}: ${text}`;
+}
+
 function importMessage(value: unknown): value is TelegramMessage {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
@@ -483,7 +500,7 @@ export class GatewayServer {
     if (this.database.isJobCancelled(jobId)) {
       return;
     }
-    const line = `${event.kind}: ${event.text.trim()}`;
+    const line = eventStatusLine(event);
     const status = this.database.appendStatus(jobId, line, event.threadId, workerId);
     if (status === null) {
       return;

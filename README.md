@@ -166,7 +166,7 @@ context.
 While Codex works, terminal and reasoning events update an ephemeral rich draft in private chats,
 or create/edit one persistent Rich Message with a collapsed `<details>` history in groups.
 Completion sends a new Rich Markdown message containing the collapsed history and final answer,
-then removes the temporary group progress message. This keeps the final answer at the bottom of
+then appends a collapsed list of the tools used in that turn with call counts, and removes the temporary group progress message. This keeps the final answer at the bottom of
 the chat; group messages reply to the request, while private-chat messages remain ordinary
 unthreaded messages.
 Rich API errors are surfaced instead of silently sending the same document as unformatted text.

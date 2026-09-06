@@ -83,6 +83,42 @@ test("starts progress as a persistent rich details message", async () => {
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
+test("keeps repeated tool calls distinct in the job status", async () => {
+  const lines: string[] = [];
+  const database = {
+    jobAddress: () => ({
+      chatId: -10042,
+      chatType: "supergroup" as const,
+      messageId: 10,
+      threadId: null,
+    }),
+    thinkingMessage: () => null,
+    isJobCancelled: () => false,
+    appendStatus: (_jobId: number, line: string) => {
+      lines.push(line);
+      return lines.join("\n\n");
+    },
+    setThinkingMessage: () => {},
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    sendRich: async () => botMessage(11),
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const event = (
+    server as unknown as {
+      event: (
+        jobId: number,
+        event: { kind: "tool"; text: string; toolCallId: string },
+      ) => Promise<void>;
+    }
+  ).event;
+
+  await event.call(server, 7, { kind: "tool", text: "exec", toolCallId: "call-1" });
+  await event.call(server, 7, { kind: "tool", text: "exec", toolCallId: "call-2" });
+
+  expect(lines).toEqual(["tool: exec [tool-call:call-1]", "tool: exec [tool-call:call-2]"]);
+});
+
 test("replaces a progress message that no longer exists", async () => {
   let thinkingMessageId: number | null = 11;
   const sent: number[] = [];
@@ -178,7 +214,8 @@ test("sends a new final reply and removes the temporary progress message", async
   ).toEqual([
     {
       chatId: -10042,
-      markdown: "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет",
+      markdown:
+        "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
       options: { replyTo: 10, threadId: null },
     },
   ]);
@@ -309,7 +346,8 @@ test("uses ephemeral rich drafts in private chats", async () => {
     sent.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
   ).toEqual([
     {
-      markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
+      markdown:
+        "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
       options: { threadId: null },
     },
   ]);

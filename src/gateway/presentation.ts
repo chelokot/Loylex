@@ -60,6 +60,52 @@ export function workDocument(status: string): string {
   return `<details><summary>${workProgressSummary()}</summary>\n\n${history || "- Готово"}\n\n</details>`;
 }
 
+export type ToolUsage = {
+  name: string;
+  count: number;
+};
+
+function storedToolName(text: string): string {
+  const marker = " [tool-call:";
+  const markerStart = text.lastIndexOf(marker);
+  return markerStart >= 0 && text.endsWith("]") ? text.slice(0, markerStart).trim() : text.trim();
+}
+
+export function toolUsages(status: string): ToolUsage[] {
+  const counts = new Map<string, number>();
+  for (const entry of status.split("\n\n")) {
+    const separator = entry.indexOf(":");
+    if (separator === -1 || entry.slice(0, separator) !== "tool") {
+      continue;
+    }
+    const name = storedToolName(entry.slice(separator + 1));
+    if (name) {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([name, count]) => ({ name, count }));
+}
+
+function toolUseCountLabel(count: number): string {
+  const moduloTen = count % 10;
+  const moduloHundred = count % 100;
+  if (moduloTen === 1 && moduloHundred !== 11) {
+    return "раз";
+  }
+  if (moduloTen >= 2 && moduloTen <= 4 && (moduloHundred < 10 || moduloHundred >= 20)) {
+    return "раза";
+  }
+  return "раз";
+}
+
+export function toolsDocument(status: string): string {
+  const usages = toolUsages(status);
+  const history = usages
+    .map(({ name, count }) => `- ${escapeHtml(name)} — ${count} ${toolUseCountLabel(count)}`)
+    .join("\n");
+  return `<details><summary>Использованные инструменты</summary>\n\n${history || "- Инструменты не использовались"}\n\n</details>`;
+}
+
 function visibleActivity(status: string): string[] {
   return activityLines(status).slice(-8);
 }
@@ -138,17 +184,22 @@ export function failureMessage(error: string): string {
 }
 
 export function failedDocument(status: string, error: string): string {
-  return `${workDocument(status)}\n\n${failureMessage(error)}`;
+  return `${workDocument(status)}\n\n${failureMessage(error)}\n\n${toolsDocument(status)}`;
 }
 
 export function completedDocuments(status: string, answer: string): string[] {
   const prefix = `${workDocument(status)}\n\n`;
-  const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix);
+  const suffix = `\n\n${toolsDocument(status)}`;
+  const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix) - byteLength(suffix);
   if (availableAnswerBytes <= 0) {
-    return splitRichMarkdown(`${prefix}${answer}`);
+    return [prefix, ...splitRichMarkdown(answer), suffix.slice(2)];
   }
   const answerChunks = splitRichMarkdown(answer, availableAnswerBytes);
-  return [`${prefix}${answerChunks[0] ?? ""}`, ...answerChunks.slice(1)];
+  return answerChunks.map((chunk, index) => {
+    const first = index === 0 ? prefix : "";
+    const last = index === answerChunks.length - 1 ? suffix : "";
+    return `${first}${chunk}${last}`;
+  });
 }
 
 export function helpMessage(): string {

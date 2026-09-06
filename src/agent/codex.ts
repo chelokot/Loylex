@@ -2,11 +2,23 @@ import type { AgentEvent } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import type { AgentConfig } from "./config.ts";
 
-type CodexItem = {
+export type CodexItem = {
   type?: string;
+  id?: string;
   text?: string;
   command?: string;
   exit_code?: number;
+  exitCode?: number;
+  name?: string;
+  tool?: string;
+  server?: string;
+  actionName?: string;
+  kind?: string;
+  call_id?: string;
+  callId?: string;
+  function?: {
+    name?: string;
+  };
 };
 
 type CodexJsonEvent = {
@@ -14,6 +26,8 @@ type CodexJsonEvent = {
   thread_id?: string;
   message?: string;
   item?: CodexItem;
+  name?: string;
+  call_id?: string;
   usage?: unknown;
   token_usage?: unknown;
 };
@@ -37,6 +51,129 @@ const threadConflictRetryDelaysMs = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000
 
 function errorText(error: unknown): string {
   return error instanceof Error ? `${error.name} ${error.message}` : String(error);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizedType(value: unknown): string {
+  return (stringValue(value) ?? "")
+    .replaceAll(".", "_")
+    .replaceAll("-", "_")
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
+
+function printableText(value: string, removeBrackets = false): string {
+  return Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (
+        codePoint >= 0x20 &&
+        codePoint !== 0x7f &&
+        (!removeBrackets || (character !== "[" && character !== "]"))
+      );
+    })
+    .join("");
+}
+
+function safeToolName(value: string): string | null {
+  const name = printableText(value).replaceAll(/\s+/g, " ").trim().slice(0, 120);
+  return name || null;
+}
+
+function safeToolCallId(value: string): string | null {
+  const id = printableText(value, true).replaceAll(/\s+/g, " ").trim().slice(0, 160);
+  return id || null;
+}
+
+function itemToolName(item: CodexItem): string | null {
+  const type = normalizedType(item.type);
+  const explicitName =
+    stringValue(item.name) ??
+    stringValue(item.tool) ??
+    stringValue(item.function?.name) ??
+    stringValue(item.actionName);
+
+  if (type === "mcp_tool_call") {
+    if (explicitName) {
+      const server = stringValue(item.server);
+      return safeToolName(
+        server && !explicitName.includes(".") ? `${server}.${explicitName}` : explicitName,
+      );
+    }
+    return safeToolName(stringValue(item.server) ?? "mcp_tool");
+  }
+  if (type === "extension") {
+    const kind = stringValue(item.kind);
+    if (!kind) {
+      return null;
+    }
+    return safeToolName(kind === "image_gen.generation" ? "image_gen" : kind);
+  }
+  if (explicitName) {
+    return safeToolName(explicitName);
+  }
+
+  switch (type) {
+    case "command_execution":
+      return "exec";
+    case "file_change":
+      return "apply_patch";
+    case "image_view":
+      return "view_image";
+    case "image_generation_call":
+      return "image_gen";
+    case "web_search_call":
+      return "web_search";
+    case "file_search_call":
+      return "file_search";
+    case "computer_call":
+      return "computer";
+    case "custom_tool_call":
+      return "custom_tool";
+    default:
+      return type.endsWith("_call") ? safeToolName(type.slice(0, -5)) : null;
+  }
+}
+
+export function toolNameFromCodexItem(item: CodexItem | undefined): string | null {
+  return item ? itemToolName(item) : null;
+}
+
+function toolItem(event: CodexJsonEvent): CodexItem | undefined {
+  if (event.item) {
+    return event.item;
+  }
+  const type = normalizedType(event.type);
+  if (type === "custom_tool_call" || type === "mcp_tool_call") {
+    return {
+      ...(event.type ? { type: event.type } : {}),
+      ...(event.name ? { name: event.name } : {}),
+      ...(event.call_id ? { call_id: event.call_id } : {}),
+    };
+  }
+  return undefined;
+}
+
+function toolItemId(event: CodexJsonEvent, item: CodexItem): string | null {
+  const candidate =
+    stringValue(item.id) ??
+    stringValue(item.call_id) ??
+    stringValue(item.callId) ??
+    stringValue(event.call_id);
+  return candidate ? safeToolCallId(candidate) : null;
+}
+
+function isToolEvent(event: CodexJsonEvent): boolean {
+  const type = normalizedType(event.type);
+  return (
+    type === "item_started" ||
+    type === "item_completed" ||
+    type === "custom_tool_call" ||
+    type === "mcp_tool_call"
+  );
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -197,6 +334,9 @@ async function runCodexAttempt(
     let pendingAgentMessage = "";
     let lastUsage: AgentTokenUsage | null = null;
     let buffered = "";
+    let fallbackToolCallSequence = 0;
+    const reportedToolCallIds = new Set<string>();
+    const startedToolCallsWithoutIds = new Map<string, number>();
     const decoder = new TextDecoder();
 
     async function flushCommentary(): Promise<void> {
@@ -209,6 +349,44 @@ async function runCodexAttempt(
         ...(threadId ? { threadId } : {}),
       });
       pendingAgentMessage = "";
+    }
+
+    async function reportToolUse(event: CodexJsonEvent, eventType: string): Promise<void> {
+      const item = toolItem(event);
+      const name = toolNameFromCodexItem(item);
+      if (!item || !name) {
+        return;
+      }
+      const itemId = toolItemId(event, item);
+      if (itemId) {
+        if (reportedToolCallIds.has(itemId)) {
+          return;
+        }
+        reportedToolCallIds.add(itemId);
+      } else {
+        const key = `${normalizedType(item.type)}:${name}`;
+        if (eventType === "item_started") {
+          startedToolCallsWithoutIds.set(key, (startedToolCallsWithoutIds.get(key) ?? 0) + 1);
+        } else if (eventType === "item_completed") {
+          const pending = startedToolCallsWithoutIds.get(key) ?? 0;
+          if (pending > 0) {
+            if (pending === 1) {
+              startedToolCallsWithoutIds.delete(key);
+            } else {
+              startedToolCallsWithoutIds.set(key, pending - 1);
+            }
+            return;
+          }
+        }
+      }
+      const toolCallId = itemId ?? `generated-${++fallbackToolCallSequence}`;
+      await flushCommentary();
+      await onEvent({
+        kind: "tool",
+        text: name,
+        toolCallId,
+        ...(threadId ? { threadId } : {}),
+      });
     }
 
     for await (const chunk of child.stdout) {
@@ -228,29 +406,34 @@ async function runCodexAttempt(
           lastUsage = usage;
           await onUsage?.(usage, threadId);
         }
-        if (event.type === "thread.started" && event.thread_id) {
+        const eventType = normalizedType(event.type);
+        const itemType = normalizedType(event.item?.type);
+        if (isToolEvent(event)) {
+          await reportToolUse(event, eventType);
+        }
+        if (eventType === "thread_started" && event.thread_id) {
           threadId = event.thread_id;
-        } else if (event.type === "item.completed" && event.item?.type === "agent_message") {
+        } else if (eventType === "item_completed" && itemType === "agent_message") {
           await flushCommentary();
-          pendingAgentMessage = event.item.text ?? pendingAgentMessage;
-        } else if (event.type === "turn.completed") {
+          pendingAgentMessage = event.item?.text ?? pendingAgentMessage;
+        } else if (eventType === "turn_completed") {
           finalAnswer = pendingAgentMessage || finalAnswer;
           pendingAgentMessage = "";
-        } else if (event.type === "item.started" && event.item?.type === "command_execution") {
+        } else if (eventType === "item_started" && itemType === "command_execution") {
           await flushCommentary();
           await onEvent({
             kind: "command",
-            text: (event.item.command ?? "terminal command").slice(0, 500),
+            text: (event.item?.command ?? "terminal command").slice(0, 500),
             ...(threadId ? { threadId } : {}),
           });
-        } else if (event.type === "item.completed" && event.item?.type === "command_execution") {
+        } else if (eventType === "item_completed" && itemType === "command_execution") {
           await onEvent({
             kind: "status",
-            text: `Команда завершена с кодом ${event.item.exit_code ?? "unknown"}`,
+            text: `Команда завершена с кодом ${event.item?.exit_code ?? event.item?.exitCode ?? "unknown"}`,
             ...(threadId ? { threadId } : {}),
           });
-        } else if (event.type === "item.completed" && event.item?.type === "reasoning") {
-          const text = event.item.text?.trim();
+        } else if (eventType === "item_completed" && itemType === "reasoning") {
+          const text = event.item?.text?.trim();
           if (text) {
             await onEvent({
               kind: "reasoning",
@@ -258,7 +441,7 @@ async function runCodexAttempt(
               ...(threadId ? { threadId } : {}),
             });
           }
-        } else if (event.type === "error") {
+        } else if (eventType === "error") {
           await onEvent({
             kind: "status",
             text: event.message ?? "Codex reported an error",
