@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { buildFinalEmojiMap } from "../src/gateway/final-emojis.ts";
 import {
   activityLines,
   completedDocuments,
@@ -57,6 +58,16 @@ describe("activityLines", () => {
 });
 
 describe("completedDocuments", () => {
+  test("replaces ordinary answer emoji with a pack variant", () => {
+    const [document] = completedDocuments(
+      "status: Готово",
+      "да 😂",
+      buildFinalEmojiMap([{ type: "custom_emoji", emoji: "😂", custom_emoji_id: "100" }]),
+    );
+
+    expect(document).toContain('да <tg-emoji emoji-id="100">😂</tg-emoji>');
+  });
+
   test("keeps work history even when it contains at most one visible item", () => {
     expect(
       completedDocuments("status: Готово", "Ответ пользователю").map(normalizeWorkSummary),

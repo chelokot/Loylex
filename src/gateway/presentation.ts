@@ -1,3 +1,5 @@
+import { type FinalEmojiMap, replaceFinalEmojis } from "./final-emojis.ts";
+
 function commandActivity(command: string): string {
   const normalized = command.toLowerCase();
   if (normalized.includes("find skills") || normalized.includes("-name skill.md")) {
@@ -187,14 +189,19 @@ export function failedDocument(status: string, error: string): string {
   return `${workDocument(status)}\n\n${failureMessage(error)}\n\n${toolsDocument(status)}`;
 }
 
-export function completedDocuments(status: string, answer: string): string[] {
+export function completedDocuments(
+  status: string,
+  answer: string,
+  finalEmojiMap: FinalEmojiMap = new Map(),
+): string[] {
   const prefix = `${workDocument(status)}\n\n`;
   const suffix = `\n\n${toolsDocument(status)}`;
   const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix) - byteLength(suffix);
+  const convertedAnswer = replaceFinalEmojis(answer, finalEmojiMap);
   if (availableAnswerBytes <= 0) {
-    return [prefix, ...splitRichMarkdown(answer), suffix.slice(2)];
+    return [prefix, ...splitRichMarkdown(convertedAnswer), suffix.slice(2)];
   }
-  const answerChunks = splitRichMarkdown(answer, availableAnswerBytes);
+  const answerChunks = splitRichMarkdown(convertedAnswer, availableAnswerBytes);
   return answerChunks.map((chunk, index) => {
     const first = index === 0 ? prefix : "";
     const last = index === answerChunks.length - 1 ? suffix : "";
