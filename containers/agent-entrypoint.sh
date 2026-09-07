@@ -20,6 +20,37 @@ if [[ ! -f "$CODEX_HOME/config.toml" ]]; then
     >"$CODEX_HOME/config.toml"
 fi
 
+cron_pid=""
+warp_pid=""
+agent_pid=""
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$cron_pid" ]]; then
+    sudo -n kill -TERM "$cron_pid" 2>/dev/null || true
+    wait "$cron_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$warp_pid" ]]; then
+    kill -TERM "$warp_pid" 2>/dev/null || true
+    wait "$warp_pid" 2>/dev/null || true
+  fi
+  exit "$status"
+}
+
+forward_signal() {
+  if [[ -n "$agent_pid" ]]; then
+    kill -TERM "$agent_pid" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
+trap 'forward_signal' INT TERM
+if [[ -x /usr/local/bin/loylex-warp-supervisor ]] && command -v sudo >/dev/null 2>&1; then
+  /usr/local/bin/loylex-warp-supervisor &
+  warp_pid=$!
+fi
+
 while [[ ! -d "$repository_path/.git" ]]; do
   if [[ -f /home/loylex/.ssh/id_ed25519 ]]; then
     rm -rf "$repository_path"
@@ -40,27 +71,6 @@ git config --global pull.rebase true
 git config --global --replace-all safe.directory "$repository_path"
 
 cd "$repository_path"
-cron_pid=""
-agent_pid=""
-
-cleanup() {
-  local status=$?
-  trap - EXIT
-  if [[ -n "$cron_pid" ]]; then
-    sudo -n kill -TERM "$cron_pid" 2>/dev/null || true
-    wait "$cron_pid" 2>/dev/null || true
-  fi
-  exit "$status"
-}
-
-forward_signal() {
-  if [[ -n "$agent_pid" ]]; then
-    kill -TERM "$agent_pid" 2>/dev/null || true
-  fi
-}
-
-trap cleanup EXIT
-trap 'forward_signal' INT TERM
 if command -v crond >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 \
   && [[ -x /usr/local/bin/loylex-dm-overview ]] \
   && [[ -f /etc/cron.d/loylex-dm-overview ]]; then

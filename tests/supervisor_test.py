@@ -79,15 +79,35 @@ class SupervisorTest(unittest.TestCase):
         compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
         self.assertEqual(compose.count("    read_only: true"), 3)
         self.assertEqual(compose.count("/tmp:rw,nodev,nosuid,noexec,size=256m"), 2)
+        self.assertEqual(compose.count("/run/cloudflare-warp:rw,nodev,nosuid,noexec,size=8m"), 2)
+        self.assertEqual(compose.count("/var/log/cloudflare-warp:rw,nodev,nosuid,noexec,size=32m"), 2)
+
+    def test_agents_have_isolated_persistent_warp_state(self) -> None:
+        root = SCRIPT_PATH.parents[1].parent
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        installer = (root / "deploy/scripts/install-host.sh").read_text()
+        containerfile = (root / "containers/agent.Containerfile").read_text()
+        self.assertIn("warp-state-blue:/var/lib/cloudflare-warp:z,U", compose)
+        self.assertIn("warp-state-green:/var/lib/cloudflare-warp:z,U", compose)
+        self.assertIn("loylex-warp-state-blue", installer)
+        self.assertIn("loylex-warp-state-green", installer)
+        self.assertIn("WARP_RPM_SHA256=", containerfile)
+        self.assertIn("rpmkeys --checksig", containerfile)
 
     def test_agent_runtime_and_cli_use_image_pinned_sources(self) -> None:
         root = SCRIPT_PATH.parents[1].parent
         entrypoint = (root / "containers/agent-entrypoint.sh").read_text()
         cli = (root / "containers/loylex-cli").read_text()
+        warp_supervisor = (root / "containers/warp-supervisor.sh").read_text()
+        warp_cli = (root / "containers/loylex-warp").read_text()
         self.assertIn("bun /opt/loylex/app/src/agent/main.ts", entrypoint)
         self.assertIn('rm -f "$worker_ready_path"', entrypoint)
         self.assertIn('git config --global --replace-all safe.directory "$repository_path"', entrypoint)
         self.assertNotIn("--add safe.directory", entrypoint)
+        self.assertIn("loylex-warp-supervisor", entrypoint)
+        self.assertIn("warp-svc", warp_supervisor)
+        self.assertIn("registration new", warp_supervisor)
+        self.assertIn("restart)", warp_cli)
         self.assertIn("exec bun /opt/loylex/app/src/agent/cli.ts", cli)
 
     def test_persistent_worker_volumes_relabel_and_map_ownership(self) -> None:

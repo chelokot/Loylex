@@ -73,12 +73,15 @@ services:
       - agent-home:/home/loylex:z,U
       - memory:/memory:z,U
       - workspace:/workspace:z,U
+      - warp-state-blue:/var/lib/cloudflare-warp:z,U
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
     read_only: true
     tmpfs:
       - /tmp:rw,nodev,nosuid,noexec,size=256m
+      - /run/cloudflare-warp:rw,nodev,nosuid,noexec,size=8m
+      - /var/log/cloudflare-warp:rw,nodev,nosuid,noexec,size=32m
     environment:
       LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
@@ -116,12 +119,15 @@ services:
       - agent-home:/home/loylex:z,U
       - memory:/memory:z,U
       - workspace:/workspace:z,U
+      - warp-state-green:/var/lib/cloudflare-warp:z,U
     secrets:
       - loylex-bridge-token
       - loylex-supervisor-token
     read_only: true
     tmpfs:
       - /tmp:rw,nodev,nosuid,noexec,size=256m
+      - /run/cloudflare-warp:rw,nodev,nosuid,noexec,size=8m
+      - /var/log/cloudflare-warp:rw,nodev,nosuid,noexec,size=32m
     environment:
       LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_BRIDGE_URL: http://loylex-gateway:8787
@@ -163,6 +169,12 @@ volumes:
     external: true
   workspace:
     name: loylex-workspace
+    external: true
+  warp-state-blue:
+    name: loylex-warp-state-blue
+    external: true
+  warp-state-green:
+    name: loylex-warp-state-green
     external: true
 
 networks:

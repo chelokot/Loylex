@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pid_path="${LOYLEX_WARP_PID_FILE:-/tmp/loylex-warp-svc.pid}"
+log_path="${LOYLEX_WARP_LOG_FILE:-/tmp/loylex-warp.log}"
+proxy_port="${LOYLEX_WARP_PROXY_PORT:-40000}"
+cli_path=/bin/warp-cli
+
+cli() {
+  sudo -n "$cli_path" --accept-tos "$@"
+}
+
+health() {
+  local status
+  status="$(sudo -n "$cli_path" --accept-tos status 2>/dev/null)" || return 1
+  grep -Eq '(^|[[:space:]])Connected([[:space:]]|$)' <<<"$status"
+}
+
+restart() {
+  local old_pid=""
+  local current_pid=""
+  if [[ -r "$pid_path" ]]; then
+    read -r old_pid <"$pid_path" || true
+  fi
+  if [[ "$old_pid" =~ ^[0-9]+$ ]]; then
+    sudo -n kill -TERM "$old_pid" 2>/dev/null || true
+  fi
+  for _ in {1..120}; do
+    if [[ -r "$pid_path" ]]; then
+      read -r current_pid <"$pid_path" || true
+    fi
+    if [[ -n "$current_pid" && "$current_pid" != "$old_pid" ]] && health; then
+      cli status
+      return 0
+    fi
+    sleep 1
+  done
+  echo "WARP did not become Connected after restart" >&2
+  return 1
+}
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: loylex-warp {status|health|restart|connect|mode-proxy|proxy-port [PORT]|proxy-url|logs [N]|cli ...|version}
+EOF
+}
+
+command_name="${1:-status}"
+case "$command_name" in
+  status)
+    cli status
+    ;;
+  health)
+    health
+    ;;
+  restart)
+    restart
+    ;;
+  connect)
+    cli connect
+    ;;
+  mode-proxy)
+    cli mode proxy
+    cli proxy port "${2:-$proxy_port}"
+    ;;
+  proxy-port)
+    [[ "${2:-}" =~ ^[0-9]+$ ]] || { usage; exit 2; }
+    cli proxy port "$2"
+    ;;
+  proxy-url)
+    printf 'http://127.0.0.1:%s\n' "$proxy_port"
+    ;;
+  logs)
+    lines="${2:-100}"
+    [[ "$lines" =~ ^[0-9]+$ ]] || { usage; exit 2; }
+    tail -n "$lines" "$log_path"
+    ;;
+  cli)
+    shift
+    [[ "$#" -gt 0 ]] || { usage; exit 2; }
+    cli "$@"
+    ;;
+  version)
+    exec "$cli_path" --version
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

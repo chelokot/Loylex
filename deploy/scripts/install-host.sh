@@ -291,7 +291,9 @@ for volume in \
   loylex-audit \
   loylex-agent-home \
   loylex-memory \
-  loylex-workspace; do
+  loylex-workspace \
+  loylex-warp-state-blue \
+  loylex-warp-state-green; do
   if ! as_loylex podman volume inspect "$volume" >/dev/null 2>&1; then
     as_loylex podman volume create "$volume"
   fi

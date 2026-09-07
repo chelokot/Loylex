@@ -27,9 +27,22 @@ source before upgrading it.
 
 ## Establish and verify WARP
 
-Use an already installed and authorized consumer WARP client. Keep its local listener on
-loopback; never publish the proxy port. Command names vary by client version, so inspect
-`warp-cli --help` before changing anything. Known current clients use:
+In a Loylex agent container, WARP is installed and supervised by the image entrypoint. Use
+the local control wrapper; it keeps the listener on loopback and never publishes the proxy
+port:
+
+```sh
+loylex-warp status
+loylex-warp health
+loylex-warp restart
+loylex-warp proxy-url
+loylex-warp logs 100
+```
+
+The wrapper also exposes the current client's CLI as `loylex-warp cli ...`. For a standalone
+client, use an already installed and authorized consumer WARP client. Command names vary by
+client version, so inspect `warp-cli --help` before changing anything. Known current clients
+use:
 
 ```sh
 warp-cli registration new       # first registration only

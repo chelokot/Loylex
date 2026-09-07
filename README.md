@@ -141,6 +141,38 @@ loylex system deploy gateway
 loylex system deploy all
 ```
 
+The agent image includes a pinned Cloudflare WARP client in local proxy mode. Each blue/green
+agent slot has its own persistent WARP registration state, and the entrypoint supervises
+`warp-svc` without routing unrelated container traffic through it. Inside an agent container:
+
+```bash
+loylex-warp status
+loylex-warp health
+loylex-warp restart
+loylex-warp proxy-url
+loylex-warp cli settings
+```
+
+The proxy is loopback-only at `127.0.0.1:40000`; use it explicitly from PostFetch/Bun. WARP
+is an opt-in Cloudflare egress, not a residential or anonymity proxy. The package URL, RPM
+SHA-256, repository-key SHA-256, and signature check are pinned in
+[`containers/agent.Containerfile`](containers/agent.Containerfile). Updating them is an
+explicit reviewed image change, not a runtime package update. The checked signing-key
+fingerprint is `C068 A2B5 7717 7519 3CBE 1F2F 6E2D D217 4FA1 C3BA`.
+
+On an existing host, create the two new persistent volumes once as the `loylex` rootless
+Podman user, then deploy the image:
+
+```bash
+sudo -u loylex env HOME=/home/loylex XDG_RUNTIME_DIR=/run/user/$(id -u loylex) \
+  sh -c 'for volume in loylex-warp-state-blue loylex-warp-state-green; do
+    podman volume inspect "$volume" >/dev/null 2>&1 || podman volume create "$volume"
+  done'
+loylex system deploy agent
+```
+
+Fresh host installs create these volumes automatically.
+
 Restart and deploy operations default to a 15-second delay so the scheduling Telegram task
 can send its final response. An optional final argument changes the delay from 5 to 300
 seconds. Deploying runs the repository checks for agent changes, pulls the selected `main`
