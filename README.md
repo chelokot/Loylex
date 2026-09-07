@@ -160,10 +160,11 @@ SHA-256, repository-key SHA-256, and signature check are pinned in
 explicit reviewed image change, not a runtime package update. The checked signing-key
 fingerprint is `C068 A2B5 7717 7519 3CBE 1F2F 6E2D D217 4FA1 C3BA`.
 
-On an existing host, create the two new persistent volumes once as the `loylex` rootless
-Podman user, then deploy the image:
+On an existing host, from a freshly pulled `main` checkout, sync the stack definition,
+create the two persistent state volumes, and deploy the image:
 
 ```bash
+sudo install -m 0644 deploy/compose/compose.yaml /home/loylex/stack/compose.yaml
 sudo -u loylex env HOME=/home/loylex XDG_RUNTIME_DIR=/run/user/$(id -u loylex) \
   sh -c 'for volume in loylex-warp-state-blue loylex-warp-state-green; do
     podman volume inspect "$volume" >/dev/null 2>&1 || podman volume create "$volume"
