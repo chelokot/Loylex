@@ -526,6 +526,37 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/telegram/copy") {
+        const payload = await body<{
+          chatId?: number;
+          sourceChatId?: number;
+          messageId?: number;
+        }>(request);
+        if (
+          typeof payload.chatId !== "number" ||
+          typeof payload.sourceChatId !== "number" ||
+          typeof payload.messageId !== "number" ||
+          !Number.isSafeInteger(payload.chatId) ||
+          !Number.isSafeInteger(payload.sourceChatId) ||
+          !Number.isSafeInteger(payload.messageId) ||
+          payload.messageId <= 0
+        ) {
+          return json(
+            { error: "chatId, sourceChatId and messageId must be valid integer IDs" },
+            400,
+          );
+        }
+        if (!this.database.chatExists(payload.sourceChatId)) {
+          return json({ error: "unknown source chat" }, 403);
+        }
+        const messageId = await this.telegram.copyMessage(
+          payload.chatId,
+          payload.sourceChatId,
+          payload.messageId,
+        );
+        return json({ chatId: payload.chatId, messageId });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/telegram/edit-caption") {
         const payload = await body<{
           chatId?: number;

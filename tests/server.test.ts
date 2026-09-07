@@ -651,6 +651,34 @@ test("rejects invalid forwarding IDs before calling Telegram", async () => {
   expect(called).toBe(false);
 });
 
+test("copies a message from a known source chat", async () => {
+  let copied: { chatId: number; sourceChatId: number; messageId: number } | undefined;
+  const database = {
+    chatExists: (chatId: number) => chatId === -10042,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    copyMessage: async (chatId: number, sourceChatId: number, messageId: number) => {
+      copied = { chatId, sourceChatId, messageId };
+      return 23;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/copy", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ chatId: -10042, sourceChatId: -10042, messageId: 17 }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ chatId: -10042, messageId: 23 });
+  expect(copied).toEqual({ chatId: -10042, sourceChatId: -10042, messageId: 17 });
+});
+
 test("edits a caption in a known chat", async () => {
   let edited: { chatId: number; messageId: number; caption: string } | undefined;
   const database = {

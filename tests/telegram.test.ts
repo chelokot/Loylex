@@ -48,6 +48,24 @@ test("forwards a Telegram message by source and destination IDs", async () => {
   });
 });
 
+test("copies a Telegram message by source and destination IDs", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/copyMessage");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, result: { message_id: 24 } });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.copyMessage(-1004405504696, -1001756869879, 192757)).resolves.toBe(24);
+
+  expect(requestBody).toEqual({
+    chat_id: -1004405504696,
+    from_chat_id: -1001756869879,
+    message_id: 192757,
+  });
+});
+
 test("edits a Telegram message caption", async () => {
   let requestBody: unknown;
   globalThis.fetch = (async (input, init) => {

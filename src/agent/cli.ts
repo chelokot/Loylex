@@ -373,6 +373,38 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (command === "copy") {
+    const [sourceChatId, rawMessageId, destinationChatId] = arguments_;
+    const parsedSourceChatId = Number(sourceChatId);
+    const parsedMessageId = Number(rawMessageId);
+    const parsedDestinationChatId = Number(destinationChatId);
+    if (
+      !sourceChatId ||
+      !rawMessageId ||
+      !destinationChatId ||
+      !Number.isSafeInteger(parsedSourceChatId) ||
+      !Number.isSafeInteger(parsedMessageId) ||
+      parsedMessageId <= 0 ||
+      !Number.isSafeInteger(parsedDestinationChatId)
+    ) {
+      throw new Error("Usage: loylex copy SOURCE_CHAT_ID MESSAGE_ID DESTINATION_CHAT_ID");
+    }
+    const result = await requestJson(
+      "/v1/telegram/copy",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceChatId: parsedSourceChatId,
+          messageId: parsedMessageId,
+          chatId: parsedDestinationChatId,
+        }),
+      },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   if (command === "edit-caption") {
     const [chatId, rawMessageId, ...caption] = arguments_;
     const parsedChatId = Number(chatId);
@@ -494,7 +526,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|forward|edit-caption|media|upload|upload-voice|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|forward|copy|edit-caption|media|upload|upload-voice|upload-album|system>",
   );
 }
 

@@ -147,6 +147,14 @@ export class TelegramClient {
     });
   }
 
+  copyMessage(chatId: number, fromChatId: number, messageId: number): Promise<number> {
+    return this.call<{ message_id: number }>("copyMessage", {
+      chat_id: chatId,
+      from_chat_id: fromChatId,
+      message_id: messageId,
+    }).then((result) => result.message_id);
+  }
+
   editMessageCaption(
     chatId: number,
     messageId: number,
