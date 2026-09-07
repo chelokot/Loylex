@@ -495,6 +495,37 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/telegram/forward") {
+        const payload = await body<{
+          chatId?: number;
+          sourceChatId?: number;
+          messageId?: number;
+        }>(request);
+        if (
+          typeof payload.chatId !== "number" ||
+          typeof payload.sourceChatId !== "number" ||
+          typeof payload.messageId !== "number" ||
+          !Number.isSafeInteger(payload.chatId) ||
+          !Number.isSafeInteger(payload.sourceChatId) ||
+          !Number.isSafeInteger(payload.messageId) ||
+          payload.messageId <= 0
+        ) {
+          return json(
+            { error: "chatId, sourceChatId and messageId must be valid integer IDs" },
+            400,
+          );
+        }
+        if (!this.database.chatExists(payload.sourceChatId)) {
+          return json({ error: "unknown source chat" }, 403);
+        }
+        const message = await this.telegram.forwardMessage(
+          payload.chatId,
+          payload.sourceChatId,
+          payload.messageId,
+        );
+        return json({ chatId: message.chat.id, messageId: message.message_id });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/telegram/delete") {
         const payload = await body<{ chatId?: number; messageId?: number }>(request);
         if (

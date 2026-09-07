@@ -25,6 +25,29 @@ test("does not downgrade a rejected rich send to an unformatted message", async 
   expect(requests).toEqual(["https://api.telegram.org/bottest-token/sendRichMessage"]);
 });
 
+test("forwards a Telegram message by source and destination IDs", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/forwardMessage");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      ok: true,
+      result: { message_id: 23, date: 1, chat: { id: 4405504696, type: "channel" } },
+    });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.forwardMessage(4405504696, -1001756869879, 192757)).resolves.toMatchObject({
+    message_id: 23,
+  });
+
+  expect(requestBody).toEqual({
+    chat_id: 4405504696,
+    from_chat_id: -1001756869879,
+    message_id: 192757,
+  });
+});
+
 test("treats an idempotent rich edit as success", async () => {
   globalThis.fetch = (async (_input: string | URL | Request) =>
     Response.json(

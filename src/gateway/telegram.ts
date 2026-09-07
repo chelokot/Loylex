@@ -139,6 +139,14 @@ export class TelegramClient {
     return this.call<TelegramMessage>("sendRichMessage", body);
   }
 
+  forwardMessage(chatId: number, fromChatId: number, messageId: number): Promise<TelegramMessage> {
+    return this.call<TelegramMessage>("forwardMessage", {
+      chat_id: chatId,
+      from_chat_id: fromChatId,
+      message_id: messageId,
+    });
+  }
+
   sendRichMessageDraft(
     chatId: number,
     markdown: string,
