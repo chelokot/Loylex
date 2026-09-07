@@ -679,6 +679,105 @@ test("copies a message from a known source chat", async () => {
   expect(copied).toEqual({ chatId: -10042, sourceChatId: -10042, messageId: 17 });
 });
 
+test("calls an arbitrary Telegram API method with JSON parameters", async () => {
+  let called: { method: string; parameters: Record<string, unknown> } | undefined;
+  const database = {} as LoylexDatabase;
+  const telegram = {
+    call: async (method: string, parameters: Record<string, unknown>) => {
+      called = { method, parameters };
+      return { id: 42, type: "private" };
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/api", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ method: "getChat", params: { chat_id: 42 } }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    method: "getChat",
+    result: { id: 42, type: "private" },
+  });
+  expect(called).toEqual({ method: "getChat", parameters: { chat_id: 42 } });
+});
+
+test("calls an arbitrary Telegram API method with multipart files", async () => {
+  let called:
+    | {
+        method: string;
+        parameters: Record<string, unknown>;
+        files: Array<{ field: string; file: File }>;
+      }
+    | undefined;
+  const database = {} as LoylexDatabase;
+  const telegram = {
+    callMultipart: async (
+      method: string,
+      parameters: Record<string, unknown>,
+      files: Array<{ field: string; file: File }>,
+    ) => {
+      called = { method, parameters, files };
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+  const form = new FormData();
+  form.set("method", "sendPhoto");
+  form.set("params", JSON.stringify({ chat_id: 42, photo: "attach://photo" }));
+  form.set("photo", new File(["image"], "image.png", { type: "image/png" }));
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/api", {
+      method: "POST",
+      headers: { authorization: "Bearer unused" },
+      body: form,
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ method: "sendPhoto", result: true });
+  expect(called?.method).toBe("sendPhoto");
+  expect(called?.parameters).toEqual({ chat_id: 42, photo: "attach://photo" });
+  expect(called?.files).toHaveLength(1);
+  expect(called?.files[0]?.field).toBe("photo");
+  expect(called?.files[0]?.file.name).toBe("image.png");
+});
+
+test("rejects invalid universal Telegram API parameters", async () => {
+  let called = false;
+  const database = {} as LoylexDatabase;
+  const telegram = {
+    call: async () => {
+      called = true;
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/api", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ method: "getChat", params: [42] }),
+    }),
+  );
+
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "params must be a JSON object" });
+  expect(called).toBe(false);
+});
+
 test("edits a caption in a known chat", async () => {
   let edited: { chatId: number; messageId: number; caption: string } | undefined;
   const database = {

@@ -46,7 +46,9 @@ The bridge exposes jobs, archive search and read-only SQL queries, media transfe
 Telegram operations. The agent can natively forward one archived message with
 `loylex forward SOURCE_CHAT_ID MESSAGE_ID DESTINATION_CHAT_ID`, or request deletion of one live message with
 `loylex delete CHAT_ID MESSAGE_ID`; this leaves the archived copy intact. It never exposes the
-Telegram token. The agent has no host Podman
+Telegram token. For other Bot API methods, use
+`loylex telegram METHOD [PARAMS_JSON] [--file FIELD PATH ...]`; parameters are passed as JSON and optional local files are
+sent as multipart fields, so new Bot API methods do not require a new Loylex wrapper. The agent has no host Podman
 socket, host PID namespace, host devices, privileged mode, or host mounts. The gateway image
 is pinned by digest, and `main` requires review, so an agent-authored branch cannot replace
 the component holding the secret.

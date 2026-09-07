@@ -1,4 +1,12 @@
 import type { Server } from "bun";
+import {
+  isJsonObject,
+  isTelegramApiFieldName,
+  isTelegramApiMethod,
+  telegramApiMaxFileBytes,
+  telegramApiMaxFileCount,
+  telegramApiMaxTotalFileBytes,
+} from "../shared/telegram-api.ts";
 import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
 import { isAgentTokenUsage } from "../shared/usage.ts";
 import type { GatewayConfig } from "./config.ts";
@@ -555,6 +563,75 @@ export class GatewayServer {
           payload.messageId,
         );
         return json({ chatId: payload.chatId, messageId });
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/telegram/api") {
+        const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+        if (contentType.startsWith("multipart/form-data")) {
+          const form = await request.formData();
+          const method = form.get("method");
+          const rawParameters = form.get("params");
+          if (!isTelegramApiMethod(method) || typeof rawParameters !== "string") {
+            return json({ error: "method and params are required" }, 400);
+          }
+          let parameters: unknown;
+          try {
+            parameters = JSON.parse(rawParameters);
+          } catch {
+            return json({ error: "params must be valid JSON" }, 400);
+          }
+          if (!isJsonObject(parameters)) {
+            return json({ error: "params must be a JSON object" }, 400);
+          }
+          const files: Array<{ field: string; file: File }> = [];
+          let totalBytes = 0;
+          for (const [field, value] of form.entries()) {
+            if (field === "method" || field === "params") {
+              continue;
+            }
+            if (!isTelegramApiFieldName(field) || !(value instanceof File)) {
+              return json({ error: "file fields must be named files" }, 400);
+            }
+            if (files.some((entry) => entry.field === field)) {
+              return json({ error: `file field ${field} was provided more than once` }, 400);
+            }
+            if (value.size > telegramApiMaxFileBytes) {
+              return json({ error: `file ${field} exceeds ${telegramApiMaxFileBytes} bytes` }, 413);
+            }
+            totalBytes += value.size;
+            if (totalBytes > telegramApiMaxTotalFileBytes) {
+              return json(
+                { error: `files exceed ${telegramApiMaxTotalFileBytes} bytes in total` },
+                413,
+              );
+            }
+            files.push({ field, file: value });
+          }
+          if (files.length === 0 || files.length > telegramApiMaxFileCount) {
+            return json(
+              { error: `multipart requests must contain 1-${telegramApiMaxFileCount} files` },
+              400,
+            );
+          }
+          const result = await this.telegram.callMultipart(method, parameters, files);
+          return json({ method, result });
+        }
+
+        let payload: unknown;
+        try {
+          payload = await request.json();
+        } catch {
+          return json({ error: "request body must be valid JSON" }, 400);
+        }
+        if (!isJsonObject(payload) || !isTelegramApiMethod(payload.method)) {
+          return json({ error: "method must be a valid Telegram API method" }, 400);
+        }
+        const parameters = payload.params === undefined ? {} : payload.params;
+        if (!isJsonObject(parameters)) {
+          return json({ error: "params must be a JSON object" }, 400);
+        }
+        const result = await this.telegram.call(payload.method, parameters);
+        return json({ method: payload.method, result });
       }
 
       if (request.method === "POST" && url.pathname === "/v1/telegram/edit-caption") {

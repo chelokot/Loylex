@@ -66,6 +66,54 @@ test("copies a Telegram message by source and destination IDs", async () => {
   });
 });
 
+test("calls an arbitrary Telegram API method with JSON parameters", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/getChat");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, result: { id: 42, type: "private" } });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.call("getChat", { chat_id: 42 })).resolves.toEqual({
+    id: 42,
+    type: "private",
+  });
+  expect(requestBody).toEqual({ chat_id: 42 });
+});
+
+test("calls an arbitrary Telegram API method with multipart files", async () => {
+  let requestBody: FormData | undefined;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendPhoto");
+    requestBody = init?.body as FormData;
+    return Response.json({ ok: true, result: true });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(
+    client.callMultipart("sendPhoto", { chat_id: 42, photo: "attach://photo", has_spoiler: true }, [
+      { field: "photo", file: new File(["image"], "image.png", { type: "image/png" }) },
+    ]),
+  ).resolves.toBe(true);
+
+  expect(requestBody?.get("chat_id")).toBe("42");
+  expect(requestBody?.get("has_spoiler")).toBe("true");
+  expect((requestBody?.get("photo") as File).name).toBe("image.png");
+});
+
+test("rejects an unsafe Telegram API method name", async () => {
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    return Response.json({ ok: true, result: true });
+  }) as unknown as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.call("../getMe")).rejects.toThrow("invalid Telegram API method");
+  expect(called).toBe(false);
+});
+
 test("edits a Telegram message caption", async () => {
   let requestBody: unknown;
   globalThis.fetch = (async (input, init) => {

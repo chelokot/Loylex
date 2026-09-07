@@ -1,3 +1,4 @@
+import { isTelegramApiFieldName, isTelegramApiMethod } from "../shared/telegram-api.ts";
 import type {
   JsonObject,
   JsonValue,
@@ -57,11 +58,45 @@ export class TelegramClient {
   }
 
   async call<T>(method: string, body: JsonObject = {}): Promise<T> {
+    if (!isTelegramApiMethod(method)) {
+      throw new Error("invalid Telegram API method");
+    }
     const response = await fetch(`${this.#baseUrl}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60_000),
+    });
+    const payload = (await response.json()) as TelegramResponse<T>;
+    if (!response.ok || !payload.ok || payload.result === undefined) {
+      throw new TelegramApiError(
+        method,
+        payload.error_code ?? response.status,
+        payload.description ?? response.statusText,
+      );
+    }
+    return payload.result;
+  }
+
+  async callMultipart<T>(
+    method: string,
+    parameters: JsonObject,
+    files: ReadonlyArray<{ field: string; file: Blob & { readonly name: string } }>,
+  ): Promise<T> {
+    if (!isTelegramApiMethod(method) || files.some(({ field }) => !isTelegramApiFieldName(field))) {
+      throw new Error("invalid Telegram API method or file field");
+    }
+    const form = new FormData();
+    for (const [key, value] of Object.entries(parameters)) {
+      form.set(key, typeof value === "string" ? value : (JSON.stringify(value) ?? "null"));
+    }
+    for (const { field, file } of files) {
+      form.set(field, file, file.name);
+    }
+    const response = await fetch(`${this.#baseUrl}/${method}`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120_000),
     });
     const payload = (await response.json()) as TelegramResponse<T>;
     if (!response.ok || !payload.ok || payload.result === undefined) {

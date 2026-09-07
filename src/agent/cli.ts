@@ -1,10 +1,18 @@
-import { rename, rm } from "node:fs/promises";
+import { rename, rm, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import {
   defaultReadQueryRows,
   isReadQueryParameters,
   maxReadQueryRows,
 } from "../gateway/read-query.ts";
+import {
+  isJsonObject,
+  isTelegramApiFieldName,
+  isTelegramApiMethod,
+  telegramApiMaxFileBytes,
+  telegramApiMaxFileCount,
+  telegramApiMaxTotalFileBytes,
+} from "../shared/telegram-api.ts";
 import { type TelegramExport, telegramExportMessages } from "../shared/telegram-export.ts";
 import { loadAgentConfig } from "./config.ts";
 import { retryTransient } from "./retry.ts";
@@ -286,6 +294,78 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (command === "telegram") {
+    const method = arguments_[0];
+    let parameterIndex = 1;
+    let rawParameters = "{}";
+    const firstParameter = arguments_[parameterIndex];
+    if (firstParameter !== undefined && !firstParameter.startsWith("--")) {
+      rawParameters = firstParameter;
+      parameterIndex += 1;
+    }
+    if (!isTelegramApiMethod(method)) {
+      throw new Error("Usage: loylex telegram METHOD [PARAMS_JSON] [--file FIELD PATH ...]");
+    }
+    let parameters: unknown;
+    try {
+      parameters = JSON.parse(rawParameters);
+    } catch {
+      throw new Error("PARAMS_JSON must be valid JSON");
+    }
+    if (!isJsonObject(parameters)) {
+      throw new Error("PARAMS_JSON must be a JSON object");
+    }
+    const files: Array<{ field: string; path: string; size: number }> = [];
+    let totalBytes = 0;
+    while (parameterIndex < arguments_.length) {
+      if (arguments_[parameterIndex] !== "--file") {
+        throw new Error("Usage: loylex telegram METHOD [PARAMS_JSON] [--file FIELD PATH ...]");
+      }
+      const field = arguments_[parameterIndex + 1];
+      const path = arguments_[parameterIndex + 2];
+      if (!isTelegramApiFieldName(field) || !path || files.some((file) => file.field === field)) {
+        throw new Error("Usage: loylex telegram METHOD [PARAMS_JSON] [--file FIELD PATH ...]");
+      }
+      const fileStats = await stat(path);
+      if (!fileStats.isFile()) {
+        throw new Error(`file is not regular: ${path}`);
+      }
+      if (fileStats.size > telegramApiMaxFileBytes) {
+        throw new Error(`file is larger than ${telegramApiMaxFileBytes} bytes: ${path}`);
+      }
+      totalBytes += fileStats.size;
+      if (totalBytes > telegramApiMaxTotalFileBytes) {
+        throw new Error(`files exceed ${telegramApiMaxTotalFileBytes} bytes in total`);
+      }
+      files.push({ field, path, size: fileStats.size });
+      parameterIndex += 3;
+      if (files.length > telegramApiMaxFileCount) {
+        throw new Error(`at most ${telegramApiMaxFileCount} files may be uploaded`);
+      }
+    }
+    if (files.length === 0) {
+      const result = await requestJson(
+        "/v1/telegram/api",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ method, params: parameters }),
+        },
+        false,
+      );
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    const form = new FormData();
+    form.set("method", method);
+    form.set("params", JSON.stringify(parameters));
+    for (const file of files) {
+      form.set(file.field, Bun.file(file.path), basename(file.path));
+    }
+    const result = await requestJson("/v1/telegram/api", { method: "POST", body: form }, false);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   if (command === "send-thread") {
     const [chatId, rawThreadId, ...markdown] = arguments_;
     const parsedChatId = Number(chatId);
@@ -526,7 +606,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|forward|copy|edit-caption|media|upload|upload-voice|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|telegram|send-thread|delete|forward|copy|edit-caption|media|upload|upload-voice|upload-album|system>",
   );
 }
 
