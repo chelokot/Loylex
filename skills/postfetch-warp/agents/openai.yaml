@@ -1,0 +1,4 @@
+interface:
+  display_name: "Postfetch Warp"
+  short_description: "Download media through PostFetch and WARP"
+  default_prompt: "Use $postfetch-warp to download this public media URL through the verified WARP proxy."
