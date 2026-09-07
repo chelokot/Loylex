@@ -100,6 +100,12 @@ if (result.items.length === 1) {
 Do not read a resolved YouTube `item.url` with a separate plain `fetch`: that can lose
 the required headers and the separate audio stream.
 
+If YouTube's CDN returns `403` for a whole media GET but accepts a small `Range` request,
+that is not enough to justify a generic range adapter: later ranges may still be rejected
+or the current player may require a token. Do not save one successful short range as a
+video, and do not brute-force range sizes or proxy rotation. Treat the media as
+temporarily unavailable until the PostFetch/YouTube client path is updated and verified.
+
 ## Troubleshooting order
 
 1. Test the WARP trace through the exact proxy protocol and port.
