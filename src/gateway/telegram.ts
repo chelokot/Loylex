@@ -294,6 +294,44 @@ export class TelegramClient {
     return payload.result;
   }
 
+  async sendVoice(
+    chatId: number,
+    file: Blob,
+    filename: string,
+    caption: string | null,
+    options: { replyTo?: number; threadId?: number | null } = {},
+  ): Promise<TelegramMessage> {
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set("voice", file, filename);
+    if (caption) {
+      form.set("caption", caption.slice(0, 1_024));
+    }
+    if (options.replyTo !== undefined) {
+      form.set(
+        "reply_parameters",
+        JSON.stringify({ message_id: options.replyTo, allow_sending_without_reply: true }),
+      );
+    }
+    if (options.threadId !== undefined && options.threadId !== null) {
+      form.set("message_thread_id", String(options.threadId));
+    }
+    const response = await fetch(`${this.#baseUrl}/sendVoice`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    });
+    const payload = (await response.json()) as TelegramResponse<TelegramMessage>;
+    if (!response.ok || !payload.ok || !payload.result) {
+      throw new TelegramApiError(
+        "sendVoice",
+        payload.error_code ?? response.status,
+        payload.description ?? response.statusText,
+      );
+    }
+    return payload.result;
+  }
+
   async sendMediaGroup(
     chatId: number,
     files: ReadonlyArray<Blob & { readonly name: string }>,

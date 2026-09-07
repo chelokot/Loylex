@@ -428,6 +428,35 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/telegram/upload-voice") {
+        const form = await request.formData();
+        const chatId = Number(form.get("chat_id"));
+        const file = form.get("file");
+        const caption = form.get("caption");
+        const replyTo = optionalPositiveInteger(form.get("reply_to"));
+        const threadId = optionalPositiveInteger(form.get("thread_id"));
+        if (!Number.isSafeInteger(chatId) || !this.database.chatExists(chatId)) {
+          return json({ error: "unknown chat" }, 403);
+        }
+        if (replyTo === null || threadId === null) {
+          return json({ error: "reply_to and thread_id must be positive integer IDs" }, 400);
+        }
+        if (!(file instanceof File)) {
+          return json({ error: "file is required" }, 400);
+        }
+        const message = await this.telegram.sendVoice(
+          chatId,
+          file,
+          file.name,
+          typeof caption === "string" ? caption : null,
+          {
+            ...(replyTo === undefined ? {} : { replyTo }),
+            ...(threadId === undefined ? {} : { threadId }),
+          },
+        );
+        return json({ chatId: message.chat.id, messageId: message.message_id });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/telegram/upload-album") {
         const form = await request.formData();
         const chatId = Number(form.get("chat_id"));

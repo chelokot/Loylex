@@ -21,6 +21,8 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
 - `loylex delete CHAT_ID MESSAGE_ID` asks Telegram to delete one live message in a chat
   already present in the archive. It does not remove the archived copy.
 - `loylex upload CHAT_ID FILE [CAPTION]` uploads a local file as a document.
+- `loylex upload-voice CHAT_ID FILE [CAPTION]` uploads a local OGG/Opus file as a Telegram
+  voice message.
 
 The runtime automatically delivers the final Codex response to the current request. Do not
 call `loylex send` for that ordinary response. Use it only when the task explicitly requires

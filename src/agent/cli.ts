@@ -365,6 +365,25 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (command === "upload-voice") {
+    const [chatId, path, ...caption] = arguments_;
+    if (!chatId || !path) {
+      throw new Error("Usage: loylex upload-voice CHAT_ID FILE [CAPTION]");
+    }
+    const form = new FormData();
+    form.set("chat_id", chatId);
+    form.set("file", Bun.file(path), basename(path));
+    if (caption.length > 0) {
+      form.set("caption", caption.join(" "));
+    }
+    const result = await requestJson(
+      "/v1/telegram/upload-voice",
+      { method: "POST", body: form },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   if (command === "upload-album") {
     let paths = arguments_;
     let caption: string | undefined;
@@ -413,7 +432,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|media|upload|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|media|upload|upload-voice|upload-album|system>",
   );
 }
 
