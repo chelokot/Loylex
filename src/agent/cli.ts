@@ -373,6 +373,36 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (command === "edit-caption") {
+    const [chatId, rawMessageId, ...caption] = arguments_;
+    const parsedChatId = Number(chatId);
+    const parsedMessageId = Number(rawMessageId);
+    if (
+      !chatId ||
+      !rawMessageId ||
+      caption.length === 0 ||
+      !Number.isSafeInteger(parsedChatId) ||
+      !Number.isSafeInteger(parsedMessageId) ||
+      parsedMessageId <= 0
+    ) {
+      throw new Error("Usage: loylex edit-caption CHAT_ID MESSAGE_ID CAPTION");
+    }
+    const result = await requestJson(
+      "/v1/telegram/edit-caption",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chatId: parsedChatId,
+          messageId: parsedMessageId,
+          caption: caption.join(" ").replaceAll("\\n", "\n"),
+        }),
+      },
+      false,
+    );
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   if (command === "media") {
     const [fileId, output] = arguments_;
     if (!fileId || !output) {
@@ -464,7 +494,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|forward|media|upload|upload-voice|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|send-thread|delete|forward|edit-caption|media|upload|upload-voice|upload-album|system>",
   );
 }
 

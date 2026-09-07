@@ -48,6 +48,29 @@ test("forwards a Telegram message by source and destination IDs", async () => {
   });
 });
 
+test("edits a Telegram message caption", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/editMessageCaption");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({
+      ok: true,
+      result: { message_id: 23, date: 1, chat: { id: -1004405504696, type: "channel" } },
+    });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(
+    client.editMessageCaption(-1004405504696, 23, "Ключевые слова\nОбзывательства"),
+  ).resolves.toMatchObject({ message_id: 23 });
+
+  expect(requestBody).toEqual({
+    chat_id: -1004405504696,
+    message_id: 23,
+    caption: "Ключевые слова\nОбзывательства",
+  });
+});
+
 test("treats an idempotent rich edit as success", async () => {
   globalThis.fetch = (async (_input: string | URL | Request) =>
     Response.json(

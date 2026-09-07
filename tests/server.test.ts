@@ -651,6 +651,70 @@ test("rejects invalid forwarding IDs before calling Telegram", async () => {
   expect(called).toBe(false);
 });
 
+test("edits a caption in a known chat", async () => {
+  let edited: { chatId: number; messageId: number; caption: string } | undefined;
+  const database = {
+    chatExists: (chatId: number) => chatId === -10042,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    editMessageCaption: async (chatId: number, messageId: number, caption: string) => {
+      edited = { chatId, messageId, caption };
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/edit-caption", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({
+        chatId: -10042,
+        messageId: 17,
+        caption: "Ключевые слова\nОбзывательства",
+      }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ chatId: -10042, messageId: 17 });
+  expect(edited).toEqual({
+    chatId: -10042,
+    messageId: 17,
+    caption: "Ключевые слова\nОбзывательства",
+  });
+});
+
+test("rejects caption edits in an unknown chat before calling Telegram", async () => {
+  let called = false;
+  const database = {
+    chatExists: () => false,
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    editMessageCaption: async () => {
+      called = true;
+      return true;
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+
+  const response = await route.call(
+    server,
+    new Request("http://localhost/v1/telegram/edit-caption", {
+      method: "POST",
+      headers: { authorization: "Bearer unused", "content-type": "application/json" },
+      body: JSON.stringify({ chatId: -10099, messageId: 17, caption: "Описание" }),
+    }),
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: "unknown chat" });
+  expect(called).toBe(false);
+});
+
 test("deletes a message in a known chat", async () => {
   const deleted: Array<{ chatId: number; messageId: number }> = [];
   const database = {

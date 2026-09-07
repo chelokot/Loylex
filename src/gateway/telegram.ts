@@ -147,6 +147,18 @@ export class TelegramClient {
     });
   }
 
+  editMessageCaption(
+    chatId: number,
+    messageId: number,
+    caption: string,
+  ): Promise<TelegramMessage | true> {
+    return this.call<TelegramMessage | true>("editMessageCaption", {
+      chat_id: chatId,
+      message_id: messageId,
+      caption: caption.slice(0, 1_024),
+    });
+  }
+
   sendRichMessageDraft(
     chatId: number,
     markdown: string,

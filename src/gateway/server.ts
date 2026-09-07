@@ -526,6 +526,34 @@ export class GatewayServer {
         return json({ chatId: message.chat.id, messageId: message.message_id });
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/telegram/edit-caption") {
+        const payload = await body<{
+          chatId?: number;
+          messageId?: number;
+          caption?: string;
+        }>(request);
+        if (
+          typeof payload.chatId !== "number" ||
+          typeof payload.messageId !== "number" ||
+          typeof payload.caption !== "string" ||
+          !Number.isSafeInteger(payload.chatId) ||
+          !Number.isSafeInteger(payload.messageId) ||
+          payload.messageId <= 0
+        ) {
+          return json(
+            {
+              error: "chatId and messageId must be valid integer IDs and caption must be a string",
+            },
+            400,
+          );
+        }
+        if (!this.database.chatExists(payload.chatId)) {
+          return json({ error: "unknown chat" }, 403);
+        }
+        await this.telegram.editMessageCaption(payload.chatId, payload.messageId, payload.caption);
+        return json({ chatId: payload.chatId, messageId: payload.messageId });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/telegram/delete") {
         const payload = await body<{ chatId?: number; messageId?: number }>(request);
         if (
