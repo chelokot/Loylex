@@ -1,0 +1,3 @@
+interface:
+  display_name: "Qwen3 Tts"
+  short_description: "Help with Qwen3 Tts tasks"
