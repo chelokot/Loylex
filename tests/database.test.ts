@@ -583,6 +583,49 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("recovers pending work after the draining worker disappears without another rollout", () => {
+    const database = setup();
+    const now = Date.now();
+    database.registerWorker("blue", now);
+    database.enqueue(55, message(1, "очередь до rollout"), "продолжай", null);
+    database.registerWorker("green", now);
+
+    expect(database.claimNext(10, "green")).toBeNull();
+    database.heartbeatWorker("blue", now - 60_000);
+
+    const recovered = database.claimNext(10, "green");
+    expect(recovered?.messageId).toBe(1);
+    expect(database.claimNext(10, "blue")).toBeNull();
+    expect(database.complete(recovered?.id ?? 0, 101, "thread-new", "green")).toBe(true);
+    expect(database.claimNext(10, "green")).toBeNull();
+    database.close();
+  });
+
+  test("does not reclaim live draining work or replay completed replies", () => {
+    const database = setup();
+    const now = Date.now();
+    database.registerWorker("blue", now);
+    database.enqueue(55, message(1, "готовая"), "готовая", null);
+    const finished = database.claimNext(10, "blue");
+    database.complete(finished?.id ?? 0, 101, "thread-done", "blue");
+    database.enqueue(56, message(2, "долгая"), "долгая", null);
+    const running = database.claimNext(10, "blue");
+    database.enqueue(57, message(3, "ожидающая"), "ожидающая", null);
+    database.registerWorker("green", now);
+    database.connection
+      .query("UPDATE jobs SET lease_expires_at = ? WHERE id = ?")
+      .run(now - 1, running?.id ?? 0);
+
+    expect(database.claimNext(10, "green")).toBeNull();
+    expect(database.complete(running?.id ?? 0, 102, "thread-long", "blue")).toBe(true);
+    database.heartbeatWorker("blue", now - 60_000);
+    const recovered = database.claimNext(10, "green");
+    expect(recovered?.messageId).toBe(3);
+    database.complete(recovered?.id ?? 0, 103, "thread-next", "green");
+    expect(database.claimNext(10, "green")).toBeNull();
+    database.close();
+  });
+
   test("updates edited messages without duplicating them", () => {
     const database = setup();
     database.archiveMessage(message(2, "первая версия"), "bot_api");

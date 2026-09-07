@@ -1418,6 +1418,20 @@ export class LoylexDatabase {
       ) {
         return null;
       }
+      if (worker?.state === "active") {
+        this.connection
+          .query(`
+            UPDATE jobs SET worker_generation = ?
+            WHERE state = 'pending' AND worker_generation <> ?
+              AND NOT EXISTS (
+                SELECT 1 FROM workers
+                WHERE workers.generation = jobs.worker_generation
+                  AND workers.state IN ('active', 'draining')
+                  AND workers.last_seen_at >= ?
+              )
+          `)
+          .run(worker.generation, worker.generation, now - workerLeaseDurationMs);
+      }
       // A saved Codex thread has one append-only writer. Keep independent threads concurrent,
       // but leave the next turn for this thread pending until every earlier turn is finished.
       const row = worker
