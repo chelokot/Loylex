@@ -25,30 +25,6 @@ test("does not downgrade a rejected rich send to an unformatted message", async 
   expect(requests).toEqual(["https://api.telegram.org/bottest-token/sendRichMessage"]);
 });
 
-test("loads a sticker set for custom emoji mapping", async () => {
-  let requestBody: unknown;
-  globalThis.fetch = (async (input, init) => {
-    expect(String(input)).toBe("https://api.telegram.org/bottest-token/getStickerSet");
-    requestBody = JSON.parse(String(init?.body));
-    return Response.json({
-      ok: true,
-      result: {
-        name: "rndnemfx2",
-        title: "Random emoji p2",
-        sticker_type: "custom_emoji",
-        stickers: [],
-      },
-    });
-  }) as typeof fetch;
-
-  const client = new TelegramClient("test-token");
-  await expect(client.getStickerSet("rndnemfx2")).resolves.toMatchObject({
-    name: "rndnemfx2",
-    sticker_type: "custom_emoji",
-  });
-  expect(requestBody).toEqual({ name: "rndnemfx2" });
-});
-
 test("treats an idempotent rich edit as success", async () => {
   globalThis.fetch = (async (_input: string | URL | Request) =>
     Response.json(

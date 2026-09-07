@@ -399,7 +399,7 @@ test("keeps progress when replacing a temporary message with a failure", async (
 
   await fail.call(server, 7, "The socket connection was closed unexpectedly", "worker-1");
 
-  expect(edited).toMatch(/<summary><tg-emoji emoji-id="\d+">🛠️<\/tg-emoji> Работаю~~<\/summary>/);
+  expect(edited).toContain("<summary>Ход работы</summary>");
   expect(edited).toContain("- Проверяю архив");
   expect(edited).toContain("Не получилось завершить задачу.");
   expect(edited).toContain("The socket connection was closed unexpectedly");

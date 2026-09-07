@@ -1,5 +1,3 @@
-import { type FinalEmojiMap, replaceFinalEmojis } from "./final-emojis.ts";
-
 function commandActivity(command: string): string {
   const normalized = command.toLowerCase();
   if (normalized.includes("find skills") || normalized.includes("-name skill.md")) {
@@ -33,33 +31,10 @@ function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-const workProgressEmojiIds = [
-  "5253913917012330081",
-  "5224350527537567128",
-  "5244538304052870400",
-  "5323776628143178606",
-  "5271923883115559452",
-  "5237847543869646963",
-  "5289811519960285465",
-  "5226458067989711457",
-  "5303344012722188431",
-  "5272017461863002447",
-  "5278346366756601772",
-  "5458767596285369713",
-  "5237692723183501078",
-] as const;
-
-function workProgressSummary(): string {
-  const emojiId =
-    workProgressEmojiIds[Math.floor(Math.random() * workProgressEmojiIds.length)] ??
-    workProgressEmojiIds[0];
-  return `<tg-emoji emoji-id="${emojiId}">🛠️</tg-emoji> Работаю~~`;
-}
-
 export function workDocument(status: string): string {
   const activity = visibleActivity(status);
   const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
-  return `<details><summary>${workProgressSummary()}</summary>\n\n${history || "- Готово"}\n\n</details>`;
+  return `<details><summary>Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
 }
 
 export type ToolUsage = {
@@ -189,19 +164,14 @@ export function failedDocument(status: string, error: string): string {
   return `${workDocument(status)}\n\n${failureMessage(error)}\n\n${toolsDocument(status)}`;
 }
 
-export function completedDocuments(
-  status: string,
-  answer: string,
-  finalEmojiMap: FinalEmojiMap = new Map(),
-): string[] {
+export function completedDocuments(status: string, answer: string): string[] {
   const prefix = `${workDocument(status)}\n\n`;
   const suffix = `\n\n${toolsDocument(status)}`;
   const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix) - byteLength(suffix);
-  const convertedAnswer = replaceFinalEmojis(answer, finalEmojiMap);
   if (availableAnswerBytes <= 0) {
-    return [prefix, ...splitRichMarkdown(convertedAnswer), suffix.slice(2)];
+    return [prefix, ...splitRichMarkdown(answer), suffix.slice(2)];
   }
-  const answerChunks = splitRichMarkdown(convertedAnswer, availableAnswerBytes);
+  const answerChunks = splitRichMarkdown(answer, availableAnswerBytes);
   return answerChunks.map((chunk, index) => {
     const first = index === 0 ? prefix : "";
     const last = index === answerChunks.length - 1 ? suffix : "";

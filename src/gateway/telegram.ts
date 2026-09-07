@@ -14,19 +14,6 @@ type TelegramResponse<T> = {
   parameters?: { retry_after?: number };
 };
 
-export type TelegramSticker = {
-  type: "regular" | "mask" | "custom_emoji";
-  emoji?: string;
-  custom_emoji_id?: string;
-};
-
-export type TelegramStickerSet = {
-  name: string;
-  title: string;
-  sticker_type: "regular" | "mask" | "custom_emoji";
-  stickers: TelegramSticker[];
-};
-
 const videoExtensions = new Set([
   "3gp",
   "avi",
@@ -89,10 +76,6 @@ export class TelegramClient {
 
   getMe(): Promise<TelegramUser> {
     return this.call<TelegramUser>("getMe");
-  }
-
-  getStickerSet(name: string): Promise<TelegramStickerSet> {
-    return this.call<TelegramStickerSet>("getStickerSet", { name });
   }
 
   getUpdates(offset: number, timeout: number): Promise<TelegramUpdate[]> {

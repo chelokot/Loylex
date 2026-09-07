@@ -2,7 +2,6 @@ import type { TelegramMessage } from "../shared/types.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { LoylexDatabase } from "./database.ts";
-import { buildFinalEmojiMap, type FinalEmojiMap, finalEmojiPackName } from "./final-emojis.ts";
 import { responseOptions } from "./message-options.ts";
 import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
 import { helpMessage, resumeUnavailableMessage, stopResultMessage } from "./presentation.ts";
@@ -31,31 +30,7 @@ const bot = await telegram.getMe();
 
 await telegram.call("deleteWebhook", { drop_pending_updates: false });
 await telegram.setCommands();
-let finalEmojiMap: FinalEmojiMap = new Map();
-try {
-  const stickerSet = await telegram.getStickerSet(finalEmojiPackName);
-  finalEmojiMap = buildFinalEmojiMap(stickerSet.stickers);
-  console.log(
-    JSON.stringify({
-      level: "info",
-      component: "poller",
-      event: "final_emoji_pack_loaded",
-      pack: finalEmojiPackName,
-      baseEmojis: finalEmojiMap.size,
-    }),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify({
-      level: "warn",
-      component: "poller",
-      event: "final_emoji_pack_unavailable",
-      pack: finalEmojiPackName,
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
-}
-const server = new GatewayServer(config, database, telegram, finalEmojiMap);
+const server = new GatewayServer(config, database, telegram);
 server.start();
 
 let stopping = false;

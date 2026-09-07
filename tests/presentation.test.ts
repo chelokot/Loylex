@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { buildFinalEmojiMap } from "../src/gateway/final-emojis.ts";
 import {
   activityLines,
   completedDocuments,
@@ -58,14 +57,10 @@ describe("activityLines", () => {
 });
 
 describe("completedDocuments", () => {
-  test("replaces ordinary answer emoji with a pack variant", () => {
-    const [document] = completedDocuments(
-      "status: Готово",
-      "да 😂",
-      buildFinalEmojiMap([{ type: "custom_emoji", emoji: "😂", custom_emoji_id: "100" }]),
-    );
-
-    expect(document).toContain('да <tg-emoji emoji-id="100">😂</tg-emoji>');
+  test("preserves answer emoji without converting them to a pack", () => {
+    const [document] = completedDocuments("status: Готово", "да 😂");
+    expect(document).toContain("да 😂");
+    expect(document).not.toContain("tg-emoji");
   });
 
   test("keeps work history even when it contains at most one visible item", () => {
@@ -124,10 +119,11 @@ test("puts the tools dropdown on the last chunk of a long answer", () => {
   expect(lastDocument).toContain("<summary>Использованные инструменты</summary>");
 });
 
-test("uses one of the configured custom emojis in the work summary", () => {
-  expect(workDocument("status: Готово")).toMatch(
-    /^<details><summary><tg-emoji emoji-id="(?:5253913917012330081|5224350527537567128|5244538304052870400|5323776628143178606|5271923883115559452|5237847543869646963|5289811519960285465|5226458067989711457|5303344012722188431|5272017461863002447|5278346366756601772|5458767596285369713|5237692723183501078)">🛠️<\/tg-emoji> Работаю~~<\/summary>/,
-  );
+test("keeps the work summary stable across repeated renders", () => {
+  const expected = "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>";
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    expect(workDocument("status: Готово")).toBe(expected);
+  }
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {
@@ -148,7 +144,7 @@ test("keeps the work history in a failure document", () => {
     "TypeError: The socket connection was closed unexpectedly",
   );
 
-  expect(message).toMatch(/<summary><tg-emoji emoji-id="\d+">🛠️<\/tg-emoji> Работаю~~<\/summary>/);
+  expect(message).toContain("<summary>Ход работы</summary>");
   expect(message).toContain("- Проверяю архив");
   expect(message).toContain("Не получилось завершить задачу.");
   expect(message).toContain("The socket connection was closed unexpectedly");

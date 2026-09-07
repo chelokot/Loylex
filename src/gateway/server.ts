@@ -3,7 +3,6 @@ import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/typ
 import { isAgentTokenUsage } from "../shared/usage.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
-import type { FinalEmojiMap } from "./final-emojis.ts";
 import { responseOptions } from "./message-options.ts";
 import { completedDocuments, failedDocument, workDocument } from "./presentation.ts";
 import {
@@ -90,7 +89,6 @@ export class GatewayServer {
     private readonly config: GatewayConfig,
     private readonly database: LoylexDatabase,
     private readonly telegram: TelegramClient,
-    private readonly finalEmojiMap: FinalEmojiMap = new Map(),
   ) {}
 
   start(): void {
@@ -578,7 +576,7 @@ export class GatewayServer {
     if (status === null) {
       return;
     }
-    const documents = completedDocuments(status, completion.answer, this.finalEmojiMap);
+    const documents = completedDocuments(status, completion.answer);
     let message: TelegramMessage;
     if (thinkingMessageId === null) {
       message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
