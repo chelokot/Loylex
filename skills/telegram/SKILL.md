@@ -16,6 +16,19 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
   query through the gateway and returns `columns`, `rows`, and `truncated`.
 - `loylex media FILE_ID OUTPUT_PATH` downloads Telegram media without exposing the
   bot token.
+
+## Evidence gate for image-specific searches
+
+When a user asks for a particular meme, screenshot, or other image, treat text matches,
+captions, sender/date, forwarding metadata, and image dimensions as candidate evidence only.
+Report an exact match only after downloading the live media with `loylex media` and checking
+the image contents (visually or with OCR as appropriate). Inspect every item in a media group
+when the request could refer to any of them.
+
+An old `telegram_export` placeholder such as `File not included` cannot verify the image.
+Keep it explicitly labeled as an unconfirmed candidate and request a fresh forward or upload
+if exact identification is required; never present it as the found image.
+
 - `loylex send CHAT_ID 'RICH MARKDOWN'` sends to a chat already present in the
   archive.
 - `loylex delete CHAT_ID MESSAGE_ID` asks Telegram to delete one live message in a chat
