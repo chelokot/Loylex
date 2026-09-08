@@ -1,3 +1,10 @@
+import type {
+  LeylobucksJobEconomy,
+  LeylobucksPurchaseResult,
+  LeylobucksQuizAction,
+  LeylobucksStatus,
+} from "./database.ts";
+
 function commandActivity(command: string): string {
   const normalized = command.toLowerCase();
   if (normalized.includes("find skills") || normalized.includes("-name skill.md")) {
@@ -186,9 +193,153 @@ export function helpMessage(): string {
     "В личке можно писать обычным сообщением — оно продолжит последний Codex-тред без reply. Ответ на старое сообщение переключит запрос в тред этого сообщения. `/newchat сообщение` начнёт новый чистый тред. В группах по-прежнему используй `Лойлекс, ...` или reply на сообщение Loylex.",
     "",
     "`/tasks` — последние задачи; в ЛС активный draft можно остановить кнопкой Stop, а в группах `/stop` отправляется reply на рабочее сообщение; `/cancel_ID` — остановить задачу; `/resume_ID` — продолжить прерванную задачу, если у неё сохранился Codex-тред.",
+    "`/bucks` — баланс и магазин лейлобаксов; `/bucks buy 100` — купить 1 сообщение в режиме милой аниме-кошкодевочки-жены. При отрицательном балансе `/quiz` запускает викторину.",
     "",
     "Текст, изображения и файлы текущего сообщения передаются агенту через защищённый bridge. Для напоминаний и периодических действий можно попросить настроить cron/systemd timer на Linux-машине.",
   ].join("\n");
+}
+
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function balanceLabel(balance: number): string {
+  return `${balance} / 500`;
+}
+
+function quizQuestionMessage(
+  question: NonNullable<LeylobucksStatus["quiz"]>["question"],
+  questionIndex: number,
+  questionCount: number,
+  correctCount: number,
+): string {
+  const options = question.options
+    .map((option, index) => `${String.fromCharCode(65 + index)}) ${option}`)
+    .join("\n");
+  return [
+    `**Вопрос ${questionIndex + 1}/${questionCount} — ${question.category}**`,
+    "",
+    question.prompt,
+    "",
+    options,
+    "",
+    `Правильных ответов: ${correctCount}. Ответь командой \`/quiz A\` (или B/C/D). Нужно правильно ответить минимум на ${Math.max(1, questionCount - 1)} из ${questionCount}.`,
+  ].join("\n");
+}
+
+export function leylobucksStatusMessage(status: LeylobucksStatus): string {
+  const lines = [
+    "**Лейлобаксы**",
+    "",
+    `Баланс: **${balanceLabel(status.balance)}**`,
+    `Сообщений в режиме кошкодевочки-жены: **${status.catgirlMessages}**`,
+    "",
+    "Магазин:",
+    "- 100 — 1 сообщение",
+    "- 250 — 3 сообщения",
+    "- 500 — 10 сообщений",
+  ];
+  if (status.balance < 0) {
+    lines.push(
+      "",
+      "Баланс отрицательный: обычные запросы заблокированы. Запусти `/quiz`, чтобы пройти викторину.",
+      `Следующая викторина: ${status.nextQuizSize} вопросов; нужно минимум ${Math.max(1, status.nextQuizSize - 1)} правильных.`,
+    );
+  } else if (status.quiz) {
+    lines.push(
+      "",
+      "Викторина уже начата:",
+      quizQuestionMessage(
+        status.quiz.question,
+        status.quiz.questionIndex,
+        status.quiz.questionCount,
+        status.quiz.correctCount,
+      ),
+    );
+  } else {
+    lines.push("", "Команды: `/bucks`, `/bucks buy 100`, `/bucks buy 250`, `/bucks buy 500`.");
+  }
+  return lines.join("\n");
+}
+
+export function leylobucksPurchaseMessage(result: LeylobucksPurchaseResult): string {
+  if (result.status === "invalid_package") {
+    return "Такого товара нет. Можно купить пакет за 100, 250 или 500 лейлобаксов.";
+  }
+  if (result.status === "in_debt") {
+    return `${leylobucksStatusMessage(result.statusView)}\n\nПокупки недоступны, пока баланс отрицательный.`;
+  }
+  if (result.status === "insufficient" && result.package) {
+    const missing = result.package.cost - result.statusView.balance;
+    return `${leylobucksStatusMessage(result.statusView)}\n\nНе хватает ${missing} лейлобаксов для этого пакета.`;
+  }
+  if (result.package) {
+    return [
+      `✅ Куплено: ${result.package.messages} ${result.package.messages === 1 ? "сообщение" : "сообщений"} в режиме милой аниме-кошкодевочки-жены за ${result.package.cost}.`,
+      "",
+      leylobucksStatusMessage(result.statusView),
+    ].join("\n");
+  }
+  return leylobucksStatusMessage(result.statusView);
+}
+
+export function leylobucksInvalidCommandMessage(): string {
+  return "Не понял покупку. Используй `/bucks`, `/bucks buy 100`, `/bucks buy 250` или `/bucks buy 500`.";
+}
+
+export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {
+  if (action.kind === "not_in_debt") {
+    return "Викторина нужна только при отрицательном балансе. Пока можно копить лейлобаксы хорошими запросами.";
+  }
+  if (action.kind === "invalid_answer") {
+    return `Не понял ответ. Напиши букву A, B, C или D командой \`/quiz A\`.\n\n${action.question ? quizQuestionMessage(action.question, action.status.quiz?.questionIndex ?? 0, action.questionCount ?? 5, action.correctCount ?? 0) : ""}`;
+  }
+  if (action.kind === "passed") {
+    return `🎉 Викторина пройдена: ${action.correctCount}/${action.questionCount}. Долг прощён, баланс снова **0**. Можно продолжать общаться и зарабатывать лейлобаксы.`;
+  }
+  if (action.kind === "failed") {
+    return `❌ Викторина не пройдена: ${action.correctCount}/${action.questionCount}. Баланс остаётся **${action.status.balance}**. В следующий раз будет ${action.nextQuizSize} вопросов; запусти \`/quiz\` ещё раз.`;
+  }
+  if (action.question) {
+    const prefix =
+      action.kind === "next"
+        ? action.correct
+          ? "✅ Верно."
+          : "❌ Неверно."
+        : action.kind === "in_progress"
+          ? "Викторина продолжается."
+          : "Викторина начата.";
+    const quiz = action.status.quiz;
+    return `${prefix}\n\n${quizQuestionMessage(action.question, quiz?.questionIndex ?? 0, action.questionCount ?? quiz?.questionCount ?? 5, action.correctCount ?? quiz?.correctCount ?? 0)}`;
+  }
+  return leylobucksStatusMessage(action.status);
+}
+
+export function leylobucksBlockedMessage(status: LeylobucksStatus): string {
+  return [
+    `Запрос не выполнен: баланс **${status.balance}**.`,
+    "",
+    "Пока баланс отрицательный, Loylex принимает только команду `/quiz`.",
+    `Нужно пройти ${status.nextQuizSize} вопросов и ответить правильно минимум на ${Math.max(1, status.nextQuizSize - 1)}.`,
+  ].join("\n");
+}
+
+export function leylobucksFooter(economy: LeylobucksJobEconomy): string {
+  const lines = [
+    "---",
+    `💰 Лейлобаксы: **${signed(economy.delta)}** (оценка запроса ${economy.qualityScore}/100). Баланс: **${economy.balance}/500**.`,
+  ];
+  if (economy.catgirlMode) {
+    lines.push(
+      `🐾 Режим кошкодевочки-жены использован. Осталось сообщений: **${economy.catgirlMessagesLeft}**.`,
+    );
+  }
+  if (economy.balance < 0) {
+    lines.push(
+      "⚠️ Баланс отрицательный: следующий обычный запрос будет заблокирован до прохождения `/quiz`.",
+    );
+  }
+  return lines.join("\n");
 }
 
 export function resumeUnavailableMessage(): string {

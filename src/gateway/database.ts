@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import type {
   AgentContextMode,
   AgentJob,
+  AgentJobLeylobucks,
   JsonObject,
   JsonValue,
   TelegramChat,
@@ -14,6 +15,17 @@ import type {
 } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import { feedbackPrompt, isOperatorDislikeReaction } from "./feedback.ts";
+import {
+  assessLeylobucksRequest,
+  createLeylobucksQuiz,
+  type LeylobucksPackage,
+  type LeylobucksQuizQuestion,
+  leylobucksInitialQuizSize,
+  leylobucksMaxBalance,
+  leylobucksPackages,
+  quizAnswerIndex,
+  quizPassingScore,
+} from "./leylobucks.ts";
 import {
   defaultReadQueryRows,
   maxReadQueryResultBytes,
@@ -93,7 +105,67 @@ type JobRow = {
   context_mode: AgentContextMode;
   attachments_json: string;
   worker_generation: number;
+  economy_quality: number | null;
+  economy_delta: number;
+  economy_balance_after: number | null;
+  catgirl_mode: number;
+  catgirl_messages_left: number;
 };
+
+type LeylobucksAccountRow = {
+  user_id: number;
+  balance: number;
+  catgirl_messages: number;
+  next_quiz_size: number;
+  quiz_attempt: number;
+};
+
+type LeylobucksQuizSessionRow = {
+  user_id: number;
+  question_count: number;
+  questions_json: string;
+  question_index: number;
+  correct_count: number;
+  attempt: number;
+};
+
+export type LeylobucksQuizQuestionView = Omit<LeylobucksQuizQuestion, "correctIndex" | "id">;
+
+export type LeylobucksStatus = {
+  userId: number;
+  balance: number;
+  catgirlMessages: number;
+  nextQuizSize: number;
+  quiz: {
+    questionCount: number;
+    questionIndex: number;
+    correctCount: number;
+    question: LeylobucksQuizQuestionView;
+  } | null;
+};
+
+export type LeylobucksPurchaseResult = {
+  status: "purchased" | "invalid_package" | "in_debt" | "insufficient";
+  package: LeylobucksPackage | null;
+  statusView: LeylobucksStatus;
+};
+
+export type LeylobucksQuizAction = {
+  kind: "started" | "in_progress" | "next" | "invalid_answer" | "passed" | "failed" | "not_in_debt";
+  status: LeylobucksStatus;
+  question: LeylobucksQuizQuestionView | null;
+  correct: boolean | null;
+  questionCount: number | null;
+  correctCount: number | null;
+  nextQuizSize: number | null;
+};
+
+export type LeylobucksJobEconomy = AgentJobLeylobucks;
+
+export type LeylobucksEnqueueResult =
+  | { kind: "queued"; economy: LeylobucksJobEconomy | null }
+  | { kind: "duplicate" }
+  | { kind: "blocked"; statusView: LeylobucksStatus };
 
 type WorkerRow = {
   worker_id: string;
@@ -428,6 +500,14 @@ function jobMedia(message: TelegramMessage): JsonValue[] {
   return [...media(message), ...(message.reply_to_message ? media(message.reply_to_message) : [])];
 }
 
+function leylobucksQuestionView(question: LeylobucksQuizQuestion): LeylobucksQuizQuestionView {
+  return {
+    category: question.category,
+    prompt: question.prompt,
+    options: question.options,
+  };
+}
+
 export class LoylexDatabase {
   readonly connection: Database;
   readonly #readConnection: Database;
@@ -511,6 +591,11 @@ export class LoylexDatabase {
         total_tokens INTEGER,
         answer TEXT,
         feedback_for_job_id INTEGER,
+        economy_quality INTEGER,
+        economy_delta INTEGER NOT NULL DEFAULT 0,
+        economy_balance_after INTEGER,
+        catgirl_mode INTEGER NOT NULL DEFAULT 0,
+        catgirl_messages_left INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
       );
 
@@ -549,6 +634,41 @@ export class LoylexDatabase {
         active_generation INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS leylobucks_accounts (
+        user_id INTEGER PRIMARY KEY,
+        balance INTEGER NOT NULL DEFAULT 0,
+        catgirl_messages INTEGER NOT NULL DEFAULT 0,
+        next_quiz_size INTEGER NOT NULL DEFAULT 5 CHECK (next_quiz_size >= 5),
+        quiz_attempt INTEGER NOT NULL DEFAULT 0 CHECK (quiz_attempt >= 0),
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS leylobucks_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        delta INTEGER NOT NULL,
+        balance_after INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        update_id INTEGER,
+        job_id INTEGER,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        UNIQUE(user_id, update_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS leylobucks_quiz_sessions (
+        user_id INTEGER PRIMARY KEY,
+        question_count INTEGER NOT NULL CHECK (question_count >= 5),
+        questions_json TEXT NOT NULL,
+        question_index INTEGER NOT NULL DEFAULT 0,
+        correct_count INTEGER NOT NULL DEFAULT 0,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        started_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS leylobucks_transactions_user_idx
+        ON leylobucks_transactions(user_id, created_at DESC, id DESC);
     `);
     this.ensureJobColumn("worker_id", "TEXT");
     this.ensureJobColumn("lease_expires_at", "INTEGER");
@@ -562,6 +682,11 @@ export class LoylexDatabase {
     this.ensureJobColumn("total_tokens", "INTEGER");
     this.ensureJobColumn("answer", "TEXT");
     this.ensureJobColumn("feedback_for_job_id", "INTEGER");
+    this.ensureJobColumn("economy_quality", "INTEGER");
+    this.ensureJobColumn("economy_delta", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureJobColumn("economy_balance_after", "INTEGER");
+    this.ensureJobColumn("catgirl_mode", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureJobColumn("catgirl_messages_left", "INTEGER NOT NULL DEFAULT 0");
     this.connection.exec(
       "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id); CREATE UNIQUE INDEX IF NOT EXISTS jobs_feedback_source_idx ON jobs(feedback_for_job_id) WHERE feedback_for_job_id IS NOT NULL",
     );
@@ -586,7 +711,12 @@ export class LoylexDatabase {
       | "reasoning_output_tokens"
       | "total_tokens"
       | "answer"
-      | "feedback_for_job_id",
+      | "feedback_for_job_id"
+      | "economy_quality"
+      | "economy_delta"
+      | "economy_balance_after"
+      | "catgirl_mode"
+      | "catgirl_messages_left",
     definition: string,
   ): void {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -1248,6 +1378,425 @@ export class LoylexDatabase {
     return activeJob ? null : threadId;
   }
 
+  private ensureLeylobucksAccount(userId: number, now = Date.now()): LeylobucksAccountRow {
+    this.connection
+      .query(`
+        INSERT OR IGNORE INTO leylobucks_accounts (
+          user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt, updated_at
+        ) VALUES (?, 0, 0, ?, 0, ?)
+      `)
+      .run(userId, leylobucksInitialQuizSize, now);
+    const account = this.connection
+      .query<LeylobucksAccountRow, [number]>(`
+        SELECT user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt
+        FROM leylobucks_accounts
+        WHERE user_id = ?
+      `)
+      .get(userId);
+    if (!account) {
+      throw new Error(`Unable to create Loylebucks account for user ${userId}`);
+    }
+    return account;
+  }
+
+  private leylobucksStatusView(userId: number): LeylobucksStatus {
+    const account = this.connection
+      .query<LeylobucksAccountRow, [number]>(`
+        SELECT user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt
+        FROM leylobucks_accounts
+        WHERE user_id = ?
+      `)
+      .get(userId) ?? {
+      user_id: userId,
+      balance: 0,
+      catgirl_messages: 0,
+      next_quiz_size: leylobucksInitialQuizSize,
+      quiz_attempt: 0,
+    };
+    const session = this.connection
+      .query<LeylobucksQuizSessionRow, [number]>(`
+        SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
+        FROM leylobucks_quiz_sessions
+        WHERE user_id = ?
+      `)
+      .get(userId);
+    let quiz: LeylobucksStatus["quiz"] = null;
+    if (session) {
+      const questions = JSON.parse(session.questions_json) as LeylobucksQuizQuestion[];
+      const question = questions[session.question_index];
+      if (question) {
+        quiz = {
+          questionCount: session.question_count,
+          questionIndex: session.question_index,
+          correctCount: session.correct_count,
+          question: leylobucksQuestionView(question),
+        };
+      }
+    }
+    return {
+      userId: account.user_id,
+      balance: account.balance,
+      catgirlMessages: account.catgirl_messages,
+      nextQuizSize: account.next_quiz_size,
+      quiz,
+    };
+  }
+
+  leylobucksStatus(userId: number): LeylobucksStatus {
+    return this.leylobucksStatusView(userId);
+  }
+
+  purchaseLeylobucks(userId: number, cost: number): LeylobucksPurchaseResult {
+    const transaction = this.connection.transaction(() => {
+      const package_ = leylobucksPackages.find((item) => item.cost === cost) ?? null;
+      const account = this.ensureLeylobucksAccount(userId);
+      if (!package_) {
+        return {
+          status: "invalid_package" as const,
+          package: null,
+          statusView: this.leylobucksStatusView(userId),
+        };
+      }
+      if (account.balance < 0) {
+        return {
+          status: "in_debt" as const,
+          package: package_,
+          statusView: this.leylobucksStatusView(userId),
+        };
+      }
+      if (account.balance < package_.cost) {
+        return {
+          status: "insufficient" as const,
+          package: package_,
+          statusView: this.leylobucksStatusView(userId),
+        };
+      }
+      const now = Date.now();
+      const balance = account.balance - package_.cost;
+      const catgirlMessages = account.catgirl_messages + package_.messages;
+      this.connection
+        .query(`
+          UPDATE leylobucks_accounts
+          SET balance = ?, catgirl_messages = ?, updated_at = ?
+          WHERE user_id = ?
+        `)
+        .run(balance, catgirlMessages, now, userId);
+      this.connection
+        .query(`
+          INSERT INTO leylobucks_transactions (
+            user_id, delta, balance_after, reason, update_id, job_id, metadata_json, created_at
+          ) VALUES (?, ?, ?, 'purchase', NULL, NULL, ?, ?)
+        `)
+        .run(userId, -package_.cost, balance, JSON.stringify({ messages: package_.messages }), now);
+      return {
+        status: "purchased" as const,
+        package: package_,
+        statusView: this.leylobucksStatusView(userId),
+      };
+    });
+    return transaction.immediate();
+  }
+
+  quizLeylobucks(userId: number, answer: string | null = null): LeylobucksQuizAction {
+    const transaction = this.connection.transaction(() => {
+      const account = this.ensureLeylobucksAccount(userId);
+      if (account.balance >= 0) {
+        return {
+          kind: "not_in_debt" as const,
+          status: this.leylobucksStatusView(userId),
+          question: null,
+          correct: null,
+          questionCount: null,
+          correctCount: null,
+          nextQuizSize: null,
+        };
+      }
+
+      let session = this.connection
+        .query<LeylobucksQuizSessionRow, [number]>(`
+          SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
+          FROM leylobucks_quiz_sessions
+          WHERE user_id = ?
+        `)
+        .get(userId);
+      if (!session) {
+        const now = Date.now();
+        const attempt = account.quiz_attempt + 1;
+        const createdQuestions = createLeylobucksQuiz(userId, attempt, account.next_quiz_size);
+        this.connection
+          .query(`
+            INSERT INTO leylobucks_quiz_sessions (
+              user_id, question_count, questions_json, question_index, correct_count, attempt, started_at
+            ) VALUES (?, ?, ?, 0, 0, ?, ?)
+          `)
+          .run(userId, createdQuestions.length, JSON.stringify(createdQuestions), attempt, now);
+        this.connection
+          .query(
+            "UPDATE leylobucks_accounts SET quiz_attempt = ?, updated_at = ? WHERE user_id = ?",
+          )
+          .run(attempt, now, userId);
+        session = this.connection
+          .query<LeylobucksQuizSessionRow, [number]>(`
+            SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
+            FROM leylobucks_quiz_sessions
+            WHERE user_id = ?
+          `)
+          .get(userId);
+        if (!session) {
+          throw new Error(`Unable to start Loylebucks quiz for user ${userId}`);
+        }
+        const storedQuestions = JSON.parse(session.questions_json) as LeylobucksQuizQuestion[];
+        return {
+          kind: "started" as const,
+          status: this.leylobucksStatusView(userId),
+          question: storedQuestions[0] ? leylobucksQuestionView(storedQuestions[0]) : null,
+          correct: null,
+          questionCount: session.question_count,
+          correctCount: 0,
+          nextQuizSize: null,
+        };
+      }
+
+      const questions = JSON.parse(session.questions_json) as LeylobucksQuizQuestion[];
+      const question = questions[session.question_index];
+      if (!question) {
+        throw new Error(`Invalid Loylebucks quiz session for user ${userId}`);
+      }
+      if (answer === null) {
+        return {
+          kind: "in_progress" as const,
+          status: this.leylobucksStatusView(userId),
+          question: leylobucksQuestionView(question),
+          correct: null,
+          questionCount: session.question_count,
+          correctCount: session.correct_count,
+          nextQuizSize: null,
+        };
+      }
+
+      const answerIndex = quizAnswerIndex(answer, question);
+      if (answerIndex === null) {
+        return {
+          kind: "invalid_answer" as const,
+          status: this.leylobucksStatusView(userId),
+          question: leylobucksQuestionView(question),
+          correct: null,
+          questionCount: session.question_count,
+          correctCount: session.correct_count,
+          nextQuizSize: null,
+        };
+      }
+
+      const isCorrect = answerIndex === question.correctIndex;
+      const correctCount = session.correct_count + (isCorrect ? 1 : 0);
+      const questionIndex = session.question_index + 1;
+      if (questionIndex < session.question_count) {
+        this.connection
+          .query(`
+            UPDATE leylobucks_quiz_sessions
+            SET question_index = ?, correct_count = ?
+            WHERE user_id = ?
+          `)
+          .run(questionIndex, correctCount, userId);
+        const nextQuestion = questions[questionIndex];
+        return {
+          kind: "next" as const,
+          status: this.leylobucksStatusView(userId),
+          question: nextQuestion ? leylobucksQuestionView(nextQuestion) : null,
+          correct: isCorrect,
+          questionCount: session.question_count,
+          correctCount,
+          nextQuizSize: null,
+        };
+      }
+
+      const now = Date.now();
+      const passingScore = quizPassingScore(session.question_count);
+      if (correctCount >= passingScore) {
+        const forgivenDebt = -account.balance;
+        this.connection
+          .query(`
+            UPDATE leylobucks_accounts
+            SET balance = 0, next_quiz_size = ?, updated_at = ?
+            WHERE user_id = ?
+          `)
+          .run(leylobucksInitialQuizSize, now, userId);
+        this.connection
+          .query(`
+            INSERT INTO leylobucks_transactions (
+              user_id, delta, balance_after, reason, update_id, job_id, metadata_json, created_at
+            ) VALUES (?, ?, 0, 'quiz_passed', NULL, NULL, ?, ?)
+          `)
+          .run(
+            userId,
+            forgivenDebt,
+            JSON.stringify({ questions: session.question_count, correct: correctCount }),
+            now,
+          );
+        this.connection.query("DELETE FROM leylobucks_quiz_sessions WHERE user_id = ?").run(userId);
+        return {
+          kind: "passed" as const,
+          status: this.leylobucksStatusView(userId),
+          question: null,
+          correct: isCorrect,
+          questionCount: session.question_count,
+          correctCount,
+          nextQuizSize: null,
+        };
+      }
+
+      const nextQuizSize = session.question_count + 1;
+      this.connection
+        .query(`
+          UPDATE leylobucks_accounts
+          SET next_quiz_size = ?, updated_at = ?
+          WHERE user_id = ?
+        `)
+        .run(nextQuizSize, now, userId);
+      this.connection.query("DELETE FROM leylobucks_quiz_sessions WHERE user_id = ?").run(userId);
+      return {
+        kind: "failed" as const,
+        status: this.leylobucksStatusView(userId),
+        question: null,
+        correct: isCorrect,
+        questionCount: session.question_count,
+        correctCount,
+        nextQuizSize,
+      };
+    });
+    return transaction.immediate();
+  }
+
+  enqueueWithLeylobucks(
+    updateId: number,
+    message: TelegramMessage,
+    prompt: string,
+    qualityText: string,
+    resumeThreadId: string | null,
+    contextMode: AgentContextMode = resumeThreadId === null ? "full" : "delta",
+  ): LeylobucksEnqueueResult {
+    const userId = message.from?.id;
+    if (typeof userId !== "number" || !Number.isSafeInteger(userId)) {
+      this.enqueue(updateId, message, prompt, resumeThreadId, contextMode);
+      return {
+        kind: "queued",
+        economy: null,
+      };
+    }
+    const authenticatedUserId: number = userId;
+
+    const transaction = this.connection.transaction(() => {
+      const existing = this.connection
+        .query<{ id: number }, [number]>("SELECT id FROM jobs WHERE update_id = ?")
+        .get(updateId);
+      if (existing) {
+        return { kind: "duplicate" as const };
+      }
+
+      const previousTexts = this.connection
+        .query<{ text: string | null }, [number, number, number]>(`
+          SELECT text
+          FROM messages
+          WHERE from_user_id = ?
+            AND NOT (chat_id = ? AND message_id = ?)
+            AND text IS NOT NULL
+          ORDER BY date DESC, message_id DESC
+          LIMIT 20
+        `)
+        .all(authenticatedUserId, message.chat.id, message.message_id)
+        .map((row) => row.text ?? "");
+      const assessment = assessLeylobucksRequest(qualityText, previousTexts);
+      const account = this.ensureLeylobucksAccount(authenticatedUserId);
+      if (account.balance < 0) {
+        return {
+          kind: "blocked" as const,
+          statusView: this.leylobucksStatusView(authenticatedUserId),
+        };
+      }
+
+      const newBalance = Math.min(leylobucksMaxBalance, account.balance + assessment.delta);
+      const actualDelta = newBalance - account.balance;
+      const catgirlMode = account.catgirl_messages > 0;
+      const catgirlMessagesLeft = Math.max(account.catgirl_messages - (catgirlMode ? 1 : 0), 0);
+      const now = Date.now();
+      this.connection
+        .query(`
+          UPDATE leylobucks_accounts
+          SET balance = ?, catgirl_messages = ?, updated_at = ?
+          WHERE user_id = ?
+        `)
+        .run(newBalance, catgirlMessagesLeft, now, authenticatedUserId);
+
+      const authorizedResumeThreadId =
+        message.chat.type === "private"
+          ? this.authorizedResumeThreadId(message.chat.id, authenticatedUserId, resumeThreadId)
+          : resumeThreadId;
+      const effectiveContextMode =
+        contextMode === "none" ? "none" : authorizedResumeThreadId === null ? "full" : contextMode;
+      const generation = this.activeWorkerGeneration();
+      this.connection
+        .query(`
+          INSERT INTO jobs (
+            update_id, chat_id, chat_type, message_id, message_thread_id, user_id, prompt,
+            resume_thread_id, context_mode, attachments_json, worker_generation,
+            economy_quality, economy_delta, economy_balance_after, catgirl_mode,
+            catgirl_messages_left, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          updateId,
+          message.chat.id,
+          message.chat.type,
+          message.message_id,
+          message.message_thread_id ?? null,
+          authenticatedUserId,
+          prompt,
+          authorizedResumeThreadId,
+          effectiveContextMode,
+          JSON.stringify(jobMedia(message)),
+          generation,
+          assessment.qualityScore,
+          actualDelta,
+          newBalance,
+          catgirlMode ? 1 : 0,
+          catgirlMessagesLeft,
+          now,
+        );
+      const job = this.connection
+        .query<{ id: number }, [number]>("SELECT id FROM jobs WHERE update_id = ?")
+        .get(updateId);
+      if (!job) {
+        throw new Error(`Unable to create job for update ${updateId}`);
+      }
+      this.connection
+        .query(`
+          INSERT INTO leylobucks_transactions (
+            user_id, delta, balance_after, reason, update_id, job_id, metadata_json, created_at
+          ) VALUES (?, ?, ?, 'request', ?, ?, ?, ?)
+        `)
+        .run(
+          authenticatedUserId,
+          actualDelta,
+          newBalance,
+          updateId,
+          job.id,
+          JSON.stringify({ qualityScore: assessment.qualityScore }),
+          now,
+        );
+      return {
+        kind: "queued" as const,
+        economy: {
+          qualityScore: assessment.qualityScore,
+          delta: actualDelta,
+          balance: newBalance,
+          catgirlMode,
+          catgirlMessagesLeft,
+        },
+      };
+    });
+    return transaction.immediate();
+  }
+
   enqueue(
     updateId: number,
     message: TelegramMessage,
@@ -1628,6 +2177,17 @@ export class LoylexDatabase {
           ? null
           : this.replyContext(row.chat_id, row.message_id),
       attachments: JSON.parse(row.attachments_json) as JsonValue[],
+      ...(row.economy_balance_after === null
+        ? {}
+        : {
+            leylobucks: {
+              qualityScore: row.economy_quality ?? 50,
+              delta: row.economy_delta,
+              balance: row.economy_balance_after,
+              catgirlMode: row.catgirl_mode === 1,
+              catgirlMessagesLeft: row.catgirl_messages_left,
+            },
+          }),
     };
   }
 
@@ -2310,6 +2870,36 @@ export class LoylexDatabase {
       chatType: row.chat_type,
       messageId: row.message_id,
       threadId: row.message_thread_id,
+    };
+  }
+
+  jobEconomy(jobId: number): LeylobucksJobEconomy | null {
+    const row = this.connection
+      .query<
+        {
+          economy_quality: number | null;
+          economy_delta: number;
+          economy_balance_after: number | null;
+          catgirl_mode: number;
+          catgirl_messages_left: number;
+        },
+        [number]
+      >(`
+        SELECT economy_quality, economy_delta, economy_balance_after,
+               catgirl_mode, catgirl_messages_left
+        FROM jobs
+        WHERE id = ?
+      `)
+      .get(jobId);
+    if (!row || row.economy_balance_after === null) {
+      return null;
+    }
+    return {
+      qualityScore: row.economy_quality ?? 50,
+      delta: row.economy_delta,
+      balance: row.economy_balance_after,
+      catgirlMode: row.catgirl_mode === 1,
+      catgirlMessagesLeft: row.catgirl_messages_left,
     };
   }
 

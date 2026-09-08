@@ -304,6 +304,8 @@ export class TelegramClient {
         { command: "tasks", description: "Показать последние задачи" },
         { command: "resume", description: "Продолжить задачу по ID" },
         { command: "newchat", description: "Начать новый тред в личке" },
+        { command: "bucks", description: "Баланс и магазин лейлобаксов" },
+        { command: "quiz", description: "Пройти викторину при долге" },
       ] as JsonValue[],
     });
   }

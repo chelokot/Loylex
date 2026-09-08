@@ -6,6 +6,8 @@ import {
   isStopCommand,
   isTasksCommand,
   newChatPrompt,
+  parseLeylobucksCommand,
+  parseQuizCommand,
   promptWithQuote,
 } from "../src/gateway/triggers.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
@@ -120,6 +122,27 @@ describe("detectTrigger", () => {
     expect(newChatPrompt(message("/newchat@OtherBot не трогай", "private"), "LoylexBot")).toBe(
       null,
     );
+  });
+
+  test("recognizes Loylebucks status and purchases", () => {
+    expect(parseLeylobucksCommand(message("/bucks"), "LoylexBot")).toEqual({ kind: "status" });
+    expect(parseLeylobucksCommand(message("/bucks@loylexbot buy 250"), "LoylexBot")).toEqual({
+      kind: "buy",
+      cost: 250,
+    });
+    expect(parseLeylobucksCommand(message("лейлобаксы"), "LoylexBot")).toEqual({ kind: "status" });
+    expect(parseLeylobucksCommand(message("/bucks buy 50"), "LoylexBot")).toEqual({
+      kind: "invalid",
+    });
+    expect(parseLeylobucksCommand(message("/bucks@OtherBot"), "LoylexBot")).toBeNull();
+  });
+
+  test("recognizes quiz starts and answers", () => {
+    expect(parseQuizCommand(message("/quiz"), "LoylexBot")).toEqual({ answer: null });
+    expect(parseQuizCommand(message("/quiz@loylexbot ответ B"), "LoylexBot")).toEqual({
+      answer: "ответ B",
+    });
+    expect(parseQuizCommand(message("/quiz@OtherBot A"), "LoylexBot")).toBeNull();
   });
 });
 

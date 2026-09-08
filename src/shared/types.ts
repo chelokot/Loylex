@@ -115,6 +115,14 @@ export type TelegramUpdate = {
 
 export type AgentContextMode = "full" | "delta" | "none";
 
+export type AgentJobLeylobucks = {
+  qualityScore: number;
+  delta: number;
+  balance: number;
+  catgirlMode: boolean;
+  catgirlMessagesLeft: number;
+};
+
 export type AgentJob = {
   id: number;
   updateId: number;
@@ -130,6 +138,7 @@ export type AgentJob = {
   replyToMessageId?: number | null;
   replyContext?: string | null;
   attachments: JsonValue[];
+  leylobucks?: AgentJobLeylobucks;
 };
 
 export type AgentEvent = {

@@ -9,6 +9,16 @@ const resumePattern = /^\/resume_(\d+)(?:@([a-z0-9_]+))?$/iu;
 const helpPattern = /^\/(?:start|help)(?:@([a-z0-9_]+))?$/iu;
 const newChatCommandPattern = /^\/newchat(?:@[a-z0-9_]+)?(?:\s+[\s\S]*)?$/iu;
 const newChatPattern = /^\/newchat(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
+const leylobucksPattern = /^\/(?:bucks|leylobucks)(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
+const leylobucksNaturalPattern = /^(?:лейлобаксы|лб)(?:\s+([\s\S]*))?$/iu;
+const quizPattern = /^\/(?:quiz|викторина)(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
+
+export type LeylobucksCommand =
+  | { kind: "status" }
+  | { kind: "buy"; cost: 100 | 250 | 500 }
+  | { kind: "invalid" };
+
+export type QuizCommand = { answer: string | null };
 
 export type TriggerDecision = {
   prompt: string;
@@ -88,6 +98,52 @@ export function isHelpCommand(message: TelegramMessage, botUsername?: string): b
   return (
     !mention || !botUsername || mention.toLocaleLowerCase() === botUsername.toLocaleLowerCase()
   );
+}
+
+function commandMentionMatches(
+  mention: string | undefined,
+  botUsername: string | undefined,
+): boolean {
+  return (
+    !mention || !botUsername || mention.toLocaleLowerCase() === botUsername.toLocaleLowerCase()
+  );
+}
+
+function parseLeylobucksArgument(argument: string | undefined): LeylobucksCommand | null {
+  const normalized = argument?.trim() ?? "";
+  if (!normalized || /^(?:status|баланс|магазин|shop)$/iu.test(normalized)) {
+    return { kind: "status" };
+  }
+  const buy =
+    normalized.match(/^(?:buy|купить)\s+(100|250|500)$/iu) ?? normalized.match(/^(100|250|500)$/u);
+  const cost = Number.parseInt(buy?.[1] ?? "", 10);
+  return cost === 100 || cost === 250 || cost === 500 ? { kind: "buy", cost } : { kind: "invalid" };
+}
+
+export function parseLeylobucksCommand(
+  message: TelegramMessage,
+  botUsername?: string,
+): LeylobucksCommand | null {
+  const text = messageText(message).trim();
+  const slash = text.match(leylobucksPattern);
+  if (slash) {
+    return commandMentionMatches(slash[1], botUsername) ? parseLeylobucksArgument(slash[2]) : null;
+  }
+  const natural = text.match(leylobucksNaturalPattern);
+  return natural ? parseLeylobucksArgument(natural[1]) : null;
+}
+
+export function parseQuizCommand(
+  message: TelegramMessage,
+  botUsername?: string,
+): QuizCommand | null {
+  const text = messageText(message).trim();
+  const match = text.match(quizPattern);
+  if (!match || !commandMentionMatches(match[1], botUsername)) {
+    return null;
+  }
+  const argument = match[2]?.trim() ?? "";
+  return { answer: argument || null };
 }
 
 export function cancelTaskMessageId(message: TelegramMessage, botUsername?: string): number | null {

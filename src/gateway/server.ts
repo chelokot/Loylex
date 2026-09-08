@@ -12,7 +12,12 @@ import { isAgentTokenUsage } from "../shared/usage.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
 import { responseOptions } from "./message-options.ts";
-import { completedDocuments, failedDocument, workDocument } from "./presentation.ts";
+import {
+  completedDocuments,
+  failedDocument,
+  leylobucksFooter,
+  workDocument,
+} from "./presentation.ts";
 import {
   defaultReadQueryRows,
   isReadQueryParameters,
@@ -801,7 +806,11 @@ export class GatewayServer {
     if (status === null) {
       return;
     }
-    const documents = completedDocuments(status, completion.answer);
+    const economy = this.database.jobEconomy?.(jobId) ?? null;
+    const answer = economy
+      ? `${completion.answer}\n\n${leylobucksFooter(economy)}`
+      : completion.answer;
+    const documents = completedDocuments(status, answer);
     let message: TelegramMessage;
     if (thinkingMessageId === null) {
       message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
@@ -831,7 +840,7 @@ export class GatewayServer {
       completion.threadId,
       workerId,
       completion.usage ?? null,
-      completion.answer,
+      answer,
     );
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);

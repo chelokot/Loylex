@@ -1,11 +1,20 @@
 import type { TelegramMessage } from "../shared/types.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
-import { LoylexDatabase } from "./database.ts";
+import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
 import { responseOptions } from "./message-options.ts";
 import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
-import { helpMessage, resumeUnavailableMessage, stopResultMessage } from "./presentation.ts";
+import {
+  helpMessage,
+  leylobucksBlockedMessage,
+  leylobucksInvalidCommandMessage,
+  leylobucksPurchaseMessage,
+  leylobucksQuizMessage,
+  leylobucksStatusMessage,
+  resumeUnavailableMessage,
+  stopResultMessage,
+} from "./presentation.ts";
 import { GatewayServer } from "./server.ts";
 import { sendTasks } from "./tasks.ts";
 import { TelegramClient } from "./telegram.ts";
@@ -18,6 +27,8 @@ import {
   isStopCommand,
   isTasksCommand,
   newChatPrompt,
+  parseLeylobucksCommand,
+  parseQuizCommand,
   promptWithQuote,
   resumeTaskMessageId,
 } from "./triggers.ts";
@@ -74,6 +85,45 @@ function acknowledgeNameMistake(message: TelegramMessage): void {
       }),
     );
   });
+}
+
+function userId(message: TelegramMessage): number | null {
+  return Number.isSafeInteger(message.from?.id) ? (message.from?.id ?? null) : null;
+}
+
+function enqueueRequest(
+  database: LoylexDatabase,
+  updateId: number,
+  message: TelegramMessage,
+  prompt: string,
+  qualityText: string,
+  resumeThreadId: string | null,
+  contextMode?: "full" | "delta" | "none",
+): LeylobucksEnqueueResult {
+  if (userId(message) !== null) {
+    return database.enqueueWithLeylobucks(
+      updateId,
+      message,
+      prompt,
+      qualityText,
+      resumeThreadId,
+      contextMode,
+    );
+  }
+  database.enqueue(updateId, message, prompt, resumeThreadId, contextMode);
+  return { kind: "queued", economy: null };
+}
+
+async function sendInlineResponse(
+  telegram: TelegramClient,
+  message: TelegramMessage,
+  markdown: string,
+): Promise<void> {
+  await telegram.sendRich(
+    message.chat.id,
+    markdown,
+    responseOptions(message.chat.type, message.message_id, message.message_thread_id ?? null),
+  );
 }
 
 async function poll(): Promise<void> {
@@ -146,6 +196,29 @@ async function poll(): Promise<void> {
           continue;
         }
         acknowledgeNameMistake(message);
+        const currentUserId = userId(message);
+        const leylobucksCommand = parseLeylobucksCommand(message, bot.username);
+        if (leylobucksCommand && currentUserId !== null) {
+          const markdown =
+            leylobucksCommand.kind === "status"
+              ? leylobucksStatusMessage(database.leylobucksStatus(currentUserId))
+              : leylobucksCommand.kind === "buy"
+                ? leylobucksPurchaseMessage(
+                    database.purchaseLeylobucks(currentUserId, leylobucksCommand.cost),
+                  )
+                : leylobucksInvalidCommandMessage();
+          await sendInlineResponse(telegram, message, markdown);
+          continue;
+        }
+        const quizCommand = parseQuizCommand(message, bot.username);
+        if (quizCommand && currentUserId !== null) {
+          await sendInlineResponse(
+            telegram,
+            message,
+            leylobucksQuizMessage(database.quizLeylobucks(currentUserId, quizCommand.answer)),
+          );
+          continue;
+        }
         const cancelledMessageId = cancelTaskMessageId(message, bot.username);
         if (cancelledMessageId !== null) {
           const cancelledJobIds = database.cancelJobsForMessage(
@@ -210,6 +283,11 @@ async function poll(): Promise<void> {
         }
         const resumeMessageId = resumeTaskMessageId(message, bot.username);
         if (resumeMessageId !== null) {
+          const status = currentUserId === null ? null : database.leylobucksStatus(currentUserId);
+          if (status && status.balance < 0) {
+            await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
+            continue;
+          }
           const resumeThreadId = database.resumableThread(message.chat.id, resumeMessageId);
           if (resumeThreadId === null) {
             await telegram.sendRich(message.chat.id, resumeUnavailableMessage(), {
@@ -220,30 +298,57 @@ async function poll(): Promise<void> {
               ),
             });
           } else {
-            acknowledgeWork(message);
-            database.enqueue(
+            const prompt = promptWithQuote(
+              message,
+              "Продолжи предыдущую задачу с того места, где она остановилась.",
+            );
+            const admission = enqueueRequest(
+              database,
               update.update_id,
               message,
-              promptWithQuote(
-                message,
-                "Продолжи предыдущую задачу с того места, где она остановилась.",
-              ),
+              prompt,
+              message.text ?? message.caption ?? prompt,
               resumeThreadId,
             );
+            if (admission.kind === "blocked") {
+              await sendInlineResponse(
+                telegram,
+                message,
+                leylobucksBlockedMessage(admission.statusView),
+              );
+            } else if (admission.kind === "queued") {
+              acknowledgeWork(message);
+            }
           }
           continue;
         }
         if (message.chat.type === "private" && isNewChatCommand(message)) {
+          const status = currentUserId === null ? null : database.leylobucksStatus(currentUserId);
+          if (status && status.balance < 0) {
+            await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
+            continue;
+          }
           const prompt = newChatPrompt(message, bot.username);
           if (prompt !== null) {
-            acknowledgeWork(message);
-            database.enqueue(
+            const queuedPrompt = promptWithQuote(message, prompt);
+            const admission = enqueueRequest(
+              database,
               update.update_id,
               message,
-              promptWithQuote(message, prompt),
+              queuedPrompt,
+              prompt,
               null,
               "none",
             );
+            if (admission.kind === "blocked") {
+              await sendInlineResponse(
+                telegram,
+                message,
+                leylobucksBlockedMessage(admission.statusView),
+              );
+            } else if (admission.kind === "queued") {
+              acknowledgeWork(message);
+            }
           }
           continue;
         }
@@ -254,7 +359,11 @@ async function poll(): Promise<void> {
         if (!trigger) {
           continue;
         }
-        acknowledgeWork(message);
+        const status = currentUserId === null ? null : database.leylobucksStatus(currentUserId);
+        if (status && status.balance < 0) {
+          await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
+          continue;
+        }
         const repliedThreadId = database.resumeThread(
           message.chat.id,
           message.reply_to_message?.message_id,
@@ -264,12 +373,24 @@ async function poll(): Promise<void> {
           (message.chat.type === "private"
             ? database.latestContinuableThread(message.chat.id)
             : null);
-        database.enqueue(
+        const prompt = promptWithQuote(message, trigger.prompt);
+        const admission = enqueueRequest(
+          database,
           update.update_id,
           message,
-          promptWithQuote(message, trigger.prompt),
+          prompt,
+          trigger.prompt,
           resumeThreadId,
         );
+        if (admission.kind === "blocked") {
+          await sendInlineResponse(
+            telegram,
+            message,
+            leylobucksBlockedMessage(admission.statusView),
+          );
+        } else if (admission.kind === "queued") {
+          acknowledgeWork(message);
+        }
       }
     } catch (error) {
       console.error(

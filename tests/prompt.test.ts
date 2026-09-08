@@ -108,3 +108,21 @@ test("builds a clean new-chat prompt without archived context", () => {
   expect(prompt).not.toContain("Recent Telegram context:");
   expect(prompt).toContain("<LOYLEX_UNTRUSTED_CURRENT_REQUEST>\n\nпроверь задачу");
 });
+
+test("adds the purchased catgirl persona only to the marked request", () => {
+  const prompt = buildPrompt(
+    job({
+      leylobucks: {
+        qualityScore: 80,
+        delta: 60,
+        balance: 100,
+        catgirlMode: true,
+        catgirlMessagesLeft: 0,
+      },
+    }),
+    "",
+  );
+
+  expect(prompt).toContain("sweet, obedient anime catgirl who is also a cute wife");
+  expect(prompt).toContain("this is a tone/persona overlay");
+});
