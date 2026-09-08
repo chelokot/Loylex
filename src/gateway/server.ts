@@ -831,6 +831,7 @@ export class GatewayServer {
       completion.threadId,
       workerId,
       completion.usage ?? null,
+      completion.answer,
     );
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);

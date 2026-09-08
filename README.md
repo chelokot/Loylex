@@ -208,6 +208,11 @@ unthreaded messages.
 Rich API errors are surfaced instead of silently sending the same document as unformatted text.
 Private-chat responses are sent as ordinary messages without reply markers; group responses keep
 the reply to the triggering message.
+When the operator reacts with 👎 to a completed Loylex answer, the gateway saves the answer,
+queues one idempotent recovery job, and resumes the original Codex thread. The recovery prompt
+requires a substantive postmortem, a durable fix where appropriate, verification, and a complete
+rerun of the original task. The corrected response is sent as a new reply; a dislike on that
+recovery response does not recurse indefinitely.
 Replying `/stop` to any Loylex message belonging to an active job cancels that Codex thread,
 and Loylex replies with the cancellation result; the command is consumed and is not submitted
 as a new prompt. `/tasks` shows the five latest jobs in the current chat with their status,

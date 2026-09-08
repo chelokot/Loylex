@@ -2,6 +2,7 @@ import type { TelegramMessage } from "../shared/types.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { LoylexDatabase } from "./database.ts";
+import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
 import { responseOptions } from "./message-options.ts";
 import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
 import { helpMessage, resumeUnavailableMessage, stopResultMessage } from "./presentation.ts";
@@ -83,6 +84,44 @@ async function poll(): Promise<void> {
         await audit.append(update);
         const message = database.archiveUpdate(update);
         offset = update.update_id + 1;
+        if (update.message_reaction && isOperatorDislikeReaction(update.message_reaction)) {
+          const feedbackJobId = database.enqueueDislikeRecovery(update);
+          if (feedbackJobId !== null) {
+            const address = database.jobAddress(feedbackJobId);
+            try {
+              const acknowledgement = await telegram.sendRich(
+                address.chatId,
+                feedbackAcknowledgement(),
+                responseOptions(address.chatType, address.messageId, address.threadId),
+              );
+              database.recordOutboundMessage(
+                feedbackJobId,
+                acknowledgement.message_id,
+                database.jobThreadId(feedbackJobId),
+              );
+            } catch (error) {
+              console.log(
+                JSON.stringify({
+                  level: "warn",
+                  component: "poller",
+                  event: "feedback_acknowledgement_unavailable",
+                  jobId: feedbackJobId,
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              );
+            }
+            console.log(
+              JSON.stringify({
+                level: "info",
+                component: "poller",
+                event: "dislike_feedback_queued",
+                jobId: feedbackJobId,
+                targetMessageId: update.message_reaction.message_id,
+              }),
+            );
+          }
+          continue;
+        }
         const stopped = update.stopped_message_generation;
         if (stopped && Number.isSafeInteger(stopped.draft_id)) {
           const cancelledJobIds = database.cancelJobsForDraft(stopped.chat.id, stopped.draft_id);

@@ -13,6 +13,7 @@ import type {
   WorkerRegistration,
 } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
+import { feedbackPrompt, isOperatorDislikeReaction } from "./feedback.ts";
 import {
   defaultReadQueryRows,
   maxReadQueryResultBytes,
@@ -261,6 +262,21 @@ type ArchivedMessageRow = {
   source: string;
 };
 
+type FeedbackSourceRow = {
+  id: number;
+  chat_type: AgentJob["chatType"];
+  message_id: number;
+  message_thread_id: number | null;
+  user_id: number | null;
+  prompt: string;
+  resume_thread_id: string | null;
+  codex_thread_id: string | null;
+  attachments_json: string;
+  answer: string | null;
+  status_log: string;
+  feedback_for_job_id: number | null;
+};
+
 type UnknownRecord = Record<string, unknown>;
 
 function object(value: unknown): UnknownRecord | null {
@@ -493,6 +509,8 @@ export class LoylexDatabase {
         output_tokens INTEGER,
         reasoning_output_tokens INTEGER,
         total_tokens INTEGER,
+        answer TEXT,
+        feedback_for_job_id INTEGER,
         created_at INTEGER NOT NULL
       );
 
@@ -542,8 +560,10 @@ export class LoylexDatabase {
     this.ensureJobColumn("output_tokens", "INTEGER");
     this.ensureJobColumn("reasoning_output_tokens", "INTEGER");
     this.ensureJobColumn("total_tokens", "INTEGER");
+    this.ensureJobColumn("answer", "TEXT");
+    this.ensureJobColumn("feedback_for_job_id", "INTEGER");
     this.connection.exec(
-      "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id)",
+      "CREATE INDEX IF NOT EXISTS jobs_lease_idx ON jobs(state, lease_expires_at); CREATE INDEX IF NOT EXISTS jobs_worker_generation_idx ON jobs(worker_generation, state, created_at, id); CREATE UNIQUE INDEX IF NOT EXISTS jobs_feedback_source_idx ON jobs(feedback_for_job_id) WHERE feedback_for_job_id IS NOT NULL",
     );
     this.connection
       .query(
@@ -564,7 +584,9 @@ export class LoylexDatabase {
       | "cache_write_input_tokens"
       | "output_tokens"
       | "reasoning_output_tokens"
-      | "total_tokens",
+      | "total_tokens"
+      | "answer"
+      | "feedback_for_job_id",
     definition: string,
   ): void {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
@@ -1018,6 +1040,81 @@ export class LoylexDatabase {
         this.archiveMessage(message, "telegram_export");
       }
       return messages.length;
+    });
+    return transaction.immediate();
+  }
+
+  enqueueDislikeRecovery(update: TelegramUpdate): number | null {
+    const reaction = update.message_reaction;
+    if (!reaction || !isOperatorDislikeReaction(reaction)) {
+      return null;
+    }
+
+    const transaction = this.connection.transaction(() => {
+      const source = this.connection
+        .query<FeedbackSourceRow, [number, number]>(`
+          SELECT j.id, j.chat_type, j.message_id, j.message_thread_id, j.user_id,
+                 j.prompt, j.resume_thread_id, j.codex_thread_id, j.attachments_json,
+                 j.answer, j.status_log, j.feedback_for_job_id
+          FROM outbound_messages AS o
+          JOIN jobs AS j ON j.id = o.job_id
+          WHERE o.chat_id = ?
+            AND o.message_id = ?
+            AND j.state = 'completed'
+            AND j.feedback_for_job_id IS NULL
+          ORDER BY j.id DESC
+          LIMIT 1
+        `)
+        .get(reaction.chat.id, reaction.message_id);
+      if (!source) {
+        return null;
+      }
+
+      // Private Codex threads are owned by the user who started them. Group threads are public
+      // and may be repaired by the operator after reviewing another participant's answer.
+      if (source.chat_type === "private" && source.user_id !== reaction.user?.id) {
+        return null;
+      }
+
+      const resumeThreadId = source.codex_thread_id ?? source.resume_thread_id;
+      const inserted = this.connection
+        .query(`
+          INSERT OR IGNORE INTO jobs (
+            update_id, chat_id, chat_type, message_id, message_thread_id, user_id, prompt,
+            resume_thread_id, context_mode, attachments_json, worker_generation,
+            feedback_for_job_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          update.update_id,
+          reaction.chat.id,
+          source.chat_type,
+          reaction.message_id,
+          source.message_thread_id,
+          reaction.user?.id ?? null,
+          feedbackPrompt({
+            jobId: source.id,
+            prompt: source.prompt,
+            answer: source.answer,
+            statusLog: source.status_log,
+            targetMessageId: reaction.message_id,
+          }),
+          resumeThreadId,
+          resumeThreadId === null ? "none" : "delta",
+          source.attachments_json,
+          this.activeWorkerGeneration(),
+          source.id,
+          Date.now(),
+        );
+      if (inserted.changes === 0) {
+        return null;
+      }
+
+      return (
+        this.connection
+          .query<{ id: number }, [number]>("SELECT id FROM jobs WHERE update_id = ?")
+          .get(update.update_id)?.id ?? null
+      );
     });
     return transaction.immediate();
   }
@@ -2257,6 +2354,7 @@ export class LoylexDatabase {
     codexThreadId: string,
     workerId?: string,
     usage: AgentTokenUsage | null = null,
+    answer: string | null = null,
   ): boolean {
     const address = this.jobAddress(jobId);
     const transaction = this.connection.transaction(() => {
@@ -2267,6 +2365,7 @@ export class LoylexDatabase {
               completed_at = ?,
               codex_thread_id = COALESCE(?, codex_thread_id),
               thinking_message_id = COALESCE(?, thinking_message_id),
+              answer = COALESCE(?, answer),
               input_tokens = COALESCE(?, input_tokens),
               cached_input_tokens = COALESCE(?, cached_input_tokens),
               cache_write_input_tokens = COALESCE(?, cache_write_input_tokens),
@@ -2280,6 +2379,7 @@ export class LoylexDatabase {
           Date.now(),
           codexThreadId,
           answerMessageId,
+          answer,
           usage?.inputTokens ?? null,
           usage?.cachedInputTokens ?? null,
           usage?.cacheWriteInputTokens ?? null,
