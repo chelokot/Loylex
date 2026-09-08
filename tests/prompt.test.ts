@@ -45,6 +45,10 @@ test("builds a full initial prompt with the current request separate from histor
     "The built-in image generation tool displays its result inside the Codex session, but that does not deliver the image to Telegram.",
   );
   expect(prompt).toContain("`loylex upload CHAT_ID PATH [CAPTION]`");
+  expect(prompt).toContain("`loylex upload-animation CHAT_ID PATH [CAPTION]`");
+  expect(prompt).toContain(
+    "The generic `loylex upload` also routes a `.gif` to the animation endpoint",
+  );
   expect(prompt).toContain("For complete archive analysis, use `loylex query 'SELECT ...'");
   expect(prompt).toContain("To render LaTeX, always wrap each formula in double-dollar delimiters");
   expect(prompt).toContain(

@@ -336,6 +336,39 @@ test("sends a document in the requested Telegram thread and reply", async () => 
   expect(requestBody?.get("message_thread_id")).toBe("12");
 });
 
+test("sends an animation in the requested Telegram thread and reply", async () => {
+  let requestBody: FormData | undefined;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/sendAnimation");
+    requestBody = init?.body as FormData;
+    return Response.json({
+      ok: true,
+      result: { message_id: 23, date: 1, chat: { id: 42, type: "supergroup" } },
+    });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(
+    client.sendAnimation(
+      42,
+      new File(["animation"], "reaction.gif", { type: "image/gif" }),
+      "reaction.gif",
+      "Реакция",
+      { replyTo: 17, threadId: 12 },
+    ),
+  ).resolves.toMatchObject({ message_id: 23 });
+
+  expect(requestBody).toBeDefined();
+  expect(requestBody?.get("chat_id")).toBe("42");
+  expect((requestBody?.get("animation") as File).name).toBe("reaction.gif");
+  expect(requestBody?.get("caption")).toBe("Реакция");
+  expect(JSON.parse(String(requestBody?.get("reply_parameters")))).toEqual({
+    message_id: 17,
+    allow_sending_without_reply: true,
+  });
+  expect(requestBody?.get("message_thread_id")).toBe("12");
+});
+
 test("sends a voice message in the requested Telegram thread and reply", async () => {
   let requestBody: FormData | undefined;
   globalThis.fetch = (async (input, init) => {

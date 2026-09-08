@@ -1,5 +1,5 @@
 import { rename, rm, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, extname } from "node:path";
 import {
   defaultReadQueryRows,
   isReadQueryParameters,
@@ -535,7 +535,30 @@ async function run(): Promise<void> {
     if (caption.length > 0) {
       form.set("caption", caption.join(" "));
     }
-    const result = await requestJson("/v1/telegram/upload", { method: "POST", body: form }, false);
+    const endpoint =
+      extname(path).toLowerCase() === ".gif"
+        ? "/v1/telegram/upload-animation"
+        : "/v1/telegram/upload";
+    const result = await requestJson(endpoint, { method: "POST", body: form }, false);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "upload-animation") {
+    const [chatId, path, ...caption] = arguments_;
+    if (!chatId || !path) {
+      throw new Error("Usage: loylex upload-animation CHAT_ID FILE [CAPTION]");
+    }
+    const form = new FormData();
+    form.set("chat_id", chatId);
+    form.set("file", Bun.file(path), basename(path));
+    if (caption.length > 0) {
+      form.set("caption", caption.join(" "));
+    }
+    const result = await requestJson(
+      "/v1/telegram/upload-animation",
+      { method: "POST", body: form },
+      false,
+    );
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -606,7 +629,7 @@ async function run(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|telegram|send-thread|delete|forward|copy|edit-caption|media|upload|upload-voice|upload-album|system>",
+    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|telegram|send-thread|delete|forward|copy|edit-caption|media|upload|upload-animation|upload-voice|upload-album|system>",
   );
 }
 

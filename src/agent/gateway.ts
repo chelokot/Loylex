@@ -12,7 +12,7 @@ const generatedImageMimeTypes: Record<string, string> = {
   ".png": "image/png",
   ".webp": "image/webp",
 };
-const maximumTelegramDocumentBytes = 50 * 1024 * 1024;
+const maximumTelegramUploadBytes = 50 * 1024 * 1024;
 
 export class GatewayClient {
   private readonly workerId = randomUUID();
@@ -126,9 +126,30 @@ export class GatewayClient {
     path: string,
     options: { caption?: string | null; replyTo?: number; threadId?: number | null } = {},
   ): Promise<{ chatId: number; messageId: number }> {
+    const endpoint =
+      extname(path).toLowerCase() === ".gif"
+        ? "/v1/telegram/upload-animation"
+        : "/v1/telegram/upload";
+    return this.uploadFileToEndpoint(chatId, path, options, endpoint);
+  }
+
+  async uploadAnimationFile(
+    chatId: number,
+    path: string,
+    options: { caption?: string | null; replyTo?: number; threadId?: number | null } = {},
+  ): Promise<{ chatId: number; messageId: number }> {
+    return this.uploadFileToEndpoint(chatId, path, options, "/v1/telegram/upload-animation");
+  }
+
+  private async uploadFileToEndpoint(
+    chatId: number,
+    path: string,
+    options: { caption?: string | null; replyTo?: number; threadId?: number | null },
+    endpoint: string,
+  ): Promise<{ chatId: number; messageId: number }> {
     const bytes = await readFile(path);
-    if (bytes.byteLength > maximumTelegramDocumentBytes) {
-      throw new Error(`file is larger than ${maximumTelegramDocumentBytes} bytes`);
+    if (bytes.byteLength > maximumTelegramUploadBytes) {
+      throw new Error(`file is larger than ${maximumTelegramUploadBytes} bytes`);
     }
     const filename = basename(path);
     const form = new FormData();
@@ -151,7 +172,7 @@ export class GatewayClient {
     }
     return retryTransient(() =>
       this.request<{ chatId: number; messageId: number }>(
-        "/v1/telegram/upload",
+        endpoint,
         { method: "POST", body: form },
         120_000,
       ),

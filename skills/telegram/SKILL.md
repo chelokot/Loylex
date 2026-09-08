@@ -20,7 +20,11 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
   archive.
 - `loylex delete CHAT_ID MESSAGE_ID` asks Telegram to delete one live message in a chat
   already present in the archive. It does not remove the archived copy.
-- `loylex upload CHAT_ID FILE [CAPTION]` uploads a local file as a document.
+- `loylex upload CHAT_ID FILE [CAPTION]` uploads a local file; static files go as documents,
+  while a `.gif` is automatically sent as a Telegram animation.
+- `loylex upload-animation CHAT_ID FILE [CAPTION]` sends a GIF or silent H.264/MPEG-4 animation
+  through Telegram's `sendAnimation` method. Use this for GIFs instead of forcing them through
+  `sendDocument`; animation uploads are limited to 50 MB by the Bot API.
 - `loylex upload-voice CHAT_ID FILE [CAPTION]` uploads a local OGG/Opus file as a Telegram
   voice message.
 

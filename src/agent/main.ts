@@ -86,7 +86,9 @@ async function reportProgress(
 }
 
 function isMediaUploadCommand(event: Parameters<GatewayClient["event"]>[1]): boolean {
-  return event.kind === "command" && /\bloylex\s+upload(?:-album|-voice)?\b/i.test(event.text);
+  return (
+    event.kind === "command" && /\bloylex\s+upload(?:-album|-animation|-voice)?\b/i.test(event.text)
+  );
 }
 
 async function processJob(job: AgentJob): Promise<void> {
