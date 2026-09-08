@@ -102,6 +102,7 @@ export class GatewayServer {
     private readonly config: GatewayConfig,
     private readonly database: LoylexDatabase,
     private readonly telegram: TelegramClient,
+    private readonly isLeylobucksEnabled: (chatId: number) => boolean = () => true,
   ) {}
 
   start(): void {
@@ -152,7 +153,11 @@ export class GatewayServer {
       if (request.method === "GET" && url.pathname === "/v1/jobs/next") {
         const currentWorkerId = workerId(request);
         const response = json(
-          this.database.claimNext(this.config.contextMessages, currentWorkerId ?? null),
+          this.database.claimNext(
+            this.config.contextMessages,
+            currentWorkerId ?? null,
+            this.isLeylobucksEnabled,
+          ),
         );
         if (currentWorkerId !== undefined && this.database.shouldDrainWorker(currentWorkerId)) {
           response.headers.set("x-loylex-drain", "true");
@@ -806,7 +811,9 @@ export class GatewayServer {
     if (status === null) {
       return;
     }
-    const economy = this.database.jobEconomy?.(jobId) ?? null;
+    const economy = this.isLeylobucksEnabled(address.chatId)
+      ? (this.database.jobEconomy?.(jobId) ?? null)
+      : null;
     const answer = economy
       ? `${completion.answer}\n\n${leylobucksFooter(economy)}`
       : completion.answer;

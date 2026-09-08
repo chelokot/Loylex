@@ -2053,7 +2053,11 @@ export class LoylexDatabase {
     return work === 0;
   }
 
-  claimNext(contextMessages: number, workerId: string | null = null): AgentJob | null {
+  claimNext(
+    contextMessages: number,
+    workerId: string | null = null,
+    isLeylobucksEnabled: (chatId: number) => boolean = () => true,
+  ): AgentJob | null {
     const transaction = this.connection.transaction(() => {
       const now = Date.now();
       this.recoverExpiredLeasesInTransaction(now);
@@ -2159,6 +2163,7 @@ export class LoylexDatabase {
       row.resume_thread_id,
       row.context_mode,
     );
+    const leylobucksEnabled = isLeylobucksEnabled(row.chat_id);
     return {
       id: row.id,
       updateId: row.update_id,
@@ -2177,7 +2182,7 @@ export class LoylexDatabase {
           ? null
           : this.replyContext(row.chat_id, row.message_id),
       attachments: JSON.parse(row.attachments_json) as JsonValue[],
-      ...(row.economy_balance_after === null
+      ...(!leylobucksEnabled || row.economy_balance_after === null
         ? {}
         : {
             leylobucks: {

@@ -16,6 +16,7 @@ const quizPattern = /^\/(?:quiz|викторина)(?:@([a-z0-9_]+))?(?:\s+([\s\
 export type LeylobucksCommand =
   | { kind: "status" }
   | { kind: "buy"; cost: 100 | 250 | 500 }
+  | { kind: "toggle"; enabled: boolean }
   | { kind: "invalid" };
 
 export type QuizCommand = { answer: string | null };
@@ -113,6 +114,12 @@ function parseLeylobucksArgument(argument: string | undefined): LeylobucksComman
   const normalized = argument?.trim() ?? "";
   if (!normalized || /^(?:status|баланс|магазин|shop)$/iu.test(normalized)) {
     return { kind: "status" };
+  }
+  if (/^(?:on|вкл|включить)$/iu.test(normalized)) {
+    return { kind: "toggle", enabled: true };
+  }
+  if (/^(?:off|выкл|выключить)$/iu.test(normalized)) {
+    return { kind: "toggle", enabled: false };
   }
   const buy =
     normalized.match(/^(?:buy|купить)\s+(100|250|500)$/iu) ?? normalized.match(/^(100|250|500)$/u);

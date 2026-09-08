@@ -3,12 +3,14 @@ import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
+import { LeylobucksMode } from "./leylobucks-mode.ts";
 import { responseOptions } from "./message-options.ts";
 import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
 import {
   helpMessage,
   leylobucksBlockedMessage,
   leylobucksInvalidCommandMessage,
+  leylobucksModeMessage,
   leylobucksPurchaseMessage,
   leylobucksQuizMessage,
   leylobucksStatusMessage,
@@ -39,10 +41,13 @@ await audit.assertReady();
 const database = new LoylexDatabase(config.databasePath);
 const telegram = new TelegramClient(config.botToken);
 const bot = await telegram.getMe();
+const leylobucksMode = new LeylobucksMode();
 
 await telegram.call("deleteWebhook", { drop_pending_updates: false });
 await telegram.setCommands();
-const server = new GatewayServer(config, database, telegram);
+const server = new GatewayServer(config, database, telegram, (chatId) =>
+  leylobucksMode.isEnabled(chatId),
+);
 server.start();
 
 let stopping = false;
@@ -99,8 +104,9 @@ function enqueueRequest(
   qualityText: string,
   resumeThreadId: string | null,
   contextMode?: "full" | "delta" | "none",
+  leylobucksEnabled = true,
 ): LeylobucksEnqueueResult {
-  if (userId(message) !== null) {
+  if (leylobucksEnabled && userId(message) !== null) {
     return database.enqueueWithLeylobucks(
       updateId,
       message,
@@ -197,21 +203,36 @@ async function poll(): Promise<void> {
         }
         acknowledgeNameMistake(message);
         const currentUserId = userId(message);
+        const economyEnabled = leylobucksMode.isEnabled(message.chat.id);
         const leylobucksCommand = parseLeylobucksCommand(message, bot.username);
         if (leylobucksCommand && currentUserId !== null) {
-          const markdown =
-            leylobucksCommand.kind === "status"
-              ? leylobucksStatusMessage(database.leylobucksStatus(currentUserId))
-              : leylobucksCommand.kind === "buy"
-                ? leylobucksPurchaseMessage(
-                    database.purchaseLeylobucks(currentUserId, leylobucksCommand.cost),
-                  )
-                : leylobucksInvalidCommandMessage();
-          await sendInlineResponse(telegram, message, markdown);
-          continue;
+          if (leylobucksCommand.kind === "toggle") {
+            leylobucksMode.setEnabled(message.chat.id, leylobucksCommand.enabled);
+            await sendInlineResponse(
+              telegram,
+              message,
+              leylobucksModeMessage(leylobucksCommand.enabled),
+            );
+            continue;
+          }
+          if (economyEnabled) {
+            const markdown =
+              leylobucksCommand.kind === "status"
+                ? leylobucksStatusMessage(database.leylobucksStatus(currentUserId))
+                : leylobucksCommand.kind === "buy"
+                  ? leylobucksPurchaseMessage(
+                      database.purchaseLeylobucks(currentUserId, leylobucksCommand.cost),
+                    )
+                  : leylobucksInvalidCommandMessage();
+            await sendInlineResponse(telegram, message, markdown);
+            continue;
+          }
+          if (isSlashCommand(message)) {
+            continue;
+          }
         }
         const quizCommand = parseQuizCommand(message, bot.username);
-        if (quizCommand && currentUserId !== null) {
+        if (economyEnabled && quizCommand && currentUserId !== null) {
           await sendInlineResponse(
             telegram,
             message,
@@ -272,7 +293,7 @@ async function poll(): Promise<void> {
           continue;
         }
         if (isHelpCommand(message, bot.username)) {
-          await telegram.sendRich(message.chat.id, helpMessage(), {
+          await telegram.sendRich(message.chat.id, helpMessage(economyEnabled), {
             ...responseOptions(
               message.chat.type,
               message.message_id,
@@ -283,8 +304,11 @@ async function poll(): Promise<void> {
         }
         const resumeMessageId = resumeTaskMessageId(message, bot.username);
         if (resumeMessageId !== null) {
-          const status = currentUserId === null ? null : database.leylobucksStatus(currentUserId);
-          if (status && status.balance < 0) {
+          const status =
+            economyEnabled && currentUserId !== null
+              ? database.leylobucksStatus(currentUserId)
+              : null;
+          if (economyEnabled && status && status.balance < 0) {
             await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
             continue;
           }
@@ -309,6 +333,8 @@ async function poll(): Promise<void> {
               prompt,
               message.text ?? message.caption ?? prompt,
               resumeThreadId,
+              undefined,
+              economyEnabled,
             );
             if (admission.kind === "blocked") {
               await sendInlineResponse(
@@ -323,8 +349,11 @@ async function poll(): Promise<void> {
           continue;
         }
         if (message.chat.type === "private" && isNewChatCommand(message)) {
-          const status = currentUserId === null ? null : database.leylobucksStatus(currentUserId);
-          if (status && status.balance < 0) {
+          const status =
+            economyEnabled && currentUserId !== null
+              ? database.leylobucksStatus(currentUserId)
+              : null;
+          if (economyEnabled && status && status.balance < 0) {
             await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
             continue;
           }
@@ -339,6 +368,7 @@ async function poll(): Promise<void> {
               prompt,
               null,
               "none",
+              economyEnabled,
             );
             if (admission.kind === "blocked") {
               await sendInlineResponse(
@@ -359,8 +389,11 @@ async function poll(): Promise<void> {
         if (!trigger) {
           continue;
         }
-        const status = currentUserId === null ? null : database.leylobucksStatus(currentUserId);
-        if (status && status.balance < 0) {
+        const status =
+          economyEnabled && currentUserId !== null
+            ? database.leylobucksStatus(currentUserId)
+            : null;
+        if (economyEnabled && status && status.balance < 0) {
           await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
           continue;
         }
@@ -381,6 +414,8 @@ async function poll(): Promise<void> {
           prompt,
           trigger.prompt,
           resumeThreadId,
+          undefined,
+          economyEnabled,
         );
         if (admission.kind === "blocked") {
           await sendInlineResponse(

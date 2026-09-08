@@ -4,6 +4,8 @@ import {
   completedDocuments,
   failedDocument,
   failureMessage,
+  helpMessage,
+  leylobucksModeMessage,
   stopResultMessage,
   toolsDocument,
   toolUsages,
@@ -124,6 +126,12 @@ test("keeps the work summary stable across repeated renders", () => {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     expect(workDocument("status: Готово")).toBe(expected);
   }
+});
+
+test("hides Loylebucks help in the disabled runtime mode", () => {
+  expect(helpMessage(false)).not.toContain("/bucks");
+  expect(helpMessage(true)).toContain("/bucks");
+  expect(leylobucksModeMessage(false)).toContain("Сохранённые балансы и история");
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {

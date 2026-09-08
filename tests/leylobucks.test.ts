@@ -112,6 +112,28 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 
+  test("plain enqueue leaves the economy untouched for the disabled mode", () => {
+    const database = setup();
+    const incoming = message(4, "обычный запрос без лейлобаксов");
+    database.archiveMessage(incoming, "bot_api");
+
+    database.enqueue(4, incoming, incoming.text ?? "", null);
+    const job = database.claimNext(10, null, () => false);
+
+    expect(job?.leylobucks).toBeUndefined();
+    expect(database.leylobucksStatus(7)).toMatchObject({
+      balance: 0,
+      catgirlMessages: 0,
+      quiz: null,
+    });
+    expect(
+      database.connection
+        .query<{ count: number }, []>("SELECT count(*) AS count FROM leylobucks_transactions")
+        .get()?.count,
+    ).toBe(0);
+    database.close();
+  });
+
   test("caps rewards at 500 and sells the three requested packages", () => {
     const database = setup();
     setBalance(database, 490);

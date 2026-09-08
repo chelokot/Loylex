@@ -134,6 +134,14 @@ describe("detectTrigger", () => {
     expect(parseLeylobucksCommand(message("/bucks buy 50"), "LoylexBot")).toEqual({
       kind: "invalid",
     });
+    expect(parseLeylobucksCommand(message("/bucks off"), "LoylexBot")).toEqual({
+      kind: "toggle",
+      enabled: false,
+    });
+    expect(parseLeylobucksCommand(message("лейлобаксы включить"), "LoylexBot")).toEqual({
+      kind: "toggle",
+      enabled: true,
+    });
     expect(parseLeylobucksCommand(message("/bucks@OtherBot"), "LoylexBot")).toBeNull();
   });
 

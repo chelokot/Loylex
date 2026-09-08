@@ -227,6 +227,46 @@ test("sends a new final reply and removes the temporary progress message", async
   });
 });
 
+test("omits the Loylebucks footer when the chat mode is disabled", async () => {
+  const sent: string[] = [];
+  const database = {
+    jobAddress: () => ({
+      chatId: -10042,
+      chatType: "supergroup" as const,
+      messageId: 10,
+      threadId: null,
+    }),
+    thinkingMessage: () => null,
+    isJobCancelled: () => false,
+    appendStatus: () => "status: Готово",
+    recordOutboundMessage: () => {},
+    complete: () => {},
+    jobEconomy: () => ({
+      qualityScore: 20,
+      delta: -10,
+      balance: -10,
+      catgirlMode: false,
+      catgirlMessagesLeft: 0,
+    }),
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    sendRich: async (_chatId: number, markdown: string) => {
+      sent.push(markdown);
+      return botMessage(12);
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram, () => false);
+  const complete = (
+    server as unknown as {
+      complete: (jobId: number, completion: AgentCompletion) => Promise<void>;
+    }
+  ).complete;
+
+  await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
+
+  expect(sent.join("\n")).not.toContain("Лейлобаксы");
+});
+
 test("finishes a completion retry after its final status was already recorded", async () => {
   let completed = false;
   const database = {
