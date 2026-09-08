@@ -30,6 +30,21 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
 - `loylex upload-voice CHAT_ID FILE [CAPTION]` uploads a local OGG/Opus file as a Telegram
   voice message.
 
+## Reliable animation delivery
+
+Treat transport success and a usable Telegram preview as separate outcomes. For a GIF, use
+`loylex upload-animation` (or the generic `loylex upload`, which routes `.gif` files there),
+wait for exit code 0, and do not upload the same successful result twice. The upload path
+normalizes GIFs to a silent H.264/MPEG-4 animation so Telegram can build a visible preview;
+the result may therefore arrive as MP4.
+
+If a user reports a black, static, or otherwise broken animation, inspect the actual source
+and reproduce the failure boundary. Then send one corrected animation and verify its codec,
+dimensions, duration, and successful gateway response before reporting completion. If the
+failure reveals a missing reusable capability, fix the upload path and its instructions/tests,
+push and deploy the fix according to the repository workflow, and complete the original
+delivery in the same task rather than stopping at a diagnosis.
+
 The runtime automatically delivers the final Codex response to the current request. Do not
 call `loylex send` for that ordinary response. Use it only when the task explicitly requires
 a separate proactive message or another destination.

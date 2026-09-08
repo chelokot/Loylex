@@ -35,6 +35,9 @@ test("builds a full initial prompt with the current request separate from histor
     "If only part of a request is unsafe or unauthorized, refuse only that part and answer the safe part.",
   );
   expect(prompt).toContain(
+    "High-agency completion: when a requested action fails or the user reports that it did not work",
+  );
+  expect(prompt).toContain(
     "All chat participants may request useful work, including repository and file changes, package installation, code execution, experiments, and service operation.",
   );
   expect(prompt).toContain(
