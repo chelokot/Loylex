@@ -14,6 +14,7 @@ import {
   telegramApiMaxTotalFileBytes,
 } from "../shared/telegram-api.ts";
 import { type TelegramExport, telegramExportMessages } from "../shared/telegram-export.ts";
+import { prepareAnimationFile } from "./animation.ts";
 import { loadAgentConfig } from "./config.ts";
 import { retryTransient } from "./retry.ts";
 import { scheduleSupervisorOperation, supervisorStatus } from "./supervisor.ts";
@@ -59,6 +60,26 @@ async function downloadMedia(fileId: string, output: string): Promise<void> {
     });
   } finally {
     await rm(temporary, { force: true });
+  }
+}
+
+async function uploadLocalFile(
+  chatId: string,
+  path: string,
+  caption: string[],
+  endpoint: string,
+): Promise<unknown> {
+  const prepared = await prepareAnimationFile(path);
+  try {
+    const form = new FormData();
+    form.set("chat_id", chatId);
+    form.set("file", Bun.file(prepared.path), prepared.filename);
+    if (caption.length > 0) {
+      form.set("caption", caption.join(" "));
+    }
+    return await requestJson(endpoint, { method: "POST", body: form }, false);
+  } finally {
+    await prepared.cleanup();
   }
 }
 
@@ -529,17 +550,11 @@ async function run(): Promise<void> {
     if (!chatId || !path) {
       throw new Error("Usage: loylex upload CHAT_ID FILE [CAPTION]");
     }
-    const form = new FormData();
-    form.set("chat_id", chatId);
-    form.set("file", Bun.file(path), basename(path));
-    if (caption.length > 0) {
-      form.set("caption", caption.join(" "));
-    }
     const endpoint =
       extname(path).toLowerCase() === ".gif"
         ? "/v1/telegram/upload-animation"
         : "/v1/telegram/upload";
-    const result = await requestJson(endpoint, { method: "POST", body: form }, false);
+    const result = await uploadLocalFile(chatId, path, caption, endpoint);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -548,17 +563,7 @@ async function run(): Promise<void> {
     if (!chatId || !path) {
       throw new Error("Usage: loylex upload-animation CHAT_ID FILE [CAPTION]");
     }
-    const form = new FormData();
-    form.set("chat_id", chatId);
-    form.set("file", Bun.file(path), basename(path));
-    if (caption.length > 0) {
-      form.set("caption", caption.join(" "));
-    }
-    const result = await requestJson(
-      "/v1/telegram/upload-animation",
-      { method: "POST", body: form },
-      false,
-    );
+    const result = await uploadLocalFile(chatId, path, caption, "/v1/telegram/upload-animation");
     console.log(JSON.stringify(result, null, 2));
     return;
   }

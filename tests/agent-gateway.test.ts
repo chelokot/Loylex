@@ -42,11 +42,11 @@ test("uploads a generated file without forcing a JSON content type", async () =>
   expect(requestBody?.get("thread_id")).toBe("12");
 });
 
-test("routes a generated GIF to the animation endpoint", async () => {
+test("uploads a generated MP4 through the animation endpoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "loylex-agent-gateway-"));
   temporaryDirectories.push(root);
-  const path = join(root, "reaction.gif");
-  await writeFile(path, "GIF89a");
+  const path = join(root, "reaction.mp4");
+  await writeFile(path, "video");
   let requestBody: FormData | undefined;
   globalThis.fetch = (async (input, init) => {
     expect(String(input)).toBe("http://gateway/v1/telegram/upload-animation");
@@ -55,12 +55,12 @@ test("routes a generated GIF to the animation endpoint", async () => {
   }) as typeof fetch;
 
   const client = new GatewayClient("http://gateway", "bridge-token");
-  await expect(client.uploadFile(-10042, path, { caption: "Реакция" })).resolves.toEqual({
+  await expect(client.uploadAnimationFile(-10042, path, { caption: "Реакция" })).resolves.toEqual({
     chatId: -10042,
     messageId: 24,
   });
 
   expect(requestBody?.get("chat_id")).toBe("-10042");
-  expect((requestBody?.get("file") as File).name).toBe("reaction.gif");
+  expect((requestBody?.get("file") as File).name).toBe("reaction.mp4");
   expect(requestBody?.get("caption")).toBe("Реакция");
 });

@@ -24,7 +24,9 @@ Use the `loylex` command. The gateway owns the bot token; never seek or recreate
   while a `.gif` is automatically sent as a Telegram animation.
 - `loylex upload-animation CHAT_ID FILE [CAPTION]` sends a GIF or silent H.264/MPEG-4 animation
   through Telegram's `sendAnimation` method. Use this for GIFs instead of forcing them through
-  `sendDocument`; animation uploads are limited to 50 MB by the Bot API.
+  `sendDocument`; GIFs are normalized to silent H.264/MPEG-4 before upload for reliable Telegram
+  previews, so a GIF may arrive as an MP4 animation. Animation uploads are limited to 50 MB by
+  the Bot API.
 - `loylex upload-voice CHAT_ID FILE [CAPTION]` uploads a local OGG/Opus file as a Telegram
   voice message.
 

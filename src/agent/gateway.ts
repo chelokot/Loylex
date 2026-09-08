@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { extname } from "node:path";
 import type { AgentCompletion, AgentEvent, AgentJob, WorkerRegistration } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
+import { prepareAnimationFile } from "./animation.ts";
 import { retryTransient } from "./retry.ts";
 
 const generatedImageMimeTypes: Record<string, string> = {
   ".gif": "image/gif",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
+  ".mp4": "video/mp4",
   ".png": "image/png",
   ".webp": "image/webp",
 };
@@ -147,36 +149,41 @@ export class GatewayClient {
     options: { caption?: string | null; replyTo?: number; threadId?: number | null },
     endpoint: string,
   ): Promise<{ chatId: number; messageId: number }> {
-    const bytes = await readFile(path);
-    if (bytes.byteLength > maximumTelegramUploadBytes) {
-      throw new Error(`file is larger than ${maximumTelegramUploadBytes} bytes`);
+    const prepared = await prepareAnimationFile(path);
+    try {
+      const bytes = await readFile(prepared.path);
+      if (bytes.byteLength > maximumTelegramUploadBytes) {
+        throw new Error(`file is larger than ${maximumTelegramUploadBytes} bytes`);
+      }
+      const filename = prepared.filename;
+      const form = new FormData();
+      form.set("chat_id", String(chatId));
+      form.set(
+        "file",
+        new File([bytes], filename, {
+          type:
+            generatedImageMimeTypes[extname(filename).toLowerCase()] ?? "application/octet-stream",
+        }),
+      );
+      if (options.caption) {
+        form.set("caption", options.caption);
+      }
+      if (options.replyTo !== undefined) {
+        form.set("reply_to", String(options.replyTo));
+      }
+      if (options.threadId !== undefined && options.threadId !== null) {
+        form.set("thread_id", String(options.threadId));
+      }
+      return await retryTransient(() =>
+        this.request<{ chatId: number; messageId: number }>(
+          endpoint,
+          { method: "POST", body: form },
+          120_000,
+        ),
+      );
+    } finally {
+      await prepared.cleanup();
     }
-    const filename = basename(path);
-    const form = new FormData();
-    form.set("chat_id", String(chatId));
-    form.set(
-      "file",
-      new File([bytes], filename, {
-        type:
-          generatedImageMimeTypes[extname(filename).toLowerCase()] ?? "application/octet-stream",
-      }),
-    );
-    if (options.caption) {
-      form.set("caption", options.caption);
-    }
-    if (options.replyTo !== undefined) {
-      form.set("reply_to", String(options.replyTo));
-    }
-    if (options.threadId !== undefined && options.threadId !== null) {
-      form.set("thread_id", String(options.threadId));
-    }
-    return retryTransient(() =>
-      this.request<{ chatId: number; messageId: number }>(
-        endpoint,
-        { method: "POST", body: form },
-        120_000,
-      ),
-    );
   }
 
   event(jobId: number, event: AgentEvent): Promise<{ ok: true }> {
