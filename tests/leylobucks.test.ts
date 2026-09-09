@@ -201,6 +201,41 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 
+  test("can be started with a positive balance and preserves it after passing", () => {
+    const database = setup();
+    setBalance(database, 120);
+    const started = database.quizLeylobucks(7);
+    expect(started.kind).toBe("started");
+    expect(started.questionCount).toBe(5);
+
+    for (let index = 0; index < 5; index += 1) {
+      const correct = correctAnswer(database);
+      const action = database.quizLeylobucks(7, correct);
+      if (index < 4) {
+        expect(action.kind).toBe("next");
+      } else {
+        expect(action.kind).toBe("passed");
+        expect(action.correctCount).toBe(5);
+      }
+    }
+
+    expect(database.leylobucksStatus(7)).toMatchObject({
+      balance: 120,
+      nextQuizSize: 5,
+      quiz: null,
+    });
+    expect(
+      database.connection
+        .query<{ delta: number; balance_after: number }, [number]>(`
+          SELECT delta, balance_after
+          FROM leylobucks_transactions
+          WHERE user_id = ? AND reason = 'quiz_passed'
+        `)
+        .get(7),
+    ).toEqual({ delta: 0, balance_after: 120 });
+    database.close();
+  });
+
   test("increases the next quiz after a failed attempt", () => {
     const database = setup();
     setBalance(database, -1);

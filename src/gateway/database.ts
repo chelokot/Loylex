@@ -151,7 +151,7 @@ export type LeylobucksPurchaseResult = {
 };
 
 export type LeylobucksQuizAction = {
-  kind: "started" | "in_progress" | "next" | "invalid_answer" | "passed" | "failed" | "not_in_debt";
+  kind: "started" | "in_progress" | "next" | "invalid_answer" | "passed" | "failed";
   status: LeylobucksStatus;
   question: LeylobucksQuizQuestionView | null;
   correct: boolean | null;
@@ -1501,18 +1501,6 @@ export class LoylexDatabase {
   quizLeylobucks(userId: number, answer: string | null = null): LeylobucksQuizAction {
     const transaction = this.connection.transaction(() => {
       const account = this.ensureLeylobucksAccount(userId);
-      if (account.balance >= 0) {
-        return {
-          kind: "not_in_debt" as const,
-          status: this.leylobucksStatusView(userId),
-          question: null,
-          correct: null,
-          questionCount: null,
-          correctCount: null,
-          nextQuizSize: null,
-        };
-      }
-
       let session = this.connection
         .query<LeylobucksQuizSessionRow, [number]>(`
           SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
@@ -1614,23 +1602,25 @@ export class LoylexDatabase {
       const now = Date.now();
       const passingScore = quizPassingScore(session.question_count);
       if (correctCount >= passingScore) {
-        const forgivenDebt = -account.balance;
+        const balanceAfterQuiz = account.balance < 0 ? 0 : account.balance;
+        const quizDelta = balanceAfterQuiz - account.balance;
         this.connection
           .query(`
             UPDATE leylobucks_accounts
-            SET balance = 0, next_quiz_size = ?, updated_at = ?
+            SET balance = ?, next_quiz_size = ?, updated_at = ?
             WHERE user_id = ?
           `)
-          .run(leylobucksInitialQuizSize, now, userId);
+          .run(balanceAfterQuiz, leylobucksInitialQuizSize, now, userId);
         this.connection
           .query(`
             INSERT INTO leylobucks_transactions (
               user_id, delta, balance_after, reason, update_id, job_id, metadata_json, created_at
-            ) VALUES (?, ?, 0, 'quiz_passed', NULL, NULL, ?, ?)
+            ) VALUES (?, ?, ?, 'quiz_passed', NULL, NULL, ?, ?)
           `)
           .run(
             userId,
-            forgivenDebt,
+            quizDelta,
+            balanceAfterQuiz,
             JSON.stringify({ questions: session.question_count, correct: correctCount }),
             now,
           );

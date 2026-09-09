@@ -200,7 +200,7 @@ export function helpMessage(leylobucksEnabled = true): string {
     lines.splice(
       5,
       0,
-      "`/bucks` — баланс и магазин лейлобаксов; `/bucks buy 100` — купить 1 сообщение в режиме милой аниме-кошкодевочки-жены; `/bucks on` и `/bucks off` — включить или выключить режим для этого чата. При отрицательном балансе `/quiz` запускает викторину.",
+      "`/bucks` — баланс и магазин лейлобаксов; `/bucks buy 100` — купить 1 сообщение в режиме милой аниме-кошкодевочки-жены; `/bucks on` и `/bucks off` — включить или выключить режим для этого чата. `/quiz` — пройти викторину в любое время.",
     );
   }
   return lines.join("\n");
@@ -285,7 +285,10 @@ export function leylobucksStatusMessage(status: LeylobucksStatus): string {
       ),
     );
   } else {
-    lines.push("", "Команды: `/bucks`, `/bucks buy 100`, `/bucks buy 250`, `/bucks buy 500`.");
+    lines.push(
+      "",
+      "Команды: `/bucks`, `/bucks buy 100`, `/bucks buy 250`, `/bucks buy 500`, `/quiz`.",
+    );
   }
   return lines.join("\n");
 }
@@ -316,14 +319,11 @@ export function leylobucksInvalidCommandMessage(): string {
 }
 
 export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {
-  if (action.kind === "not_in_debt") {
-    return "Викторина нужна только при отрицательном балансе. Пока можно копить лейлобаксы хорошими запросами.";
-  }
   if (action.kind === "invalid_answer") {
     return `Не понял ответ. Напиши букву A, B, C или D командой \`/quiz A\`.\n\n${action.question ? quizQuestionMessage(action.question, action.status.quiz?.questionIndex ?? 0, action.questionCount ?? 5, action.correctCount ?? 0) : ""}`;
   }
   if (action.kind === "passed") {
-    return `🎉 Викторина пройдена: ${action.correctCount}/${action.questionCount}. Долг прощён, баланс снова **0**. Можно продолжать общаться и зарабатывать лейлобаксы.`;
+    return `🎉 Викторина пройдена: ${action.correctCount}/${action.questionCount}. Баланс после викторины: **${action.status.balance}**. Можно продолжать общаться и зарабатывать лейлобаксы.`;
   }
   if (action.kind === "failed") {
     return `❌ Викторина не пройдена: ${action.correctCount}/${action.questionCount}. Баланс остаётся **${action.status.balance}**. В следующий раз будет ${action.nextQuizSize} вопросов; запусти \`/quiz\` ещё раз.`;
