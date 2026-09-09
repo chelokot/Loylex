@@ -2084,7 +2084,7 @@ export class LoylexDatabase {
   claimNext(
     contextMessages: number,
     workerId: string | null = null,
-    isLeylobucksEnabled: (chatId: number) => boolean = () => true,
+    isLeylobucksEnabled: (userId: number | null) => boolean = () => true,
   ): AgentJob | null {
     const transaction = this.connection.transaction(() => {
       const now = Date.now();
@@ -2191,7 +2191,7 @@ export class LoylexDatabase {
       row.resume_thread_id,
       row.context_mode,
     );
-    const leylobucksEnabled = isLeylobucksEnabled(row.chat_id);
+    const leylobucksEnabled = isLeylobucksEnabled(row.user_id);
     return {
       id: row.id,
       updateId: row.update_id,
@@ -2883,6 +2883,7 @@ export class LoylexDatabase {
     chatType: AgentJob["chatType"];
     messageId: number;
     threadId: number | null;
+    userId: number | null;
   } {
     const row = this.connection
       .query<
@@ -2891,9 +2892,10 @@ export class LoylexDatabase {
           chat_type: AgentJob["chatType"];
           message_id: number;
           message_thread_id: number | null;
+          user_id: number | null;
         },
         [number]
-      >("SELECT chat_id, chat_type, message_id, message_thread_id FROM jobs WHERE id = ?")
+      >("SELECT chat_id, chat_type, message_id, message_thread_id, user_id FROM jobs WHERE id = ?")
       .get(jobId);
     if (!row) {
       throw new Error(`Unknown job ${jobId}`);
@@ -2903,6 +2905,7 @@ export class LoylexDatabase {
       chatType: row.chat_type,
       messageId: row.message_id,
       threadId: row.message_thread_id,
+      userId: row.user_id,
     };
   }
 

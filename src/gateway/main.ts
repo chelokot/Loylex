@@ -48,8 +48,8 @@ const leylobucksMode = new LeylobucksMode();
 
 await telegram.call("deleteWebhook", { drop_pending_updates: false });
 await telegram.setCommands();
-const server = new GatewayServer(config, database, telegram, (chatId) =>
-  leylobucksMode.isEnabled(chatId),
+const server = new GatewayServer(config, database, telegram, (userId) =>
+  leylobucksMode.isEnabled(userId),
 );
 server.start();
 
@@ -206,7 +206,7 @@ async function poll(): Promise<void> {
         }
         acknowledgeNameMistake(message);
         const currentUserId = userId(message);
-        const economyEnabled = leylobucksMode.isEnabled(message.chat.id);
+        const economyEnabled = leylobucksMode.isEnabled(currentUserId);
         const testBumpCommand = parseTestBumpCommand(message, bot.username);
         if (testBumpCommand && currentUserId !== null) {
           await sendInlineResponse(
@@ -223,7 +223,7 @@ async function poll(): Promise<void> {
         const leylobucksCommand = parseLeylobucksCommand(message, bot.username);
         if (leylobucksCommand && currentUserId !== null) {
           if (leylobucksCommand.kind === "toggle") {
-            leylobucksMode.setEnabled(message.chat.id, leylobucksCommand.enabled);
+            leylobucksMode.setEnabled(currentUserId, leylobucksCommand.enabled);
             await sendInlineResponse(
               telegram,
               message,

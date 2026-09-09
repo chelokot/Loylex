@@ -10,24 +10,25 @@ describe("Loylebucks runtime mode", () => {
 
   test("starts enabled without persistent state", () => {
     mode = new LeylobucksMode();
-    expect(mode.isEnabled(-100)).toBe(true);
+    expect(mode.isEnabled(100)).toBe(true);
+    expect(mode.isEnabled(null)).toBe(true);
   });
 
-  test("toggles independently per chat and defaults new chats to enabled", () => {
+  test("toggles independently per user and defaults new users to enabled", () => {
     mode = new LeylobucksMode();
-    mode.setEnabled(-100, false);
+    mode.setEnabled(100, false);
 
-    expect(mode.isEnabled(-100)).toBe(false);
-    expect(mode.isEnabled(-200)).toBe(true);
+    expect(mode.isEnabled(100)).toBe(false);
+    expect(mode.isEnabled(200)).toBe(true);
 
-    mode.setEnabled(-100, true);
-    expect(mode.isEnabled(-100)).toBe(true);
+    mode.setEnabled(100, true);
+    expect(mode.isEnabled(100)).toBe(true);
   });
 
   test("does not survive a new runtime instance", () => {
     mode = new LeylobucksMode();
-    mode.setEnabled(-100, false);
+    mode.setEnabled(100, false);
 
-    expect(new LeylobucksMode().isEnabled(-100)).toBe(true);
+    expect(new LeylobucksMode().isEnabled(100)).toBe(true);
   });
 });

@@ -134,6 +134,32 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 
+  test("applies the runtime mode independently to users sharing a chat", () => {
+    const database = setup();
+    const firstMessage = message(5, "запрос первого пользователя");
+    const secondMessage = {
+      ...message(6, "запрос второго пользователя"),
+      from: { id: 8, is_bot: false, first_name: "Sergey" },
+    };
+    database.archiveMessage(firstMessage, "bot_api");
+    database.archiveMessage(secondMessage, "bot_api");
+    database.enqueueWithLeylobucks(5, firstMessage, firstMessage.text ?? "", "", null);
+    database.enqueueWithLeylobucks(6, secondMessage, secondMessage.text ?? "", "", null);
+
+    const seenUserIds: Array<number | null> = [];
+    const isEnabled = (userId: number | null): boolean => {
+      seenUserIds.push(userId);
+      return userId !== 7;
+    };
+    const firstJob = database.claimNext(10, null, isEnabled);
+    const secondJob = database.claimNext(10, null, isEnabled);
+
+    expect(seenUserIds).toEqual([7, 8]);
+    expect(firstJob?.leylobucks).toBeUndefined();
+    expect(secondJob?.leylobucks).toMatchObject({ balance: expect.any(Number) });
+    database.close();
+  });
+
   test("allows rewards above 500 and sells the three requested packages", () => {
     const database = setup();
     setBalance(database, 490);

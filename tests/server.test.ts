@@ -227,7 +227,7 @@ test("sends a new final reply and removes the temporary progress message", async
   });
 });
 
-test("omits the Loylebucks footer when the chat mode is disabled", async () => {
+test("omits the Loylebucks footer when the user mode is disabled", async () => {
   const sent: string[] = [];
   const database = {
     jobAddress: () => ({
@@ -235,6 +235,7 @@ test("omits the Loylebucks footer when the chat mode is disabled", async () => {
       chatType: "supergroup" as const,
       messageId: 10,
       threadId: null,
+      userId: 7,
     }),
     thinkingMessage: () => null,
     isJobCancelled: () => false,
@@ -255,7 +256,11 @@ test("omits the Loylebucks footer when the chat mode is disabled", async () => {
       return botMessage(12);
     },
   } as unknown as TelegramClient;
-  const server = new GatewayServer(config(), database, telegram, () => false);
+  const seenUserIds: Array<number | null> = [];
+  const server = new GatewayServer(config(), database, telegram, (userId) => {
+    seenUserIds.push(userId);
+    return userId !== 7;
+  });
   const complete = (
     server as unknown as {
       complete: (jobId: number, completion: AgentCompletion) => Promise<void>;
@@ -264,6 +269,7 @@ test("omits the Loylebucks footer when the chat mode is disabled", async () => {
 
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
+  expect(seenUserIds).toEqual([7]);
   expect(sent.join("\n")).not.toContain("Лейлобаксы");
 });
 

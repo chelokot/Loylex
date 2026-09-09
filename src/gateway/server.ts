@@ -102,7 +102,7 @@ export class GatewayServer {
     private readonly config: GatewayConfig,
     private readonly database: LoylexDatabase,
     private readonly telegram: TelegramClient,
-    private readonly isLeylobucksEnabled: (chatId: number) => boolean = () => true,
+    private readonly isLeylobucksEnabled: (userId: number | null) => boolean = () => true,
   ) {}
 
   start(): void {
@@ -811,7 +811,7 @@ export class GatewayServer {
     if (status === null) {
       return;
     }
-    const economy = this.isLeylobucksEnabled(address.chatId)
+    const economy = this.isLeylobucksEnabled(address.userId)
       ? (this.database.jobEconomy?.(jobId) ?? null)
       : null;
     const answer = economy
