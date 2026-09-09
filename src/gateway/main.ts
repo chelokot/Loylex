@@ -14,6 +14,8 @@ import {
   leylobucksPurchaseMessage,
   leylobucksQuizMessage,
   leylobucksStatusMessage,
+  leylobucksTestBumpInvalidMessage,
+  leylobucksTestBumpMessage,
   resumeUnavailableMessage,
   stopResultMessage,
 } from "./presentation.ts";
@@ -31,6 +33,7 @@ import {
   newChatPrompt,
   parseLeylobucksCommand,
   parseQuizCommand,
+  parseTestBumpCommand,
   promptWithQuote,
   resumeTaskMessageId,
 } from "./triggers.ts";
@@ -204,6 +207,19 @@ async function poll(): Promise<void> {
         acknowledgeNameMistake(message);
         const currentUserId = userId(message);
         const economyEnabled = leylobucksMode.isEnabled(message.chat.id);
+        const testBumpCommand = parseTestBumpCommand(message, bot.username);
+        if (testBumpCommand && currentUserId !== null) {
+          await sendInlineResponse(
+            telegram,
+            message,
+            testBumpCommand.amount === null
+              ? leylobucksTestBumpInvalidMessage()
+              : leylobucksTestBumpMessage(
+                  database.testBumpLeylobucks(currentUserId, testBumpCommand.amount),
+                ),
+          );
+          continue;
+        }
         const leylobucksCommand = parseLeylobucksCommand(message, bot.username);
         if (leylobucksCommand && currentUserId !== null) {
           if (leylobucksCommand.kind === "toggle") {

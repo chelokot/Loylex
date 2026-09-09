@@ -179,6 +179,38 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 
+  test("allows a test bump above the normal balance cap and audits it", () => {
+    const database = setup();
+    setBalance(database, 86);
+
+    const result = database.testBumpLeylobucks(7, 1_000_000);
+
+    expect(result.statusView.balance).toBe(1_000_086);
+    expect(
+      database.connection
+        .query<
+          { delta: number; balance_after: number; reason: string; metadata_json: string },
+          []
+        >(`
+          SELECT delta, balance_after, reason, metadata_json
+          FROM leylobucks_transactions
+          WHERE reason = 'test_bump'
+        `)
+        .get(),
+    ).toEqual({
+      delta: 1_000_000,
+      balance_after: 1_000_086,
+      reason: "test_bump",
+      metadata_json: JSON.stringify({ bypassedMaxBalance: true }),
+    });
+
+    expect(() => database.testBumpLeylobucks(7, Number.MAX_SAFE_INTEGER)).toThrow(
+      "safe integer range",
+    );
+    expect(() => database.testBumpLeylobucks(7, 0)).toThrow("positive safe integer");
+    database.close();
+  });
+
   test("passes with four of five answers and forgives the debt", () => {
     const database = setup();
     setBalance(database, -40);

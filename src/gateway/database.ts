@@ -150,6 +150,11 @@ export type LeylobucksPurchaseResult = {
   statusView: LeylobucksStatus;
 };
 
+export type LeylobucksTestBumpResult = {
+  amount: number;
+  statusView: LeylobucksStatus;
+};
+
 export type LeylobucksQuizAction = {
   kind: "started" | "in_progress" | "next" | "invalid_answer" | "passed" | "failed";
   status: LeylobucksStatus;
@@ -1445,6 +1450,36 @@ export class LoylexDatabase {
 
   leylobucksStatus(userId: number): LeylobucksStatus {
     return this.leylobucksStatusView(userId);
+  }
+
+  testBumpLeylobucks(userId: number, amount: number): LeylobucksTestBumpResult {
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new Error("Test Loylebucks bump amount must be a positive safe integer");
+    }
+    const transaction = this.connection.transaction(() => {
+      const account = this.ensureLeylobucksAccount(userId);
+      const balance = account.balance + amount;
+      if (!Number.isSafeInteger(balance)) {
+        throw new Error("Test Loylebucks bump would exceed the safe integer range");
+      }
+      const now = Date.now();
+      this.connection
+        .query(`
+          UPDATE leylobucks_accounts
+          SET balance = ?, updated_at = ?
+          WHERE user_id = ?
+        `)
+        .run(balance, now, userId);
+      this.connection
+        .query(`
+          INSERT INTO leylobucks_transactions (
+            user_id, delta, balance_after, reason, update_id, job_id, metadata_json, created_at
+          ) VALUES (?, ?, ?, 'test_bump', NULL, NULL, ?, ?)
+        `)
+        .run(userId, amount, balance, JSON.stringify({ bypassedMaxBalance: true }), now);
+      return { amount, statusView: this.leylobucksStatusView(userId) };
+    });
+    return transaction.immediate();
   }
 
   purchaseLeylobucks(userId: number, cost: number): LeylobucksPurchaseResult {

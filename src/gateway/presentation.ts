@@ -3,6 +3,7 @@ import type {
   LeylobucksPurchaseResult,
   LeylobucksQuizAction,
   LeylobucksStatus,
+  LeylobucksTestBumpResult,
 } from "./database.ts";
 
 function commandActivity(command: string): string {
@@ -316,6 +317,18 @@ export function leylobucksPurchaseMessage(result: LeylobucksPurchaseResult): str
 
 export function leylobucksInvalidCommandMessage(): string {
   return "Не понял покупку. Используй `/bucks`, `/bucks buy 100`, `/bucks buy 250` или `/bucks buy 500`.";
+}
+
+export function leylobucksTestBumpMessage(result: LeylobucksTestBumpResult): string {
+  return [
+    `🧪 Тестовое начисление: **+${result.amount}** лейлобаксов.`,
+    "",
+    leylobucksStatusMessage(result.statusView),
+  ].join("\n");
+}
+
+export function leylobucksTestBumpInvalidMessage(): string {
+  return "Используй `/test_bump AMOUNT`, где AMOUNT — положительное целое число (например, `/test_bump 1000000`).";
 }
 
 export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {

@@ -8,6 +8,7 @@ import {
   newChatPrompt,
   parseLeylobucksCommand,
   parseQuizCommand,
+  parseTestBumpCommand,
   promptWithQuote,
 } from "../src/gateway/triggers.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
@@ -151,6 +152,19 @@ describe("detectTrigger", () => {
       answer: "ответ B",
     });
     expect(parseQuizCommand(message("/quiz@OtherBot A"), "LoylexBot")).toBeNull();
+  });
+
+  test("recognizes hidden test balance bumps with common number separators", () => {
+    expect(parseTestBumpCommand(message("/test_bump 1,000,000"), "LoylexBot")).toEqual({
+      amount: 1_000_000,
+    });
+    expect(parseTestBumpCommand(message("/test_bump@loylexbot 250"), "LoylexBot")).toEqual({
+      amount: 250,
+    });
+    expect(parseTestBumpCommand(message("/test_bump"), "LoylexBot")).toEqual({ amount: null });
+    expect(parseTestBumpCommand(message("/test_bump -1"), "LoylexBot")).toEqual({ amount: null });
+    expect(parseTestBumpCommand(message("/test_bump 1.5"), "LoylexBot")).toEqual({ amount: null });
+    expect(parseTestBumpCommand(message("/test_bump@OtherBot 1"), "LoylexBot")).toBeNull();
   });
 });
 

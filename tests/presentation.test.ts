@@ -7,6 +7,7 @@ import {
   helpMessage,
   leylobucksModeMessage,
   leylobucksQuizMessage,
+  leylobucksTestBumpMessage,
   stopResultMessage,
   toolsDocument,
   toolUsages,
@@ -158,6 +159,22 @@ test("bolds the correct option in a Loylebucks quiz question", () => {
   });
 
   expect(message).toContain("A) Первый\n**B) Второй**\nC) Третий\nD) Четвёртый");
+});
+
+test("renders a test bump together with the resulting large balance", () => {
+  const message = leylobucksTestBumpMessage({
+    amount: 1_000_000,
+    statusView: {
+      userId: 7,
+      balance: 1_000_000,
+      catgirlMessages: 0,
+      nextQuizSize: 5,
+      quiz: null,
+    },
+  });
+
+  expect(message).toContain("Тестовое начисление: **+1000000**");
+  expect(message).toContain("Баланс: **1000000 / 500**");
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {

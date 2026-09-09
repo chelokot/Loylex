@@ -10,6 +10,7 @@ const helpPattern = /^\/(?:start|help)(?:@([a-z0-9_]+))?$/iu;
 const newChatCommandPattern = /^\/newchat(?:@[a-z0-9_]+)?(?:\s+[\s\S]*)?$/iu;
 const newChatPattern = /^\/newchat(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 const leylobucksPattern = /^\/(?:bucks|leylobucks)(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
+const testBumpPattern = /^\/test_bump(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 const leylobucksNaturalPattern = /^(?:лейлобаксы|лб)(?:\s+([\s\S]*))?$/iu;
 const quizPattern = /^\/(?:quiz|викторина)(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 
@@ -20,6 +21,8 @@ export type LeylobucksCommand =
   | { kind: "invalid" };
 
 export type QuizCommand = { answer: string | null };
+
+export type TestBumpCommand = { amount: number | null };
 
 export type TriggerDecision = {
   prompt: string;
@@ -138,6 +141,27 @@ export function parseLeylobucksCommand(
   }
   const natural = text.match(leylobucksNaturalPattern);
   return natural ? parseLeylobucksArgument(natural[1]) : null;
+}
+
+export function parseTestBumpCommand(
+  message: TelegramMessage,
+  botUsername?: string,
+): TestBumpCommand | null {
+  const text = messageText(message).trim();
+  const match = text.match(testBumpPattern);
+  if (!match || !commandMentionMatches(match[1], botUsername)) {
+    return null;
+  }
+  const rawAmount = match[2]?.trim() ?? "";
+  if (!rawAmount) {
+    return { amount: null };
+  }
+  const normalized = rawAmount.replace(/[,_\s]/gu, "");
+  if (!/^\+?\d+$/u.test(normalized)) {
+    return { amount: null };
+  }
+  const amount = Number(normalized);
+  return Number.isSafeInteger(amount) && amount > 0 ? { amount } : { amount: null };
 }
 
 export function parseQuizCommand(
