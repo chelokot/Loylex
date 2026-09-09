@@ -161,11 +161,10 @@ async function handleCallbackQuery(update: TelegramUpdate): Promise<boolean> {
     return true;
   }
 
-  await sendInlineResponse(
-    telegram,
-    message,
-    leylobucksQuizMessage(database.quizLeylobucks(currentUserId, answer)),
-  );
+  const markdown = leylobucksQuizMessage(database.quizLeylobucks(currentUserId, answer));
+  if ((await telegram.editRich(message.chat.id, message.message_id, markdown)) === null) {
+    await sendInlineResponse(telegram, message, markdown);
+  }
   return true;
 }
 

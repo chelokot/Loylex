@@ -140,7 +140,7 @@ test("hides Loylebucks help in the disabled runtime mode", () => {
   expect(leylobucksModeMessage(false)).toContain("Сохранённые балансы и история");
 });
 
-test("bolds a random option in a Loylebucks quiz question", () => {
+test("renders a compact Loylebucks quiz with answer buttons", () => {
   const action = {
     kind: "started",
     status: {
@@ -162,20 +162,20 @@ test("bolds a random option in a Loylebucks quiz question", () => {
     nextQuizSize: null,
   } as const;
 
-  const firstOption = leylobucksQuizMessage(action, () => 0);
-  expect(firstOption).toContain(
-    "| **A** | **Первый** |\n| B | Второй |\n| C | Третий |\n| D | Четвёртый |",
+  const message = leylobucksQuizMessage(action);
+  expect(message).toContain("Вопрос 1/4 · тест · Счёт: 0/4");
+  expect(message).toContain(
+    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:A">Первый</tg-button> <tg-button type="callback_data" style="primary" data="quiz:B">Второй</tg-button></tg-button-row>',
   );
-  expect(firstOption).not.toContain("| **B** | **Второй** |");
-  expect(firstOption).toContain(
-    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:A">A</tg-button> <tg-button type="callback_data" style="primary" data="quiz:B">B</tg-button> <tg-button type="callback_data" style="primary" data="quiz:C">C</tg-button> <tg-button type="callback_data" style="primary" data="quiz:D">D</tg-button></tg-button-row>',
+  expect(message).toContain(
+    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:C">Третий</tg-button> <tg-button type="callback_data" style="primary" data="quiz:D">Четвёртый</tg-button></tg-button-row>',
   );
-  expect(firstOption).toContain("выбери вариант кнопкой");
-
-  const lastOption = leylobucksQuizMessage(action, () => 0.99);
-  expect(lastOption).toContain(
-    "| A | Первый |\n| B | Второй |\n| C | Третий |\n| **D** | **Четвёртый** |",
-  );
+  expect(message).toContain("> Какой вариант правильный?");
+  expect(message).not.toContain("# 🧠 Викторина");
+  expect(message).not.toContain("Викторина продолжается");
+  expect(message).not.toContain("| Вариант | Ответ |");
+  expect(message).not.toContain("Порог");
+  expect(message).not.toContain("**Ответ:**");
 });
 
 test("renders a test bump together with the resulting large balance", () => {

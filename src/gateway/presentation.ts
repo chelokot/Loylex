@@ -273,10 +273,6 @@ function messageCountLabel(count: number): string {
   return "сообщений";
 }
 
-function tableCell(value: string): string {
-  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
-}
-
 function accountTable(status: LeylobucksStatus): string {
   return [
     "| Показатель | Значение |",
@@ -315,25 +311,19 @@ function leylobucksCommandsDocument(): string {
   ].join("\n");
 }
 
-function randomQuizHighlightIndex(optionCount: number, random: () => number): number {
-  if (optionCount <= 0) {
-    return -1;
-  }
-  const value = random();
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.min(optionCount - 1, Math.max(0, Math.floor(value * optionCount)));
-}
-
-function quizAnswerButtons(optionCount: number): string {
-  const buttons = Array.from({ length: Math.min(optionCount, 4) }, (_, index) => {
+function quizAnswerButtons(options: readonly string[]): string {
+  const buttons = options.slice(0, 4).map((option, index) => {
     const letter = String.fromCharCode(65 + index);
-    return `<tg-button type="callback_data" style="primary" data="quiz:${letter}">${letter}</tg-button>`;
+    const label = escapeHtml(option.replace(/\s+/gu, " ").trim());
+    return `<tg-button type="callback_data" style="primary" data="quiz:${letter}">${label}</tg-button>`;
   });
-  return buttons.length > 0
-    ? `<tg-button-row align="center">${buttons.join(" ")}</tg-button-row>`
-    : "";
+  const rows: string[] = [];
+  for (let index = 0; index < buttons.length; index += 2) {
+    rows.push(
+      `<tg-button-row align="center">${buttons.slice(index, index + 2).join(" ")}</tg-button-row>`,
+    );
+  }
+  return rows.join("\n");
 }
 
 function quizQuestionMessage(
@@ -341,32 +331,13 @@ function quizQuestionMessage(
   questionIndex: number,
   questionCount: number,
   correctCount: number,
-  random: () => number = Math.random,
 ): string {
-  const highlightedIndex = randomQuizHighlightIndex(question.options.length, random);
-  const options = question.options
-    .map((option, index) => {
-      const letter = String.fromCharCode(65 + index);
-      const answer = tableCell(option);
-      return index === highlightedIndex
-        ? `| **${letter}** | **${answer}** |`
-        : `| ${letter} | ${answer} |`;
-    })
-    .join("\n");
   return [
-    `### Вопрос ${questionIndex + 1} из ${questionCount}`,
-    `**Категория:** ${question.category}`,
+    `Вопрос ${questionIndex + 1}/${questionCount} · ${question.category} · Счёт: ${correctCount}/${questionCount}`,
     "",
     `> ${question.prompt}`,
     "",
-    "| Вариант | Ответ |",
-    "| :---: | --- |",
-    options,
-    "",
-    `**Счёт:** ${correctCount}/${questionCount} · **Порог:** ${Math.max(1, questionCount - 1)}/${questionCount}`,
-    "",
-    "**Ответ:** выбери вариант кнопкой или напиши `/quiz A` · `/quiz B` · `/quiz C` · `/quiz D`",
-    quizAnswerButtons(question.options.length),
+    quizAnswerButtons(question.options),
   ].join("\n");
 }
 
@@ -500,12 +471,9 @@ export function leylobucksTestBumpInvalidMessage(): string {
   ].join("\n");
 }
 
-export function leylobucksQuizMessage(
-  action: LeylobucksQuizAction,
-  random: () => number = Math.random,
-): string {
+export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {
   if (action.kind === "invalid_answer") {
-    const lines = ["# 🧠 Викторина", "", "> ⚠️ Ответ не распознан. Выбери A, B, C или D."];
+    const lines = ["> ⚠️ Выбери один из вариантов."];
     if (action.question) {
       lines.push(
         "",
@@ -514,7 +482,6 @@ export function leylobucksQuizMessage(
           action.status.quiz?.questionIndex ?? 0,
           action.questionCount ?? action.status.quiz?.questionCount ?? 5,
           action.correctCount ?? action.status.quiz?.correctCount ?? 0,
-          random,
         ),
       );
     }
@@ -552,28 +519,17 @@ export function leylobucksQuizMessage(
     ].join("\n");
   }
   if (action.question) {
-    const prefix =
-      action.kind === "next"
-        ? action.correct
-          ? "✅ Ответ принят — верно."
-          : "❌ Ответ принят — неверно."
-        : action.kind === "in_progress"
-          ? "↪️ Викторина продолжается."
-          : "🚀 Викторина начата.";
     const quiz = action.status.quiz;
-    return [
-      "# 🧠 Викторина",
-      "",
-      `> ${prefix}`,
-      "",
-      quizQuestionMessage(
-        action.question,
-        quiz?.questionIndex ?? 0,
-        action.questionCount ?? quiz?.questionCount ?? 5,
-        action.correctCount ?? quiz?.correctCount ?? 0,
-        random,
-      ),
-    ].join("\n");
+    const question = quizQuestionMessage(
+      action.question,
+      quiz?.questionIndex ?? 0,
+      action.questionCount ?? quiz?.questionCount ?? 5,
+      action.correctCount ?? quiz?.correctCount ?? 0,
+    );
+    if (action.kind !== "next") {
+      return question;
+    }
+    return `${action.correct ? "✅ Верно." : "❌ Неверно."}\n\n${question}`;
   }
   return leylobucksStatusMessage(action.status);
 }
