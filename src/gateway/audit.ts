@@ -2,7 +2,12 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import type { TelegramMessage, TelegramUpdate } from "../shared/types.ts";
 
-type AuditEvent = "message" | "edited_message" | "channel_post" | "edited_channel_post";
+type AuditEvent =
+  | "message"
+  | "edited_message"
+  | "channel_post"
+  | "edited_channel_post"
+  | "callback_query";
 
 export type InboundAuditRecord = {
   version: 1;
@@ -20,6 +25,8 @@ export type InboundAuditRecord = {
 type AuditedMessage = {
   event: AuditEvent;
   message: TelegramMessage;
+  authorId?: number | null;
+  text?: string | null;
 };
 
 const openFlags =
@@ -37,6 +44,14 @@ function auditedMessage(update: TelegramUpdate): AuditedMessage | null {
   }
   if (update.edited_channel_post) {
     return { event: "edited_channel_post", message: update.edited_channel_post };
+  }
+  if (update.callback_query?.message) {
+    return {
+      event: "callback_query",
+      message: update.callback_query.message,
+      authorId: update.callback_query.from.id,
+      text: update.callback_query.data ?? null,
+    };
   }
   return null;
 }
@@ -56,8 +71,11 @@ function record(
     message_id: message.message_id,
     message_thread_id: message.message_thread_id ?? null,
     telegram_date: message.date,
-    author_id: message.from?.id ?? message.sender_chat?.id ?? null,
-    text: message.text ?? message.caption ?? null,
+    author_id:
+      audited.authorId !== undefined
+        ? audited.authorId
+        : (message.from?.id ?? message.sender_chat?.id ?? null),
+    text: audited.text !== undefined ? audited.text : (message.text ?? message.caption ?? null),
   };
 }
 

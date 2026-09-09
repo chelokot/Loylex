@@ -326,6 +326,16 @@ function randomQuizHighlightIndex(optionCount: number, random: () => number): nu
   return Math.min(optionCount - 1, Math.max(0, Math.floor(value * optionCount)));
 }
 
+function quizAnswerButtons(optionCount: number): string {
+  const buttons = Array.from({ length: Math.min(optionCount, 4) }, (_, index) => {
+    const letter = String.fromCharCode(65 + index);
+    return `<tg-button type="callback_data" style="primary" data="quiz:${letter}">${letter}</tg-button>`;
+  });
+  return buttons.length > 0
+    ? `<tg-button-row align="center">${buttons.join(" ")}</tg-button-row>`
+    : "";
+}
+
 function quizQuestionMessage(
   question: NonNullable<LeylobucksStatus["quiz"]>["question"],
   questionIndex: number,
@@ -355,7 +365,8 @@ function quizQuestionMessage(
     "",
     `**Счёт:** ${correctCount}/${questionCount} · **Порог:** ${Math.max(1, questionCount - 1)}/${questionCount}`,
     "",
-    "**Ответ:** `/quiz A` · `/quiz B` · `/quiz C` · `/quiz D`",
+    "**Ответ:** выбери вариант кнопкой или напиши `/quiz A` · `/quiz B` · `/quiz C` · `/quiz D`",
+    quizAnswerButtons(question.options.length),
   ].join("\n");
 }
 

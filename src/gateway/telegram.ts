@@ -174,6 +174,14 @@ export class TelegramClient {
     return this.call<TelegramMessage>("sendRichMessage", body);
   }
 
+  answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> {
+    const body: JsonObject = { callback_query_id: callbackQueryId };
+    if (text !== undefined) {
+      body.text = text;
+    }
+    return this.call<boolean>("answerCallbackQuery", body);
+  }
+
   forwardMessage(chatId: number, fromChatId: number, messageId: number): Promise<TelegramMessage> {
     return this.call<TelegramMessage>("forwardMessage", {
       chat_id: chatId,

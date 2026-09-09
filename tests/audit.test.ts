@@ -90,6 +90,34 @@ test("records the sender chat as the author for channel posts", async () => {
   });
 });
 
+test("audits callback answers using the live callback sender", async () => {
+  const { path } = setup();
+  const audit = new InboundAuditLog(path, () => "2026-09-02T12:01:45.000Z");
+  const callbackMessage = message(-10042, 10);
+
+  await expect(
+    audit.append({
+      update_id: 102,
+      callback_query: {
+        id: "callback-1",
+        from: { id: 849670500, is_bot: false, first_name: "not logged" },
+        message: callbackMessage,
+        chat_instance: "chat-instance",
+        data: "quiz:B",
+      },
+    }),
+  ).resolves.toBe(true);
+
+  expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+    update_id: 102,
+    event: "callback_query",
+    chat_id: -10042,
+    message_id: 10,
+    author_id: 849670500,
+    text: "quiz:B",
+  });
+});
+
 test("serializes concurrent appends as complete JSON lines", async () => {
   const { path } = setup();
   const audit = new InboundAuditLog(path, () => "2026-09-02T12:02:00.000Z");

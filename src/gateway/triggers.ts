@@ -13,6 +13,7 @@ const leylobucksPattern = /^\/(?:bucks|leylobucks)(?:@([a-z0-9_]+))?(?:\s+([\s\S
 const testBumpPattern = /^\/test_bump(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 const leylobucksNaturalPattern = /^(?:лейлобаксы|лб)(?:\s+([\s\S]*))?$/iu;
 const quizPattern = /^\/(?:quiz|викторина)(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
+const quizCallbackPattern = /^quiz:([abcd])$/iu;
 
 export type LeylobucksCommand =
   | { kind: "status" }
@@ -21,6 +22,8 @@ export type LeylobucksCommand =
   | { kind: "invalid" };
 
 export type QuizCommand = { answer: string | null };
+
+export type QuizCallbackAnswer = "A" | "B" | "C" | "D";
 
 export type TestBumpCommand = { amount: number | null };
 
@@ -175,6 +178,12 @@ export function parseQuizCommand(
   }
   const argument = match[2]?.trim() ?? "";
   return { answer: argument || null };
+}
+
+export function parseQuizCallbackData(data: string | undefined): QuizCallbackAnswer | null {
+  const match = data?.match(quizCallbackPattern);
+  const answer = match?.[1]?.toLocaleUpperCase();
+  return answer === "A" || answer === "B" || answer === "C" || answer === "D" ? answer : null;
 }
 
 export function cancelTaskMessageId(message: TelegramMessage, botUsername?: string): number | null {

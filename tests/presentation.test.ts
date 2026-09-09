@@ -167,6 +167,10 @@ test("bolds a random option in a Loylebucks quiz question", () => {
     "| **A** | **Первый** |\n| B | Второй |\n| C | Третий |\n| D | Четвёртый |",
   );
   expect(firstOption).not.toContain("| **B** | **Второй** |");
+  expect(firstOption).toContain(
+    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:A">A</tg-button> <tg-button type="callback_data" style="primary" data="quiz:B">B</tg-button> <tg-button type="callback_data" style="primary" data="quiz:C">C</tg-button> <tg-button type="callback_data" style="primary" data="quiz:D">D</tg-button></tg-button-row>',
+  );
+  expect(firstOption).toContain("выбери вариант кнопкой");
 
   const lastOption = leylobucksQuizMessage(action, () => 0.99);
   expect(lastOption).toContain(

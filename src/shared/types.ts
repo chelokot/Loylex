@@ -95,6 +95,14 @@ export type TelegramMessage = {
   [key: string]: unknown;
 };
 
+export type TelegramCallbackQuery = {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  chat_instance: string;
+  data?: string;
+};
+
 export type TelegramMessageGenerationStopped = {
   chat: TelegramChat;
   message_thread_id?: number;
@@ -110,6 +118,7 @@ export type TelegramUpdate = {
   message_reaction?: TelegramMessageReactionUpdated;
   message_reaction_count?: TelegramMessageReactionCountUpdated;
   stopped_message_generation?: TelegramMessageGenerationStopped;
+  callback_query?: TelegramCallbackQuery;
   [key: string]: unknown;
 };
 

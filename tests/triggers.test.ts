@@ -7,6 +7,7 @@ import {
   isTasksCommand,
   newChatPrompt,
   parseLeylobucksCommand,
+  parseQuizCallbackData,
   parseQuizCommand,
   parseTestBumpCommand,
   promptWithQuote,
@@ -152,6 +153,14 @@ describe("detectTrigger", () => {
       answer: "ответ B",
     });
     expect(parseQuizCommand(message("/quiz@OtherBot A"), "LoylexBot")).toBeNull();
+  });
+
+  test("recognizes only supported quiz callback answers", () => {
+    expect(parseQuizCallbackData("quiz:A")).toBe("A");
+    expect(parseQuizCallbackData("QUIZ:d")).toBe("D");
+    expect(parseQuizCallbackData("quiz:E")).toBeNull();
+    expect(parseQuizCallbackData("bucks:100")).toBeNull();
+    expect(parseQuizCallbackData(undefined)).toBeNull();
   });
 
   test("recognizes hidden test balance bumps with common number separators", () => {

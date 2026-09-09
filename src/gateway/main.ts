@@ -1,4 +1,4 @@
-import type { TelegramMessage } from "../shared/types.ts";
+import type { TelegramMessage, TelegramUpdate } from "../shared/types.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
@@ -32,6 +32,7 @@ import {
   isTasksCommand,
   newChatPrompt,
   parseLeylobucksCommand,
+  parseQuizCallbackData,
   parseQuizCommand,
   parseTestBumpCommand,
   promptWithQuote,
@@ -99,6 +100,11 @@ function userId(message: TelegramMessage): number | null {
   return Number.isSafeInteger(message.from?.id) ? (message.from?.id ?? null) : null;
 }
 
+function callbackUserId(update: TelegramUpdate): number | null {
+  const id = update.callback_query?.from.id;
+  return Number.isSafeInteger(id) ? (id ?? null) : null;
+}
+
 function enqueueRequest(
   database: LoylexDatabase,
   updateId: number,
@@ -135,6 +141,34 @@ async function sendInlineResponse(
   );
 }
 
+async function handleCallbackQuery(update: TelegramUpdate): Promise<boolean> {
+  const callback = update.callback_query;
+  if (!callback) {
+    return false;
+  }
+
+  await telegram.answerCallbackQuery(callback.id);
+  const answer = parseQuizCallbackData(callback.data);
+  const message = callback.message;
+  const currentUserId = callbackUserId(update);
+  if (
+    answer === null ||
+    message === undefined ||
+    currentUserId === null ||
+    callback.from.is_bot ||
+    !leylobucksMode.isEnabled(currentUserId)
+  ) {
+    return true;
+  }
+
+  await sendInlineResponse(
+    telegram,
+    message,
+    leylobucksQuizMessage(database.quizLeylobucks(currentUserId, answer)),
+  );
+  return true;
+}
+
 async function poll(): Promise<void> {
   while (!stopping) {
     try {
@@ -143,6 +177,9 @@ async function poll(): Promise<void> {
         await audit.append(update);
         const message = database.archiveUpdate(update);
         offset = update.update_id + 1;
+        if (await handleCallbackQuery(update)) {
+          continue;
+        }
         if (update.message_reaction && isOperatorDislikeReaction(update.message_reaction)) {
           const feedbackJobId = database.enqueueDislikeRecovery(update);
           if (feedbackJobId !== null) {

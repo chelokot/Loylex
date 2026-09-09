@@ -25,6 +25,19 @@ test("does not downgrade a rejected rich send to an unformatted message", async 
   expect(requests).toEqual(["https://api.telegram.org/bottest-token/sendRichMessage"]);
 });
 
+test("answers a rich-message callback query", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/answerCallbackQuery");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, result: true });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.answerCallbackQuery("callback-123")).resolves.toBe(true);
+  expect(requestBody).toEqual({ callback_query_id: "callback-123" });
+});
+
 test("forwards a Telegram message by source and destination IDs", async () => {
   let requestBody: unknown;
   globalThis.fetch = (async (input, init) => {
