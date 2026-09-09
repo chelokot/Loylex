@@ -230,7 +230,7 @@ function signed(value: number): string {
 }
 
 function balanceLabel(balance: number): string {
-  return `${balance} / 500`;
+  return String(balance);
 }
 
 function quizQuestionMessage(
@@ -368,7 +368,7 @@ export function leylobucksBlockedMessage(status: LeylobucksStatus): string {
 export function leylobucksFooter(economy: LeylobucksJobEconomy): string {
   const lines = [
     "---",
-    `💰 Лейлобаксы: **${signed(economy.delta)}** (оценка запроса ${economy.qualityScore}/100). Баланс: **${economy.balance}/500**.`,
+    `💰 Лейлобаксы: **${signed(economy.delta)}** (оценка запроса ${economy.qualityScore}/100). Баланс: **${economy.balance}**.`,
   ];
   if (economy.catgirlMode) {
     lines.push(

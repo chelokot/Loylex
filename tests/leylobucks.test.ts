@@ -134,7 +134,7 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 
-  test("caps rewards at 500 and sells the three requested packages", () => {
+  test("allows rewards above 500 and sells the three requested packages", () => {
     const database = setup();
     setBalance(database, 490);
     const incoming = message(
@@ -151,12 +151,12 @@ describe("LoylexDatabase Loylebucks", () => {
     );
 
     expect(admission.kind).toBe("queued");
-    expect(database.leylobucksStatus(7).balance).toBeLessThanOrEqual(500);
-    expect(database.leylobucksStatus(7).balance).toBe(500);
+    const balanceAfterReward = database.leylobucksStatus(7).balance;
+    expect(balanceAfterReward).toBeGreaterThan(500);
 
     const purchase = database.purchaseLeylobucks(7, 500);
     expect(purchase.status).toBe("purchased");
-    expect(purchase.statusView.balance).toBe(0);
+    expect(purchase.statusView.balance).toBe(balanceAfterReward - 500);
     expect(purchase.statusView.catgirlMessages).toBe(10);
 
     const modeMessage = message(
@@ -179,7 +179,7 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 
-  test("allows a test bump above the normal balance cap and audits it", () => {
+  test("allows a large test bump and audits it", () => {
     const database = setup();
     setBalance(database, 86);
 
@@ -201,13 +201,33 @@ describe("LoylexDatabase Loylebucks", () => {
       delta: 1_000_000,
       balance_after: 1_000_086,
       reason: "test_bump",
-      metadata_json: JSON.stringify({ bypassedMaxBalance: true }),
+      metadata_json: JSON.stringify({ testOnly: true }),
     });
 
     expect(() => database.testBumpLeylobucks(7, Number.MAX_SAFE_INTEGER)).toThrow(
       "safe integer range",
     );
     expect(() => database.testBumpLeylobucks(7, 0)).toThrow("positive safe integer");
+    database.close();
+  });
+
+  test("rejects a reward that would exceed the safe integer range", () => {
+    const database = setup();
+    const incoming = message(
+      5,
+      "Проверь, пожалуйста, почему этот тест падает и предложи исправление с объяснением.",
+    );
+    const assessment = assessLeylobucksRequest(incoming.text ?? "");
+    expect(assessment.delta).toBeGreaterThan(0);
+    const balance = Number.MAX_SAFE_INTEGER - assessment.delta + 1;
+    setBalance(database, balance);
+    database.archiveMessage(incoming, "bot_api");
+
+    expect(() =>
+      database.enqueueWithLeylobucks(5, incoming, incoming.text ?? "", incoming.text ?? "", null),
+    ).toThrow("safe integer range");
+    expect(database.leylobucksStatus(7).balance).toBe(balance);
+    expect(database.connection.query("SELECT id FROM jobs").all()).toEqual([]);
     database.close();
   });
 

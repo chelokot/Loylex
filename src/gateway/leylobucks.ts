@@ -1,4 +1,3 @@
-export const leylobucksMaxBalance = 500;
 export const leylobucksInitialQuizSize = 5;
 
 export const leylobucksPackages = [

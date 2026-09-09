@@ -21,7 +21,6 @@ import {
   type LeylobucksPackage,
   type LeylobucksQuizQuestion,
   leylobucksInitialQuizSize,
-  leylobucksMaxBalance,
   leylobucksPackages,
   quizAnswerIndex,
   quizPassingScore,
@@ -1476,7 +1475,7 @@ export class LoylexDatabase {
             user_id, delta, balance_after, reason, update_id, job_id, metadata_json, created_at
           ) VALUES (?, ?, ?, 'test_bump', NULL, NULL, ?, ?)
         `)
-        .run(userId, amount, balance, JSON.stringify({ bypassedMaxBalance: true }), now);
+        .run(userId, amount, balance, JSON.stringify({ testOnly: true }), now);
       return { amount, statusView: this.leylobucksStatusView(userId) };
     });
     return transaction.immediate();
@@ -1740,8 +1739,11 @@ export class LoylexDatabase {
         };
       }
 
-      const newBalance = Math.min(leylobucksMaxBalance, account.balance + assessment.delta);
-      const actualDelta = newBalance - account.balance;
+      const newBalance = account.balance + assessment.delta;
+      if (!Number.isSafeInteger(newBalance)) {
+        throw new Error("Loylebucks balance would exceed the safe integer range");
+      }
+      const actualDelta = assessment.delta;
       const catgirlMode = account.catgirl_messages > 0;
       const catgirlMessagesLeft = Math.max(account.catgirl_messages - (catgirlMode ? 1 : 0), 0);
       const now = Date.now();

@@ -174,7 +174,7 @@ test("renders a test bump together with the resulting large balance", () => {
   });
 
   expect(message).toContain("Тестовое начисление: **+1000000**");
-  expect(message).toContain("Баланс: **1000000 / 500**");
+  expect(message).toContain("Баланс: **1000000**");
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {
