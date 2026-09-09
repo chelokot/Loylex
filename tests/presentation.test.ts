@@ -5,8 +5,12 @@ import {
   failedDocument,
   failureMessage,
   helpMessage,
+  leylobucksBlockedMessage,
+  leylobucksFooter,
   leylobucksModeMessage,
+  leylobucksPurchaseMessage,
   leylobucksQuizMessage,
+  leylobucksStatusMessage,
   leylobucksTestBumpMessage,
   stopResultMessage,
   toolsDocument,
@@ -159,11 +163,15 @@ test("bolds a random option in a Loylebucks quiz question", () => {
   } as const;
 
   const firstOption = leylobucksQuizMessage(action, () => 0);
-  expect(firstOption).toContain("**A) Первый**\nB) Второй\nC) Третий\nD) Четвёртый");
-  expect(firstOption).not.toContain("**B) Второй**");
+  expect(firstOption).toContain(
+    "| **A** | **Первый** |\n| B | Второй |\n| C | Третий |\n| D | Четвёртый |",
+  );
+  expect(firstOption).not.toContain("| **B** | **Второй** |");
 
   const lastOption = leylobucksQuizMessage(action, () => 0.99);
-  expect(lastOption).toContain("A) Первый\nB) Второй\nC) Третий\n**D) Четвёртый**");
+  expect(lastOption).toContain(
+    "| A | Первый |\n| B | Второй |\n| C | Третий |\n| **D** | **Четвёртый** |",
+  );
 });
 
 test("renders a test bump together with the resulting large balance", () => {
@@ -178,8 +186,60 @@ test("renders a test bump together with the resulting large balance", () => {
     },
   });
 
-  expect(message).toContain("Тестовое начисление: **+1000000**");
-  expect(message).toContain("Баланс: **1000000**");
+  expect(message).toContain("Начислено: **+1 000 000 лейлобаксов**");
+  expect(message).toContain("| Баланс | **1 000 000** |");
+});
+
+test("renders the Loylebucks status as compact rich sections", () => {
+  const message = leylobucksStatusMessage({
+    userId: 7,
+    balance: 1_000_000,
+    catgirlMessages: 10,
+    nextQuizSize: 5,
+    quiz: null,
+  });
+
+  expect(message).toContain("# 💰 Лейлобаксы");
+  expect(message).toContain("| Баланс | **1 000 000** |");
+  expect(message).toContain("| `/bucks buy 500` | **500** | 10 сообщений |");
+  expect(message).toContain("<details><summary>Команды</summary>");
+  expect(message).not.toContain("Магазин:\n- 100");
+});
+
+test("keeps purchase, blocked, and earned-bucks messages scannable", () => {
+  const status = {
+    userId: 7,
+    balance: -40,
+    catgirlMessages: 0,
+    nextQuizSize: 5,
+    quiz: null,
+  } as const;
+
+  const purchase = leylobucksPurchaseMessage({
+    status: "purchased",
+    package: { cost: 500, messages: 10 },
+    statusView: { ...status, balance: 120, catgirlMessages: 10 },
+  });
+  expect(purchase).toContain("# ✅ Покупка оформлена");
+  expect(purchase).toContain("| Добавлено | **10 сообщений** |");
+  expect(purchase).toContain("## После покупки");
+  expect(purchase).not.toContain("# 💰 Лейлобаксы");
+
+  const blocked = leylobucksBlockedMessage(status);
+  expect(blocked).toContain("# ⛔ Запрос заблокирован");
+  expect(blocked).toContain("## Как продолжить");
+  expect(blocked).toContain("**4**");
+
+  const footer = leylobucksFooter({
+    qualityScore: 82,
+    delta: 64,
+    balance: 1_000_064,
+    catgirlMode: true,
+    catgirlMessagesLeft: 9,
+  });
+  expect(footer).toContain("<details><summary>💰 Лейлобаксы · +64 · баланс 1 000 064</summary>");
+  expect(footer).toContain("| Оценка запроса | **82/100** |");
+  expect(footer).toContain("| Осталось сообщений | **9** |");
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {
