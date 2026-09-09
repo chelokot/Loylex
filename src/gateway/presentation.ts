@@ -318,13 +318,9 @@ function quizAnswerButtons(options: readonly string[]): string {
     const label = escapeHtml(option.replace(/\s+/gu, " ").trim());
     return `<tg-button type="callback_data" style="primary" data="quiz:${letter}">${label}</tg-button>`;
   });
-  const rows: string[] = [];
-  for (let index = 0; index < buttons.length; index += 2) {
-    rows.push(
-      `<tg-button-row align="center">${buttons.slice(index, index + 2).join(" ")}</tg-button-row>`,
-    );
-  }
-  return rows.join("\n");
+  return buttons
+    .map((button) => `<tg-button-row align="center">${button}</tg-button-row>`)
+    .join("\n");
 }
 
 function quizQuestionMessage(

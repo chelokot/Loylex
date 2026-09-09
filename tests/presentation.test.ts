@@ -166,10 +166,10 @@ test("renders a compact Loylebucks quiz with answer buttons", () => {
   const message = leylobucksQuizMessage(action);
   expect(message).toContain("Вопрос 1/4 · тест · Счёт: 0/4");
   expect(message).toContain(
-    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:A">Первый</tg-button> <tg-button type="callback_data" style="primary" data="quiz:B">Второй</tg-button></tg-button-row>',
+    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:A">Первый</tg-button></tg-button-row>\n<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:B">Второй</tg-button></tg-button-row>',
   );
   expect(message).toContain(
-    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:C">Третий</tg-button> <tg-button type="callback_data" style="primary" data="quiz:D">Четвёртый</tg-button></tg-button-row>',
+    '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:C">Третий</tg-button></tg-button-row>\n<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="quiz:D">Четвёртый</tg-button></tg-button-row>',
   );
   expect(message).toContain("> Какой вариант правильный?");
   expect(message).not.toContain("# 🧠 Викторина");
