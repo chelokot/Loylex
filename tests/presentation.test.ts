@@ -156,6 +156,7 @@ test("renders a compact Loylebucks quiz with answer buttons", () => {
       options: ["Первый", "Второй", "Третий", "Четвёртый"],
       correctIndex: 1,
     },
+    review: null,
     correct: null,
     questionCount: 4,
     correctCount: 0,
@@ -176,6 +177,53 @@ test("renders a compact Loylebucks quiz with answer buttons", () => {
   expect(message).not.toContain("| Вариант | Ответ |");
   expect(message).not.toContain("Порог");
   expect(message).not.toContain("**Ответ:**");
+});
+
+test("renders every final quiz answer with a clear correctness marker", () => {
+  const message = leylobucksQuizMessage({
+    kind: "failed",
+    status: {
+      userId: 7,
+      balance: -1,
+      catgirlMessages: 0,
+      nextQuizSize: 6,
+      quiz: null,
+    },
+    question: null,
+    review: [
+      {
+        question: {
+          category: "тест",
+          prompt: "Первый вопрос?",
+          options: ["Верный ответ", "Другой ответ"],
+          correctIndex: 0,
+        },
+        answerIndex: 0,
+        correct: true,
+      },
+      {
+        question: {
+          category: "тест",
+          prompt: "Второй вопрос?",
+          options: ["Неверный ответ", "Верный ответ"],
+          correctIndex: 1,
+        },
+        answerIndex: 0,
+        correct: false,
+      },
+    ],
+    correct: false,
+    questionCount: 2,
+    correctCount: 1,
+    nextQuizSize: 3,
+  });
+
+  expect(message).toContain("## Разбор ответов");
+  expect(message).toContain("✅ **1.** Первый вопрос?");
+  expect(message).toContain("**Твой ответ:** Верный ответ");
+  expect(message).toContain("❌ **2.** Второй вопрос?");
+  expect(message).toContain("**Твой ответ:** Неверный ответ");
+  expect(message).toContain("**Правильный ответ:** Верный ответ");
 });
 
 test("renders a test bump together with the resulting large balance", () => {

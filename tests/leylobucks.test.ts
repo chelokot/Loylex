@@ -264,17 +264,28 @@ describe("LoylexDatabase Loylebucks", () => {
     expect(started.kind).toBe("started");
     expect(started.questionCount).toBe(5);
 
+    let finished = false;
+    let wrongAnswerIndex: number | null = null;
     for (let index = 0; index < 5; index += 1) {
       const correct = Number(correctAnswer(database));
       const answer = index === 0 ? String((correct % 4) + 1) : String(correct);
+      if (index === 0) {
+        wrongAnswerIndex = Number(answer) - 1;
+      }
       const action = database.quizLeylobucks(7, answer);
       if (index < 4) {
         expect(action.kind).toBe("next");
+        expect(action.review).toBeNull();
       } else {
         expect(action.kind).toBe("passed");
         expect(action.correctCount).toBe(4);
+        expect(action.review).toHaveLength(5);
+        expect(action.review?.[0]).toMatchObject({ answerIndex: wrongAnswerIndex, correct: false });
+        expect(action.review?.slice(1).every((item) => item.correct)).toBe(true);
+        finished = true;
       }
     }
+    expect(finished).toBe(true);
     expect(database.leylobucksStatus(7)).toMatchObject({ balance: 0, nextQuizSize: 5, quiz: null });
     database.close();
   });

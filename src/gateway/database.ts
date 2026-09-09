@@ -123,12 +123,19 @@ type LeylobucksQuizSessionRow = {
   user_id: number;
   question_count: number;
   questions_json: string;
+  answers_json: string;
   question_index: number;
   correct_count: number;
   attempt: number;
 };
 
 export type LeylobucksQuizQuestionView = Omit<LeylobucksQuizQuestion, "id">;
+
+export type LeylobucksQuizReview = {
+  question: LeylobucksQuizQuestionView;
+  answerIndex: number | null;
+  correct: boolean;
+};
 
 export type LeylobucksStatus = {
   userId: number;
@@ -158,6 +165,7 @@ export type LeylobucksQuizAction = {
   kind: "started" | "in_progress" | "next" | "invalid_answer" | "passed" | "failed";
   status: LeylobucksStatus;
   question: LeylobucksQuizQuestionView | null;
+  review: LeylobucksQuizReview[] | null;
   correct: boolean | null;
   questionCount: number | null;
   correctCount: number | null;
@@ -513,6 +521,33 @@ function leylobucksQuestionView(question: LeylobucksQuizQuestion): LeylobucksQui
   };
 }
 
+function parseQuizAnswers(value: string): Array<number | null> {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.map((answer) =>
+          typeof answer === "number" && Number.isSafeInteger(answer) ? answer : null,
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function quizReview(
+  questions: readonly LeylobucksQuizQuestion[],
+  answers: readonly (number | null)[],
+): LeylobucksQuizReview[] {
+  return questions.map((question, questionIndex) => {
+    const answerIndex = answers[questionIndex] ?? null;
+    return {
+      question: leylobucksQuestionView(question),
+      answerIndex,
+      correct: answerIndex === question.correctIndex,
+    };
+  });
+}
+
 export class LoylexDatabase {
   readonly connection: Database;
   readonly #readConnection: Database;
@@ -666,6 +701,7 @@ export class LoylexDatabase {
         user_id INTEGER PRIMARY KEY,
         question_count INTEGER NOT NULL CHECK (question_count >= 5),
         questions_json TEXT NOT NULL,
+        answers_json TEXT NOT NULL DEFAULT '[]',
         question_index INTEGER NOT NULL DEFAULT 0,
         correct_count INTEGER NOT NULL DEFAULT 0,
         attempt INTEGER NOT NULL DEFAULT 0,
@@ -675,6 +711,7 @@ export class LoylexDatabase {
       CREATE INDEX IF NOT EXISTS leylobucks_transactions_user_idx
         ON leylobucks_transactions(user_id, created_at DESC, id DESC);
     `);
+    this.ensureLeylobucksQuizSessionColumn("answers_json", "TEXT NOT NULL DEFAULT '[]'");
     this.ensureJobColumn("worker_id", "TEXT");
     this.ensureJobColumn("lease_expires_at", "INTEGER");
     this.ensureJobColumn("worker_generation", "INTEGER NOT NULL DEFAULT 1");
@@ -727,6 +764,15 @@ export class LoylexDatabase {
     const columns = this.connection.query<{ name: string }, []>("PRAGMA table_info(jobs)").all();
     if (!columns.some((column) => column.name === name)) {
       this.connection.exec(`ALTER TABLE jobs ADD COLUMN ${name} ${definition}`);
+    }
+  }
+
+  private ensureLeylobucksQuizSessionColumn(name: "answers_json", definition: string): void {
+    const columns = this.connection
+      .query<{ name: string }, []>("PRAGMA table_info(leylobucks_quiz_sessions)")
+      .all();
+    if (!columns.some((column) => column.name === name)) {
+      this.connection.exec(`ALTER TABLE leylobucks_quiz_sessions ADD COLUMN ${name} ${definition}`);
     }
   }
 
@@ -1454,7 +1500,7 @@ export class LoylexDatabase {
     };
     const session = this.connection
       .query<LeylobucksQuizSessionRow, [number]>(`
-        SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
+        SELECT user_id, question_count, questions_json, answers_json, question_index, correct_count, attempt
         FROM leylobucks_quiz_sessions
         WHERE user_id = ?
       `)
@@ -1571,7 +1617,7 @@ export class LoylexDatabase {
       const account = this.ensureLeylobucksAccount(userId);
       let session = this.connection
         .query<LeylobucksQuizSessionRow, [number]>(`
-          SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
+          SELECT user_id, question_count, questions_json, answers_json, question_index, correct_count, attempt
           FROM leylobucks_quiz_sessions
           WHERE user_id = ?
         `)
@@ -1583,8 +1629,8 @@ export class LoylexDatabase {
         this.connection
           .query(`
             INSERT INTO leylobucks_quiz_sessions (
-              user_id, question_count, questions_json, question_index, correct_count, attempt, started_at
-            ) VALUES (?, ?, ?, 0, 0, ?, ?)
+              user_id, question_count, questions_json, answers_json, question_index, correct_count, attempt, started_at
+            ) VALUES (?, ?, ?, '[]', 0, 0, ?, ?)
           `)
           .run(userId, createdQuestions.length, JSON.stringify(createdQuestions), attempt, now);
         this.connection
@@ -1594,7 +1640,7 @@ export class LoylexDatabase {
           .run(attempt, now, userId);
         session = this.connection
           .query<LeylobucksQuizSessionRow, [number]>(`
-            SELECT user_id, question_count, questions_json, question_index, correct_count, attempt
+            SELECT user_id, question_count, questions_json, answers_json, question_index, correct_count, attempt
             FROM leylobucks_quiz_sessions
             WHERE user_id = ?
           `)
@@ -1607,6 +1653,7 @@ export class LoylexDatabase {
           kind: "started" as const,
           status: this.leylobucksStatusView(userId),
           question: storedQuestions[0] ? leylobucksQuestionView(storedQuestions[0]) : null,
+          review: null,
           correct: null,
           questionCount: session.question_count,
           correctCount: 0,
@@ -1624,6 +1671,7 @@ export class LoylexDatabase {
           kind: "in_progress" as const,
           status: this.leylobucksStatusView(userId),
           question: leylobucksQuestionView(question),
+          review: null,
           correct: null,
           questionCount: session.question_count,
           correctCount: session.correct_count,
@@ -1637,6 +1685,7 @@ export class LoylexDatabase {
           kind: "invalid_answer" as const,
           status: this.leylobucksStatusView(userId),
           question: leylobucksQuestionView(question),
+          review: null,
           correct: null,
           questionCount: session.question_count,
           correctCount: session.correct_count,
@@ -1647,19 +1696,22 @@ export class LoylexDatabase {
       const isCorrect = answerIndex === question.correctIndex;
       const correctCount = session.correct_count + (isCorrect ? 1 : 0);
       const questionIndex = session.question_index + 1;
+      const answers = parseQuizAnswers(session.answers_json);
+      answers[session.question_index] = answerIndex;
       if (questionIndex < session.question_count) {
         this.connection
           .query(`
             UPDATE leylobucks_quiz_sessions
-            SET question_index = ?, correct_count = ?
+            SET answers_json = ?, question_index = ?, correct_count = ?
             WHERE user_id = ?
           `)
-          .run(questionIndex, correctCount, userId);
+          .run(JSON.stringify(answers), questionIndex, correctCount, userId);
         const nextQuestion = questions[questionIndex];
         return {
           kind: "next" as const,
           status: this.leylobucksStatusView(userId),
           question: nextQuestion ? leylobucksQuestionView(nextQuestion) : null,
+          review: null,
           correct: isCorrect,
           questionCount: session.question_count,
           correctCount,
@@ -1669,6 +1721,7 @@ export class LoylexDatabase {
 
       const now = Date.now();
       const passingScore = quizPassingScore(session.question_count);
+      const review = quizReview(questions, answers);
       if (correctCount >= passingScore) {
         const balanceAfterQuiz = account.balance < 0 ? 0 : account.balance;
         const quizDelta = balanceAfterQuiz - account.balance;
@@ -1697,6 +1750,7 @@ export class LoylexDatabase {
           kind: "passed" as const,
           status: this.leylobucksStatusView(userId),
           question: null,
+          review,
           correct: isCorrect,
           questionCount: session.question_count,
           correctCount,
@@ -1717,6 +1771,7 @@ export class LoylexDatabase {
         kind: "failed" as const,
         status: this.leylobucksStatusView(userId),
         question: null,
+        review,
         correct: isCorrect,
         questionCount: session.question_count,
         correctCount,

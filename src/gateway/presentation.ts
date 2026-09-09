@@ -2,6 +2,7 @@ import type {
   LeylobucksJobEconomy,
   LeylobucksPurchaseResult,
   LeylobucksQuizAction,
+  LeylobucksQuizReview,
   LeylobucksStatus,
   LeylobucksTestBumpResult,
 } from "./database.ts";
@@ -341,6 +342,29 @@ function quizQuestionMessage(
   ].join("\n");
 }
 
+function quizReviewMessage(review: readonly LeylobucksQuizReview[]): string {
+  const lines = ["## Разбор ответов", ""];
+  review.forEach((item, index) => {
+    const answer =
+      item.answerIndex === null
+        ? "ответ не сохранён"
+        : (item.question.options[item.answerIndex] ?? "неизвестный вариант");
+    const correctAnswer =
+      item.question.options[item.question.correctIndex] ?? "неизвестный вариант";
+    lines.push(
+      `${item.correct ? "✅" : "❌"} **${index + 1}.** ${item.question.prompt.replace(/\s+/gu, " ").trim()}`,
+      `   **Твой ответ:** ${answer}`,
+    );
+    if (!item.correct) {
+      lines.push(`   **Правильный ответ:** ${correctAnswer}`);
+    }
+    if (index < review.length - 1) {
+      lines.push("");
+    }
+  });
+  return lines.join("\n");
+}
+
 export function leylobucksStatusMessage(status: LeylobucksStatus): string {
   const lines = ["# 💰 Лейлобаксы", "", accountTable(status), "", shopTable()];
   if (status.balance < 0) {
@@ -490,33 +514,42 @@ export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {
   if (action.kind === "passed") {
     const questionCount = action.questionCount ?? 0;
     const correctCount = action.correctCount ?? 0;
-    return [
+    const lines = [
       "# 🎉 Викторина пройдена!",
       "",
       "| Показатель | Результат |",
       "| --- | ---: |",
       `| Правильные ответы | **${correctCount}/${questionCount}** |`,
       `| Баланс после викторины | **${formatInteger(action.status.balance)}** |`,
-      "",
-      "> Отлично! Можно продолжать общаться и зарабатывать лейлобаксы.",
-    ].join("\n");
+    ];
+    if (action.review && action.review.length > 0) {
+      lines.push("", quizReviewMessage(action.review));
+    }
+    lines.push("", "> Отлично! Можно продолжать общаться и зарабатывать лейлобаксы.");
+    return lines.join("\n");
   }
   if (action.kind === "failed") {
     const questionCount = action.questionCount ?? 0;
     const correctCount = action.correctCount ?? 0;
     const nextQuizSize = action.nextQuizSize ?? questionCount + 1;
-    return [
+    const lines = [
       "# ❌ Викторина не пройдена",
       "",
       "| Показатель | Результат |",
       "| --- | ---: |",
       `| Правильные ответы | **${correctCount}/${questionCount}** |`,
       `| Баланс | **${formatInteger(action.status.balance)}** |`,
+    ];
+    if (action.review && action.review.length > 0) {
+      lines.push("", quizReviewMessage(action.review));
+    }
+    lines.push(
       "",
       `> В следующий раз: **${formatInteger(nextQuizSize)}** вопросов; проходной балл — **${formatInteger(Math.max(1, nextQuizSize - 1))}/${formatInteger(nextQuizSize)}**.`,
       "",
       "Запусти `/quiz`, чтобы попробовать снова.",
-    ].join("\n");
+    );
+    return lines.join("\n");
   }
   if (action.question) {
     const quiz = action.status.quiz;
