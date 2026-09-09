@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LoylexDatabase } from "../src/gateway/database.ts";
-import { assessLeylobucksRequest } from "../src/gateway/leylobucks.ts";
+import { assessLeylobucksRequest, leylobucksQuizQuestions } from "../src/gateway/leylobucks.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 
 const directories: string[] = [];
@@ -70,6 +70,37 @@ describe("Loylebucks assessment", () => {
     expect(good.qualityScore).toBeLessThanOrEqual(100);
     expect(good.delta).toBeGreaterThanOrEqual(-100);
     expect(good.delta).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("Loylebucks quiz question bank", () => {
+  test("contains 60 general and 60 technical questions with balanced technical difficulty", () => {
+    const difficultyCounts = { easy: 0, medium: 0, hard: 0 };
+    const technicalDifficultyCounts = { easy: 0, medium: 0, hard: 0 };
+    const categoryCounts = new Map<string, number>();
+    const ids = new Set<string>();
+
+    for (const question of leylobucksQuizQuestions) {
+      difficultyCounts[question.difficulty] += 1;
+      if (question.category === "технологии") {
+        technicalDifficultyCounts[question.difficulty] += 1;
+      }
+      categoryCounts.set(question.category, (categoryCounts.get(question.category) ?? 0) + 1);
+      ids.add(question.id);
+      expect(question.options).toHaveLength(4);
+      expect(question.correctIndex).toBeGreaterThanOrEqual(0);
+      expect(question.correctIndex).toBeLessThan(question.options.length);
+    }
+
+    expect(leylobucksQuizQuestions).toHaveLength(120);
+    expect(ids).toHaveLength(120);
+    expect(difficultyCounts).toEqual({ easy: 40, medium: 40, hard: 40 });
+    expect(technicalDifficultyCounts).toEqual({ easy: 20, medium: 20, hard: 20 });
+    expect(categoryCounts.get("технологии")).toBe(60);
+    expect(categoryCounts.size).toBe(9);
+    expect([...categoryCounts.values()].sort((left, right) => left - right)).toEqual([
+      7, 7, 7, 7, 8, 8, 8, 8, 60,
+    ]);
   });
 });
 

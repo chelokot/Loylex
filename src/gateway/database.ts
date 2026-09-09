@@ -129,7 +129,7 @@ type LeylobucksQuizSessionRow = {
   attempt: number;
 };
 
-export type LeylobucksQuizQuestionView = Omit<LeylobucksQuizQuestion, "id">;
+export type LeylobucksQuizQuestionView = Omit<LeylobucksQuizQuestion, "id" | "difficulty">;
 
 export type LeylobucksQuizReview = {
   question: LeylobucksQuizQuestionView;
