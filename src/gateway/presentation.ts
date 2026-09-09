@@ -233,16 +233,29 @@ function balanceLabel(balance: number): string {
   return String(balance);
 }
 
+function randomQuizHighlightIndex(optionCount: number, random: () => number): number {
+  if (optionCount <= 0) {
+    return -1;
+  }
+  const value = random();
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(optionCount - 1, Math.max(0, Math.floor(value * optionCount)));
+}
+
 function quizQuestionMessage(
   question: NonNullable<LeylobucksStatus["quiz"]>["question"],
   questionIndex: number,
   questionCount: number,
   correctCount: number,
+  random: () => number = Math.random,
 ): string {
+  const highlightedIndex = randomQuizHighlightIndex(question.options.length, random);
   const options = question.options
     .map((option, index) => {
       const answer = `${String.fromCharCode(65 + index)}) ${option}`;
-      return index === question.correctIndex ? `**${answer}**` : answer;
+      return index === highlightedIndex ? `**${answer}**` : answer;
     })
     .join("\n");
   return [
@@ -331,9 +344,12 @@ export function leylobucksTestBumpInvalidMessage(): string {
   return "Используй `/test_bump AMOUNT`, где AMOUNT — положительное целое число (например, `/test_bump 1000000`).";
 }
 
-export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {
+export function leylobucksQuizMessage(
+  action: LeylobucksQuizAction,
+  random: () => number = Math.random,
+): string {
   if (action.kind === "invalid_answer") {
-    return `Не понял ответ. Напиши букву A, B, C или D командой \`/quiz A\`.\n\n${action.question ? quizQuestionMessage(action.question, action.status.quiz?.questionIndex ?? 0, action.questionCount ?? 5, action.correctCount ?? 0) : ""}`;
+    return `Не понял ответ. Напиши букву A, B, C или D командой \`/quiz A\`.\n\n${action.question ? quizQuestionMessage(action.question, action.status.quiz?.questionIndex ?? 0, action.questionCount ?? 5, action.correctCount ?? 0, random) : ""}`;
   }
   if (action.kind === "passed") {
     return `🎉 Викторина пройдена: ${action.correctCount}/${action.questionCount}. Баланс после викторины: **${action.status.balance}**. Можно продолжать общаться и зарабатывать лейлобаксы.`;
@@ -351,7 +367,7 @@ export function leylobucksQuizMessage(action: LeylobucksQuizAction): string {
           ? "Викторина продолжается."
           : "Викторина начата.";
     const quiz = action.status.quiz;
-    return `${prefix}\n\n${quizQuestionMessage(action.question, quiz?.questionIndex ?? 0, action.questionCount ?? quiz?.questionCount ?? 5, action.correctCount ?? quiz?.correctCount ?? 0)}`;
+    return `${prefix}\n\n${quizQuestionMessage(action.question, quiz?.questionIndex ?? 0, action.questionCount ?? quiz?.questionCount ?? 5, action.correctCount ?? quiz?.correctCount ?? 0, random)}`;
   }
   return leylobucksStatusMessage(action.status);
 }

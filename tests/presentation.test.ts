@@ -136,8 +136,8 @@ test("hides Loylebucks help in the disabled runtime mode", () => {
   expect(leylobucksModeMessage(false)).toContain("Сохранённые балансы и история");
 });
 
-test("bolds the correct option in a Loylebucks quiz question", () => {
-  const message = leylobucksQuizMessage({
+test("bolds a random option in a Loylebucks quiz question", () => {
+  const action = {
     kind: "started",
     status: {
       userId: 7,
@@ -156,9 +156,14 @@ test("bolds the correct option in a Loylebucks quiz question", () => {
     questionCount: 4,
     correctCount: 0,
     nextQuizSize: null,
-  });
+  } as const;
 
-  expect(message).toContain("A) Первый\n**B) Второй**\nC) Третий\nD) Четвёртый");
+  const firstOption = leylobucksQuizMessage(action, () => 0);
+  expect(firstOption).toContain("**A) Первый**\nB) Второй\nC) Третий\nD) Четвёртый");
+  expect(firstOption).not.toContain("**B) Второй**");
+
+  const lastOption = leylobucksQuizMessage(action, () => 0.99);
+  expect(lastOption).toContain("A) Первый\nB) Второй\nC) Третий\n**D) Четвёртый**");
 });
 
 test("renders a test bump together with the resulting large balance", () => {
