@@ -2,6 +2,7 @@ import type { TelegramMessage, TelegramUpdate } from "../shared/types.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
+import { editedInstructionPrompt, editedMessageForUpdate } from "./edited-message.ts";
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
 import { LeylobucksMode } from "./leylobucks-mode.ts";
 import { responseOptions } from "./message-options.ts";
@@ -168,13 +169,75 @@ async function handleCallbackQuery(update: TelegramUpdate): Promise<boolean> {
   return true;
 }
 
+async function handleEditedMessage(updateId: number, message: TelegramMessage): Promise<void> {
+  if (message.from?.is_bot) {
+    return;
+  }
+  const editedText = message.text?.trim();
+  if (!editedText) {
+    return;
+  }
+  const currentUserId = userId(message);
+  const ownerId = message.chat.type === "private" ? currentUserId : undefined;
+  if (ownerId === null) {
+    return;
+  }
+  const resumeThreadId = database.activeThreadForMessage(
+    message.chat.id,
+    message.message_id,
+    ownerId,
+  );
+  if (resumeThreadId === null) {
+    return;
+  }
+
+  const economyEnabled = leylobucksMode.isEnabled(currentUserId);
+  if (
+    economyEnabled &&
+    currentUserId !== null &&
+    database.leylobucksStatus(currentUserId).balance < 0
+  ) {
+    return;
+  }
+
+  const cancelledJobIds = database.cancelJobsForMessage(message.chat.id, message.message_id);
+  if (cancelledJobIds.length === 0) {
+    return;
+  }
+
+  const admission = enqueueRequest(
+    database,
+    updateId,
+    message,
+    editedInstructionPrompt(editedText),
+    editedText,
+    resumeThreadId,
+    "delta",
+    economyEnabled,
+  );
+  if (admission.kind === "queued") {
+    acknowledgeWork(message);
+    console.log(
+      JSON.stringify({
+        level: "info",
+        component: "poller",
+        event: "edited_instruction_queued",
+        updateId,
+        messageId: message.message_id,
+        cancelledJobIds,
+        threadId: resumeThreadId,
+      }),
+    );
+  }
+}
+
 async function poll(): Promise<void> {
   while (!stopping) {
     try {
       const updates = await telegram.getUpdates(offset, config.pollTimeoutSeconds);
       for (const update of updates) {
         await audit.append(update);
-        const message = database.archiveUpdate(update);
+        database.archiveUpdate(update);
         offset = update.update_id + 1;
         if (await handleCallbackQuery(update)) {
           continue;
@@ -217,6 +280,11 @@ async function poll(): Promise<void> {
           }
           continue;
         }
+        const editedMessage = editedMessageForUpdate(update);
+        if (editedMessage !== null) {
+          await handleEditedMessage(update.update_id, editedMessage);
+          continue;
+        }
         const stopped = update.stopped_message_generation;
         if (stopped && Number.isSafeInteger(stopped.draft_id)) {
           const cancelledJobIds = database.cancelJobsForDraft(stopped.chat.id, stopped.draft_id);
@@ -237,6 +305,7 @@ async function poll(): Promise<void> {
           );
           continue;
         }
+        const message = update.message;
         if (!message || message.from?.is_bot) {
           continue;
         }

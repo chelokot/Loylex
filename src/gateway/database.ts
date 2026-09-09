@@ -1350,6 +1350,40 @@ export class LoylexDatabase {
     );
   }
 
+  activeThreadForMessage(chatId: number, messageId: number, userId?: number): string | null {
+    if (userId === undefined) {
+      return (
+        this.connection
+          .query<{ thread_id: string }, [number, number]>(`
+            SELECT COALESCE(codex_thread_id, resume_thread_id) AS thread_id
+            FROM jobs
+            WHERE chat_id = ?
+              AND message_id = ?
+              AND state IN ('pending', 'running')
+              AND COALESCE(codex_thread_id, resume_thread_id) IS NOT NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+          `)
+          .get(chatId, messageId)?.thread_id ?? null
+      );
+    }
+    return (
+      this.connection
+        .query<{ thread_id: string }, [number, number, number]>(`
+          SELECT COALESCE(codex_thread_id, resume_thread_id) AS thread_id
+          FROM jobs
+          WHERE chat_id = ?
+            AND message_id = ?
+            AND user_id = ?
+            AND state IN ('pending', 'running')
+            AND COALESCE(codex_thread_id, resume_thread_id) IS NOT NULL
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        `)
+        .get(chatId, messageId, userId)?.thread_id ?? null
+    );
+  }
+
   latestThread(chatId: number): string | null {
     return (
       this.connection

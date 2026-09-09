@@ -637,6 +637,28 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("finds only an active Codex thread for an edited source message", () => {
+    const database = setup();
+    const incoming = message(3, "Лойлекс, начни работу");
+    database.archiveMessage(incoming, "bot_api");
+    database.enqueue(57, incoming, "начни работу", "thread-active");
+
+    expect(database.activeThreadForMessage(-10042, 3)).toBe("thread-active");
+    expect(database.activeThreadForMessage(-10042, 3, 7)).toBe("thread-active");
+    expect(database.activeThreadForMessage(-10042, 3, 99)).toBeNull();
+    const running = database.claimNext(10);
+    expect(running?.messageId).toBe(3);
+    expect(database.cancelJobsForMessage(-10042, 3)).toEqual([running?.id ?? 0]);
+    expect(database.activeThreadForMessage(-10042, 3)).toBeNull();
+
+    database.enqueue(58, incoming, "уже завершено", "thread-done");
+    const completed = database.claimNext(10);
+    expect(completed).not.toBeNull();
+    expect(database.complete(completed?.id ?? 0, 4, "thread-done")).toBe(true);
+    expect(database.activeThreadForMessage(-10042, 3)).toBeNull();
+    database.close();
+  });
+
   test("passes attachments from a replied-to message into the job", () => {
     const database = setup();
     const document = {
