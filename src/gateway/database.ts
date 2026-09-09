@@ -129,7 +129,7 @@ type LeylobucksQuizSessionRow = {
   attempt: number;
 };
 
-export type LeylobucksQuizQuestionView = Omit<LeylobucksQuizQuestion, "correctIndex" | "id">;
+export type LeylobucksQuizQuestionView = Omit<LeylobucksQuizQuestion, "id">;
 
 export type LeylobucksStatus = {
   userId: number;
@@ -505,6 +505,7 @@ function leylobucksQuestionView(question: LeylobucksQuizQuestion): LeylobucksQui
     category: question.category,
     prompt: question.prompt,
     options: question.options,
+    correctIndex: question.correctIndex,
   };
 }
 

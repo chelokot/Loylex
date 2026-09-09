@@ -6,6 +6,7 @@ import {
   failureMessage,
   helpMessage,
   leylobucksModeMessage,
+  leylobucksQuizMessage,
   stopResultMessage,
   toolsDocument,
   toolUsages,
@@ -132,6 +133,31 @@ test("hides Loylebucks help in the disabled runtime mode", () => {
   expect(helpMessage(false)).not.toContain("/bucks");
   expect(helpMessage(true)).toContain("/bucks");
   expect(leylobucksModeMessage(false)).toContain("Сохранённые балансы и история");
+});
+
+test("bolds the correct option in a Loylebucks quiz question", () => {
+  const message = leylobucksQuizMessage({
+    kind: "started",
+    status: {
+      userId: 7,
+      balance: -1,
+      catgirlMessages: 0,
+      nextQuizSize: 5,
+      quiz: null,
+    },
+    question: {
+      category: "тест",
+      prompt: "Какой вариант правильный?",
+      options: ["Первый", "Второй", "Третий", "Четвёртый"],
+      correctIndex: 1,
+    },
+    correct: null,
+    questionCount: 4,
+    correctCount: 0,
+    nextQuizSize: null,
+  });
+
+  expect(message).toContain("A) Первый\n**B) Второй**\nC) Третий\nD) Четвёртый");
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {

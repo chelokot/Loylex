@@ -239,7 +239,10 @@ function quizQuestionMessage(
   correctCount: number,
 ): string {
   const options = question.options
-    .map((option, index) => `${String.fromCharCode(65 + index)}) ${option}`)
+    .map((option, index) => {
+      const answer = `${String.fromCharCode(65 + index)}) ${option}`;
+      return index === question.correctIndex ? `**${answer}**` : answer;
+    })
     .join("\n");
   return [
     `**Вопрос ${questionIndex + 1}/${questionCount} — ${question.category}**`,
