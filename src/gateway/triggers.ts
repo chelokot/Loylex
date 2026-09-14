@@ -2,6 +2,7 @@ import type { TelegramMessage } from "../shared/types.ts";
 
 const prefixPattern =
   /^\s*(?:loylex|лойлекс|лойликс|чмох|чипа|сипа|лилс|лейлоекс|лейлодекс|лойдекс|лейдекс)(?=$|[\s:;,—–-])[\s:;,—–-]*/iu;
+const temporaryLeyloPrefixPattern = /^\s*лейло(?=$|[\s:;,—–-])[\s:;,—–-]*/iu;
 const stopPattern = /^\/stop(?:@[a-z0-9_]+)?$/iu;
 const tasksPattern = /^\/tasks(?:@[a-z0-9_]+)?$/iu;
 const cancelPattern = /^\/cancel_(\d+)(?:@([a-z0-9_]+))?$/iu;
@@ -14,6 +15,11 @@ const testBumpPattern = /^\/test_bump(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 const leylobucksNaturalPattern = /^(?:лейлобаксы|лб)(?:\s+([\s\S]*))?$/iu;
 const quizPattern = /^\/(?:quiz|викторина)(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu;
 const quizCallbackPattern = /^quiz:([abcd])$/iu;
+
+// Temporary compatibility alias requested on 2026-09-14. The hard expiry makes the alias
+// inert across restarts after the end of Sunday without mutating or deleting the source tree.
+export const TEMPORARY_LEYLO_ALIAS_START_AT = Date.parse("2026-09-14T00:00:00Z");
+export const TEMPORARY_LEYLO_ALIAS_END_AT = Date.parse("2026-09-21T00:00:00Z");
 
 export type LeylobucksCommand =
   | { kind: "status" }
@@ -34,6 +40,10 @@ export type TriggerDecision = {
 
 function messageText(message: TelegramMessage): string {
   return message.text ?? message.caption ?? "";
+}
+
+export function isTemporaryLeyloAliasActive(now = Date.now()): boolean {
+  return now >= TEMPORARY_LEYLO_ALIAS_START_AT && now < TEMPORARY_LEYLO_ALIAS_END_AT;
 }
 
 export function promptWithQuote(message: TelegramMessage, prompt: string): string {
@@ -214,12 +224,18 @@ export function resumeTaskMessageId(message: TelegramMessage, botUsername?: stri
   return Number.isSafeInteger(messageId) && messageId > 0 ? messageId : null;
 }
 
-export function detectTrigger(message: TelegramMessage, botUserId: number): TriggerDecision | null {
+export function detectTrigger(
+  message: TelegramMessage,
+  botUserId: number,
+  now = Date.now(),
+): TriggerDecision | null {
   const text = messageText(message);
   if (isSlashCommand(message)) {
     return null;
   }
-  const prefix = text.match(prefixPattern);
+  const prefix =
+    text.match(prefixPattern) ??
+    (isTemporaryLeyloAliasActive(now) ? text.match(temporaryLeyloPrefixPattern) : null);
   if (prefix) {
     const prompt = text.slice(prefix[0].length).trim();
     return { kind: "prefix", prompt: prompt || "Ответь на это сообщение." };
