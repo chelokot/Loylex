@@ -16,6 +16,11 @@ export type CodexItem = {
   kind?: string;
   call_id?: string;
   callId?: string;
+  action?: unknown;
+  input?: unknown;
+  arguments?: unknown;
+  query?: unknown;
+  queries?: unknown;
   function?: {
     name?: string;
   };
@@ -27,6 +32,14 @@ type CodexJsonEvent = {
   message?: string;
   item?: CodexItem;
   name?: string;
+  tool?: string;
+  server?: string;
+  command?: string;
+  action?: unknown;
+  input?: unknown;
+  arguments?: unknown;
+  query?: unknown;
+  queries?: unknown;
   call_id?: string;
   usage?: unknown;
   token_usage?: unknown;
@@ -147,10 +160,25 @@ function toolItem(event: CodexJsonEvent): CodexItem | undefined {
     return event.item;
   }
   const type = normalizedType(event.type);
-  if (type === "custom_tool_call" || type === "mcp_tool_call") {
+  if (
+    type === "custom_tool_call" ||
+    type === "mcp_tool_call" ||
+    type === "mcp_tool_call_begin" ||
+    type === "web_search_call" ||
+    type === "web_search_begin" ||
+    type === "dynamic_tool_call_request"
+  ) {
     return {
       ...(event.type ? { type: event.type } : {}),
       ...(event.name ? { name: event.name } : {}),
+      ...(event.tool ? { tool: event.tool } : {}),
+      ...(event.server ? { server: event.server } : {}),
+      ...(event.command ? { command: event.command } : {}),
+      ...(event.action !== undefined ? { action: event.action } : {}),
+      ...(event.input !== undefined ? { input: event.input } : {}),
+      ...(event.arguments !== undefined ? { arguments: event.arguments } : {}),
+      ...(event.query !== undefined ? { query: event.query } : {}),
+      ...(event.queries !== undefined ? { queries: event.queries } : {}),
       ...(event.call_id ? { call_id: event.call_id } : {}),
     };
   }
@@ -172,7 +200,138 @@ function isToolEvent(event: CodexJsonEvent): boolean {
     type === "item_started" ||
     type === "item_completed" ||
     type === "custom_tool_call" ||
-    type === "mcp_tool_call"
+    type === "mcp_tool_call" ||
+    type === "mcp_tool_call_begin" ||
+    type === "web_search_call" ||
+    type === "web_search_begin" ||
+    type === "dynamic_tool_call_request"
+  );
+}
+
+function compactToolText(value: string, limit = 400): string {
+  return printableText(value).replaceAll(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function parsedJson(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return value;
+  }
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function searchQueryFromValue(value: unknown, depth = 0): string | null {
+  if (depth > 5) {
+    return null;
+  }
+  const parsed = parsedJson(value);
+  const directText = stringValue(parsed);
+  if (directText) {
+    return compactToolText(directText);
+  }
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) {
+      const query = searchQueryFromValue(entry, depth + 1);
+      if (query) {
+        return query;
+      }
+    }
+    return null;
+  }
+  const object = record(parsed);
+  if (!object) {
+    return null;
+  }
+  for (const key of ["query", "q"]) {
+    const query = stringValue(object[key]);
+    if (query) {
+      return compactToolText(query);
+    }
+  }
+  for (const key of [
+    "action",
+    "arguments",
+    "input",
+    "parameters",
+    "queries",
+    "search_query",
+    "searchQuery",
+  ]) {
+    const query = searchQueryFromValue(object[key], depth + 1);
+    if (query) {
+      return query;
+    }
+  }
+  return null;
+}
+
+function isSearchTool(item: CodexItem, name: string): boolean {
+  const type = normalizedType(item.type);
+  const normalizedName = name.toLowerCase().replaceAll("-", "_");
+  return (
+    type.includes("web_search") ||
+    normalizedName === "web.run" ||
+    normalizedName.includes("web.search") ||
+    normalizedName.includes("web_search") ||
+    normalizedName.includes("search")
+  );
+}
+
+function quoteActivityText(value: string): string {
+  return value.replaceAll("'", "\\'");
+}
+
+export function toolActivityFromCodexItem(item: CodexItem | undefined): string | null {
+  const name = item ? itemToolName(item) : null;
+  if (!item || !name) {
+    return null;
+  }
+  if (isSearchTool(item, name)) {
+    const query = searchQueryFromValue(item);
+    if (query) {
+      return `Searched for '${quoteActivityText(query)}'`;
+    }
+  }
+  return `Used '${quoteActivityText(compactToolText(name, 120))}'`;
+}
+
+function isCommandItemType(type: string): boolean {
+  return type === "command_execution" || type === "local_shell_call";
+}
+
+function commandTextFromEvent(event: CodexJsonEvent, eventType: string): string | null {
+  const itemType = normalizedType(event.item?.type);
+  if (isCommandItemType(itemType)) {
+    return stringValue(event.item?.command) ?? "terminal command";
+  }
+  if (eventType === "exec_command_begin" || eventType === "command_execution_begin") {
+    return stringValue(event.command) ?? "terminal command";
+  }
+  return null;
+}
+
+function isCommandStartEvent(event: CodexJsonEvent, eventType: string): boolean {
+  const itemType = normalizedType(event.item?.type);
+  return (
+    (eventType === "item_started" && isCommandItemType(itemType)) ||
+    eventType === "exec_command_begin" ||
+    eventType === "command_execution_begin"
+  );
+}
+
+function isCommandCompletedEvent(event: CodexJsonEvent, eventType: string): boolean {
+  const itemType = normalizedType(event.item?.type);
+  return (
+    (eventType === "item_completed" && isCommandItemType(itemType)) ||
+    eventType === "exec_command_end" ||
+    eventType === "command_execution_end"
   );
 }
 
@@ -353,8 +512,17 @@ async function runCodexAttempt(
 
     async function reportToolUse(event: CodexJsonEvent, eventType: string): Promise<void> {
       const item = toolItem(event);
+      if (
+        !item ||
+        isCommandItemType(normalizedType(item.type)) ||
+        eventType === "exec_command_begin" ||
+        eventType === "command_execution_begin"
+      ) {
+        return;
+      }
       const name = toolNameFromCodexItem(item);
-      if (!item || !name) {
+      const activity = toolActivityFromCodexItem(item);
+      if (!name || !activity) {
         return;
       }
       const itemId = toolItemId(event, item);
@@ -383,7 +551,7 @@ async function runCodexAttempt(
       await flushCommentary();
       await onEvent({
         kind: "tool",
-        text: name,
+        text: activity,
         toolCallId,
         ...(threadId ? { threadId } : {}),
       });
@@ -419,14 +587,14 @@ async function runCodexAttempt(
         } else if (eventType === "turn_completed") {
           finalAnswer = pendingAgentMessage || finalAnswer;
           pendingAgentMessage = "";
-        } else if (eventType === "item_started" && itemType === "command_execution") {
+        } else if (isCommandStartEvent(event, eventType)) {
           await flushCommentary();
           await onEvent({
             kind: "command",
-            text: (event.item?.command ?? "terminal command").slice(0, 500),
+            text: (commandTextFromEvent(event, eventType) ?? "terminal command").slice(0, 500),
             ...(threadId ? { threadId } : {}),
           });
-        } else if (eventType === "item_completed" && itemType === "command_execution") {
+        } else if (isCommandCompletedEvent(event, eventType)) {
           await onEvent({
             kind: "status",
             text: `Команда завершена с кодом ${event.item?.exit_code ?? event.item?.exitCode ?? "unknown"}`,

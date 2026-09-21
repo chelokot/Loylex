@@ -41,7 +41,10 @@ function workerId(request: Request): string | undefined {
 }
 
 function eventStatusLine(event: AgentEvent): string {
-  const text = event.text.trim();
+  const text =
+    event.kind === "command" || event.kind === "tool"
+      ? event.text.replaceAll(/\s+/g, " ").trim()
+      : event.text.trim();
   if (event.kind !== "tool" || !event.toolCallId) {
     return `${event.kind}: ${text}`;
   }

@@ -214,8 +214,7 @@ test("sends a new final reply and removes the temporary progress message", async
   ).toEqual([
     {
       chatId: -10042,
-      markdown:
-        "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
+      markdown: "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет",
       options: { replyTo: 10, threadId: null },
     },
   ]);
@@ -392,8 +391,7 @@ test("uses ephemeral rich drafts in private chats", async () => {
     sent.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
   ).toEqual([
     {
-      markdown:
-        "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
+      markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
       options: { threadId: null },
     },
   ]);
@@ -446,7 +444,8 @@ test("keeps progress when replacing a temporary message with a failure", async (
   await fail.call(server, 7, "The socket connection was closed unexpectedly", "worker-1");
 
   expect(edited).toContain("<summary>Ход работы</summary>");
-  expect(edited).toContain("- Проверяю архив");
+  expect(edited).toContain("- Run 'loylex media file-id /tmp/archive.json'");
+  expect(edited).not.toContain("- Проверяю архив");
   expect(edited).toContain("Не получилось завершить задачу.");
   expect(edited).toContain("The socket connection was closed unexpectedly");
   expect(failed as { jobId: number; error: string; threadId: string | null } | null).toEqual({

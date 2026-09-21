@@ -199,12 +199,12 @@ remains bound to the authenticated Telegram user. A resumed thread receives only
 since its previous turn because the saved Codex transcript already contains the earlier prompt and
 context.
 
-While Codex works, terminal and reasoning events update an ephemeral rich draft in private chats,
-or create/edit one persistent Rich Message with a collapsed `<details>` history in groups.
-Completion sends a new Rich Markdown message containing the collapsed history and final answer,
-then appends a collapsed list of the tools used in that turn with call counts, and removes the temporary group progress message. This keeps the final answer at the bottom of
-the chat; group messages reply to the request, while private-chat messages remain ordinary
-unthreaded messages.
+While Codex works, terminal and tool events update an ephemeral rich draft in private
+chats, or create/edit one persistent Rich Message with a collapsed `<details>` history in groups.
+The single history lists concrete actions such as `Run '…'`, `Searched for '…'`, and the
+fallback `Used '…'`; completion keeps that history above the final answer and removes the
+temporary group progress message. This keeps the final answer at the bottom of the chat; group
+messages reply to the request, while private-chat messages remain ordinary unthreaded messages.
 Rich API errors are surfaced instead of silently sending the same document as unformatted text.
 Private-chat responses are sent as ordinary messages without reply markers; group responses keep
 the reply to the triggering message.

@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { parseCodexUsage, toolNameFromCodexItem } from "../src/agent/codex.ts";
+import {
+  parseCodexUsage,
+  toolActivityFromCodexItem,
+  toolNameFromCodexItem,
+} from "../src/agent/codex.ts";
 
 test("parses the usage payload from a completed Codex turn", () => {
   expect(
@@ -54,4 +58,23 @@ test("normalizes tool names from Codex item variants", () => {
   );
   expect(toolNameFromCodexItem({ type: "ImageView" })).toBe("view_image");
   expect(toolNameFromCodexItem({ type: "FileChange" })).toBe("apply_patch");
+});
+
+test("renders a web search query and falls back for unfamiliar tools", () => {
+  expect(
+    toolActivityFromCodexItem({
+      type: "web_search_call",
+      action: { type: "search", query: "latest Codex release" },
+    }),
+  ).toBe("Searched for 'latest Codex release'");
+  expect(
+    toolActivityFromCodexItem({
+      type: "McpToolCall",
+      tool: "web.run",
+      arguments: JSON.stringify({ search_query: [{ q: "Loylex progress UI" }] }),
+    }),
+  ).toBe("Searched for 'Loylex progress UI'");
+  expect(toolActivityFromCodexItem({ type: "new_tool_call", name: "future.tool" })).toBe(
+    "Used 'future.tool'",
+  );
 });

@@ -13,8 +13,6 @@ import {
   leylobucksStatusMessage,
   leylobucksTestBumpMessage,
   stopResultMessage,
-  toolsDocument,
-  toolUsages,
   workDocument,
 } from "../src/gateway/presentation.ts";
 
@@ -30,22 +28,25 @@ describe("activityLines", () => {
       "command: /bin/bash -lc 'free -h; df -h /; uptime'",
     ].join("\n\n");
 
-    expect(activityLines(status)).toEqual(["Подбираю нужные навыки", "Проверяю ресурсы сервера"]);
+    const expectedRun = (command: string) =>
+      `Run '${command.replaceAll("'", String.fromCharCode(92, 39))}'`;
+    expect(activityLines(status)).toEqual([
+      expectedRun("/bin/bash -lc 'find skills -maxdepth 2 -name SKILL.md -print'"),
+      expectedRun("/bin/bash -lc 'free -h; df -h /; uptime'"),
+    ]);
   });
 
-  test("prefers Codex commentary over command classifications", () => {
+  test("prefers concrete commands when commentary is also present", () => {
     const status = [
       "command: uname -a",
       "commentary: Сначала проверю окружение, затем сопоставлю результаты.",
       "command: git status --short",
     ].join("\n\n");
 
-    expect(activityLines(status)).toEqual([
-      "Сначала проверю окружение, затем сопоставлю результаты.",
-    ]);
+    expect(activityLines(status)).toEqual(["Run 'uname -a'", "Run 'git status --short'"]);
   });
 
-  test("deduplicates command fallback globally without command-specific placeholders", () => {
+  test("keeps each concrete command instead of generic command placeholders", () => {
     const status = [
       "command: uname -a",
       "command: git status --short",
@@ -53,7 +54,12 @@ describe("activityLines", () => {
       "command: git diff --stat",
     ].join("\n\n");
 
-    expect(activityLines(status)).toEqual(["Работаю в терминале"]);
+    expect(activityLines(status)).toEqual([
+      "Run 'uname -a'",
+      "Run 'git status --short'",
+      "Run 'whoami'",
+      "Run 'git diff --stat'",
+    ]);
   });
 
   test("describes the result of a stop command", () => {
@@ -74,15 +80,13 @@ describe("completedDocuments", () => {
   test("keeps work history even when it contains at most one visible item", () => {
     expect(
       completedDocuments("status: Готово", "Ответ пользователю").map(normalizeWorkSummary),
-    ).toEqual([
-      "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
-    ]);
+    ).toEqual(["<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю"]);
     expect(
       completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю").map(
         normalizeWorkSummary,
       ),
     ).toEqual([
-      "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
+      "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет пользователю",
     ]);
   });
 
@@ -93,38 +97,36 @@ describe("completedDocuments", () => {
         "Ответ пользователю",
       ).map(normalizeWorkSummary),
     ).toEqual([
-      "<details><summary>WORK</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю\n\n<details><summary>Использованные инструменты</summary>\n\n- Инструменты не использовались\n\n</details>",
+      "<details><summary>WORK</summary>\n\n- Проверяю код\n- Запускаю тесты\n\n</details>\n\nОтвет пользователю",
     ]);
   });
 });
 
-test("counts tools from status events and renders a collapsed list", () => {
+test("renders concrete tool activity in the work dropdown", () => {
   const status = [
-    "tool: exec [tool-call:one]",
-    "tool: web.run [tool-call:two]",
-    "tool: exec [tool-call:three]",
+    "tool: Searched for 'latest Codex release' [tool-call:one]",
+    "tool: Used 'image_gen' [tool-call:two]",
+    "command: rg -n presentation src tests",
     "status: Готово",
   ].join("\n\n");
 
-  expect(toolUsages(status)).toEqual([
-    { name: "exec", count: 2 },
-    { name: "web.run", count: 1 },
-  ]);
-  expect(toolsDocument(status)).toBe(
-    "<details><summary>Использованные инструменты</summary>\n\n- exec — 2 раза\n- web.run — 1 раз\n\n</details>",
+  expect(workDocument(status)).toBe(
+    "<details><summary>Ход работы</summary>\n\n- Searched for 'latest Codex release'\n- Used 'image_gen'\n- Run 'rg -n presentation src tests'\n\n</details>",
   );
+  expect(workDocument(status)).not.toContain("Использованные инструменты");
 });
 
-test("puts the tools dropdown on the last chunk of a long answer", () => {
-  const status = "tool: exec [tool-call:one]";
+test("keeps the only work dropdown on the first chunk of a long answer", () => {
+  const status = "tool: Used 'new_tool' [tool-call:one]";
   const documents = completedDocuments(status, "ответ ".repeat(6_000));
   const firstDocument = normalizeWorkSummary(documents[0] ?? "");
   const lastDocument = documents.at(-1) ?? "";
 
   expect(documents.length).toBeGreaterThan(1);
   expect(firstDocument).toContain("<summary>WORK</summary>");
-  expect(firstDocument).not.toContain("Использованные инструменты");
-  expect(lastDocument).toContain("<summary>Использованные инструменты</summary>");
+  expect(firstDocument).toContain("Used 'new_tool'");
+  expect(documents.join("\n")).not.toContain("Использованные инструменты");
+  expect(lastDocument).not.toContain("<details>");
 });
 
 test("keeps the work summary stable across repeated renders", () => {

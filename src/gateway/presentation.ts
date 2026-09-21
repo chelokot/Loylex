@@ -8,89 +8,44 @@ import type {
 } from "./database.ts";
 import { leylobucksPackages } from "./leylobucks.ts";
 
-function commandActivity(command: string): string {
-  const normalized = command.toLowerCase();
-  if (normalized.includes("find skills") || normalized.includes("-name skill.md")) {
-    return "Подбираю нужные навыки";
-  }
-  if (normalized.includes("skill.md")) {
-    return "Читаю рабочие инструкции";
-  }
-  if (
-    normalized.includes("free -") ||
-    normalized.includes("df -") ||
-    normalized.includes("/proc/cpuinfo") ||
-    normalized.includes("/proc/loadavg") ||
-    normalized.includes("uptime")
-  ) {
-    return "Проверяю ресурсы сервера";
-  }
-  if (normalized.includes("systemctl") || normalized.includes("ps -")) {
-    return "Проверяю процессы и сервисы";
-  }
-  if (normalized.includes("loylex status")) {
-    return "Проверяю Telegram и очередь задач";
-  }
-  if (normalized.includes("curl ") || normalized.includes("wget ")) {
-    return "Получаю данные из сети";
-  }
-  return "Работаю в терминале";
-}
-
 function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function compactActivityText(value: string, limit = 600): string {
+  return value.replaceAll(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function quoteActivityText(value: string): string {
+  return value.replaceAll("'", "\\'");
+}
+
+function commandActivity(command: string): string {
+  const visible = compactActivityText(command, 500);
+  return visible ? `Run '${quoteActivityText(visible)}'` : "Run 'terminal command'";
+}
+
+function stripToolCallMarker(text: string): string {
+  const marker = " [tool-call:";
+  const markerStart = text.lastIndexOf(marker);
+  return markerStart >= 0 && text.endsWith("]") ? text.slice(0, markerStart).trim() : text.trim();
+}
+
+function toolActivity(text: string): string {
+  const visible = compactActivityText(stripToolCallMarker(text));
+  if (!visible) {
+    return "Used 'unknown'";
+  }
+  if (/^(Searched for|Used) '/.test(visible)) {
+    return visible;
+  }
+  return `Used '${visible}'`;
 }
 
 export function workDocument(status: string): string {
   const activity = visibleActivity(status);
   const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
   return `<details><summary>Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
-}
-
-export type ToolUsage = {
-  name: string;
-  count: number;
-};
-
-function storedToolName(text: string): string {
-  const marker = " [tool-call:";
-  const markerStart = text.lastIndexOf(marker);
-  return markerStart >= 0 && text.endsWith("]") ? text.slice(0, markerStart).trim() : text.trim();
-}
-
-export function toolUsages(status: string): ToolUsage[] {
-  const counts = new Map<string, number>();
-  for (const entry of status.split("\n\n")) {
-    const separator = entry.indexOf(":");
-    if (separator === -1 || entry.slice(0, separator) !== "tool") {
-      continue;
-    }
-    const name = storedToolName(entry.slice(separator + 1));
-    if (name) {
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-  }
-  return [...counts].map(([name, count]) => ({ name, count }));
-}
-
-function toolUseCountLabel(count: number): string {
-  const moduloTen = count % 10;
-  const moduloHundred = count % 100;
-  if (moduloTen === 1 && moduloHundred !== 11) {
-    return "раз";
-  }
-  if (moduloTen >= 2 && moduloTen <= 4 && (moduloHundred < 10 || moduloHundred >= 20)) {
-    return "раза";
-  }
-  return "раз";
-}
-
-export function toolsDocument(status: string): string {
-  const usages = toolUsages(status);
-  const history = usages
-    .map(({ name, count }) => `- ${escapeHtml(name)} — ${count} ${toolUseCountLabel(count)}`)
-    .join("\n");
-  return `<details><summary>Использованные инструменты</summary>\n\n${history || "- Инструменты не использовались"}\n\n</details>`;
 }
 
 function visibleActivity(status: string): string[] {
@@ -142,25 +97,29 @@ export function splitRichMarkdown(markdown: string, maxBytes = richMessageLimitB
 }
 
 export function activityLines(status: string): string[] {
-  const fallback: string[] = [];
+  const activities: string[] = [];
   const narrative: string[] = [];
   for (const entry of status.split("\n\n")) {
     const separator = entry.indexOf(":");
     const kind = separator === -1 ? "status" : entry.slice(0, separator);
     const text = (separator === -1 ? entry : entry.slice(separator + 1)).trim();
+    let visible: string | null = null;
     if (kind === "command") {
-      const visible = commandActivity(text);
-      if (!fallback.includes(visible)) {
-        fallback.push(visible);
-      }
+      visible = commandActivity(text);
+    } else if (kind === "tool") {
+      visible = toolActivity(text);
     } else if (kind === "reasoning" || kind === "commentary") {
-      const visible = text.slice(0, 600);
+      visible = compactActivityText(text);
       if (visible && narrative.at(-1) !== visible) {
         narrative.push(visible);
       }
+      continue;
+    }
+    if (visible && (kind === "command" || kind === "tool" || activities.at(-1) !== visible)) {
+      activities.push(visible);
     }
   }
-  return narrative.length > 0 ? narrative : fallback;
+  return activities.length > 0 ? activities : narrative;
 }
 
 export function failureMessage(error: string): string {
@@ -171,21 +130,19 @@ export function failureMessage(error: string): string {
 }
 
 export function failedDocument(status: string, error: string): string {
-  return `${workDocument(status)}\n\n${failureMessage(error)}\n\n${toolsDocument(status)}`;
+  return `${workDocument(status)}\n\n${failureMessage(error)}`;
 }
 
 export function completedDocuments(status: string, answer: string): string[] {
   const prefix = `${workDocument(status)}\n\n`;
-  const suffix = `\n\n${toolsDocument(status)}`;
-  const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix) - byteLength(suffix);
+  const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix);
   if (availableAnswerBytes <= 0) {
-    return [prefix, ...splitRichMarkdown(answer), suffix.slice(2)];
+    return [prefix, ...splitRichMarkdown(answer)];
   }
   const answerChunks = splitRichMarkdown(answer, availableAnswerBytes);
   return answerChunks.map((chunk, index) => {
     const first = index === 0 ? prefix : "";
-    const last = index === answerChunks.length - 1 ? suffix : "";
-    return `${first}${chunk}${last}`;
+    return `${first}${chunk}`;
   });
 }
 
