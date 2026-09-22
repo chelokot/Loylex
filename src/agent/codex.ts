@@ -1,3 +1,4 @@
+import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type { AgentEvent } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import type { AgentConfig } from "./config.ts";
@@ -309,10 +310,12 @@ function isCommandItemType(type: string): boolean {
 function commandTextFromEvent(event: CodexJsonEvent, eventType: string): string | null {
   const itemType = normalizedType(event.item?.type);
   if (isCommandItemType(itemType)) {
-    return stringValue(event.item?.command) ?? "terminal command";
+    const command = stringValue(event.item?.command);
+    return command ? visibleTerminalCommand(command) : "terminal command";
   }
   if (eventType === "exec_command_begin" || eventType === "command_execution_begin") {
-    return stringValue(event.command) ?? "terminal command";
+    const command = stringValue(event.command);
+    return command ? visibleTerminalCommand(command) : "terminal command";
   }
   return null;
 }

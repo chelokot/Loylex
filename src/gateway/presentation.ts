@@ -1,3 +1,4 @@
+import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type {
   LeylobucksJobEconomy,
   LeylobucksPurchaseResult,
@@ -23,13 +24,9 @@ function compactActivityText(value: string, limit = 600): string {
   return `${compact.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
 }
 
-function quoteActivityText(value: string): string {
-  return value.replaceAll("'", "\\'");
-}
-
 function commandActivity(command: string): string {
   const visible = compactActivityText(command, maxCommandActivityCharacters);
-  return visible ? `Run '${quoteActivityText(visible)}'` : "Run 'terminal command'";
+  return visible ? `Run '${visible}'` : "Run 'terminal command'";
 }
 
 function stripToolCallMarker(text: string): string {
@@ -73,7 +70,10 @@ function activityEntries(status: string): ActivityEntry[] {
     const kind = separator === -1 ? "status" : entry.slice(0, separator);
     const text = (separator === -1 ? entry : entry.slice(separator + 1)).trim();
     if (kind === "command") {
-      const compact = compactActivityText(text, maxCommandActivityCharacters);
+      const compact = compactActivityText(
+        visibleTerminalCommand(text),
+        maxCommandActivityCharacters,
+      );
       add({ kind: "command", text: compact || "terminal command" });
     } else if (kind === "tool") {
       const visible = toolActivity(text);

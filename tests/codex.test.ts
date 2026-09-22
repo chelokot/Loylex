@@ -4,6 +4,7 @@ import {
   toolActivityFromCodexItem,
   toolNameFromCodexItem,
 } from "../src/agent/codex.ts";
+import { visibleTerminalCommand } from "../src/shared/terminal-command.ts";
 
 test("parses the usage payload from a completed Codex turn", () => {
   expect(
@@ -76,5 +77,23 @@ test("renders a web search query and falls back for unfamiliar tools", () => {
   ).toBe("Searched for 'Loylex progress UI'");
   expect(toolActivityFromCodexItem({ type: "new_tool_call", name: "future.tool" })).toBe(
     "Used 'future.tool'",
+  );
+});
+
+test("shows the command body instead of Codex's shell launcher", () => {
+  expect(
+    visibleTerminalCommand("/bin/bash -lc 'find skills -maxdepth 2 -name SKILL.md -print'"),
+  ).toBe("find skills -maxdepth 2 -name SKILL.md -print");
+  expect(visibleTerminalCommand(`/bin/bash -lc "printf '%s' hello"`)).toBe("printf '%s' hello");
+  expect(visibleTerminalCommand(String.raw`/bin/bash -lc 'printf '\''%s'\'' hello'`)).toBe(
+    "printf '%s' hello",
+  );
+});
+
+test("preserves commands that are not a recognizable shell wrapper", () => {
+  expect(visibleTerminalCommand("git status --short")).toBe("git status --short");
+  expect(visibleTerminalCommand("/bin/bash -lc")).toBe("/bin/bash -lc");
+  expect(visibleTerminalCommand("/usr/bin/python3 -c 'print(1)'")).toBe(
+    "/usr/bin/python3 -c 'print(1)'",
   );
 });

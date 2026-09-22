@@ -28,11 +28,9 @@ describe("activityLines", () => {
       "command: /bin/bash -lc 'free -h; df -h /; uptime'",
     ].join("\n\n");
 
-    const expectedRun = (command: string) =>
-      `Run '${command.replaceAll("'", String.fromCharCode(92, 39))}'`;
     expect(activityLines(status)).toEqual([
-      expectedRun("/bin/bash -lc 'find skills -maxdepth 2 -name SKILL.md -print'"),
-      expectedRun("/bin/bash -lc 'free -h; df -h /; uptime'"),
+      "Run 'find skills -maxdepth 2 -name SKILL.md -print'",
+      "Run 'free -h; df -h /; uptime'",
     ]);
   });
 
@@ -120,7 +118,7 @@ test("renders concrete tool activity in the work dropdown", () => {
   const status = [
     "tool: Searched for 'latest Codex release' [tool-call:one]",
     "tool: Used 'image_gen' [tool-call:two]",
-    "command: rg -n presentation src tests",
+    "command: /bin/bash -lc 'rg -n presentation src tests'",
     "status: Готово",
   ].join("\n\n");
 
@@ -128,6 +126,13 @@ test("renders concrete tool activity in the work dropdown", () => {
     "<details><summary>Ход работы</summary>\n\n- **Searched for** `latest Codex release`\n- **Used** `image_gen`\n- **Run** `rg -n presentation src tests`\n\n</details>",
   );
   expect(workDocument(status)).not.toContain("Использованные инструменты");
+});
+
+test("removes shell quoting from a command with quoted arguments", () => {
+  const status = `command: ${String.raw`/bin/bash -lc 'printf '\''%s'\'' hello'`}`;
+
+  expect(workDocument(status)).toContain("- **Run** `printf '%s' hello`");
+  expect(workDocument(status)).not.toContain("\\'");
 });
 
 test("formats narrative work alongside concrete actions", () => {
