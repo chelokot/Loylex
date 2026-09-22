@@ -444,8 +444,8 @@ test("keeps progress when replacing a temporary message with a failure", async (
   await fail.call(server, 7, "The socket connection was closed unexpectedly", "worker-1");
 
   expect(edited).toContain("<summary>Ход работы</summary>");
-  expect(edited).toContain("- Run 'loylex media file-id /tmp/archive.json'");
-  expect(edited).not.toContain("- Проверяю архив");
+  expect(edited).toContain("- **Run** `loylex media file-id /tmp/archive.json`");
+  expect(edited).toContain("- Проверяю архив");
   expect(edited).toContain("Не получилось завершить задачу.");
   expect(edited).toContain("The socket connection was closed unexpectedly");
   expect(failed as { jobId: number; error: string; threadId: string | null } | null).toEqual({

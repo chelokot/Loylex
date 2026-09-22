@@ -12,8 +12,15 @@ function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+const maxCommandActivityCharacters = 160;
+const maxToolActivityCharacters = 160;
+
 function compactActivityText(value: string, limit = 600): string {
-  return value.replaceAll(/\s+/g, " ").trim().slice(0, limit);
+  const compact = value.replaceAll(/\s+/g, " ").trim();
+  if (compact.length <= limit) {
+    return compact;
+  }
+  return `${compact.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
 }
 
 function quoteActivityText(value: string): string {
@@ -21,7 +28,7 @@ function quoteActivityText(value: string): string {
 }
 
 function commandActivity(command: string): string {
-  const visible = compactActivityText(command, 500);
+  const visible = compactActivityText(command, maxCommandActivityCharacters);
   return visible ? `Run '${quoteActivityText(visible)}'` : "Run 'terminal command'";
 }
 
@@ -32,7 +39,7 @@ function stripToolCallMarker(text: string): string {
 }
 
 function toolActivity(text: string): string {
-  const visible = compactActivityText(stripToolCallMarker(text));
+  const visible = compactActivityText(stripToolCallMarker(text), maxToolActivityCharacters);
   if (!visible) {
     return "Used 'unknown'";
   }
@@ -42,14 +49,83 @@ function toolActivity(text: string): string {
   return `Used '${visible}'`;
 }
 
+type ActivityEntry = {
+  kind: "command" | "tool" | "narrative";
+  text: string;
+};
+
+function activityEntries(status: string): ActivityEntry[] {
+  const entries: ActivityEntry[] = [];
+  const add = (entry: ActivityEntry): void => {
+    const previous = entries.at(-1);
+    if (
+      entry.kind === "narrative" &&
+      previous?.kind === "narrative" &&
+      previous.text === entry.text
+    ) {
+      return;
+    }
+    entries.push(entry);
+  };
+
+  for (const entry of status.split("\n\n")) {
+    const separator = entry.indexOf(":");
+    const kind = separator === -1 ? "status" : entry.slice(0, separator);
+    const text = (separator === -1 ? entry : entry.slice(separator + 1)).trim();
+    if (kind === "command") {
+      const compact = compactActivityText(text, maxCommandActivityCharacters);
+      add({ kind: "command", text: compact || "terminal command" });
+    } else if (kind === "tool") {
+      const visible = toolActivity(text);
+      if (visible) {
+        add({ kind: "tool", text: visible });
+      }
+    } else if (kind === "reasoning" || kind === "commentary") {
+      const visible = compactActivityText(text);
+      if (visible) {
+        add({ kind: "narrative", text: visible });
+      }
+    }
+  }
+  return entries;
+}
+
+function activityText(entry: ActivityEntry): string {
+  if (entry.kind === "command") {
+    return commandActivity(entry.text);
+  }
+  return entry.text;
+}
+
+function inlineCode(value: string): string {
+  return `\`${escapeHtml(value).replaceAll("`", "\\`")}\``;
+}
+
+function unquoteActivityText(value: string): string {
+  return value.replaceAll("\\'", "'");
+}
+
+function formattedActivityLine(entry: ActivityEntry): string {
+  if (entry.kind === "command") {
+    return `- **Run** ${inlineCode(entry.text)}`;
+  }
+  if (entry.kind === "tool") {
+    const match = entry.text.match(/^(Searched for|Used) '([\s\S]*)'$/);
+    if (match) {
+      return `- **${escapeHtml(match[1] ?? "Used")}** ${inlineCode(unquoteActivityText(match[2] ?? ""))}`;
+    }
+  }
+  return `- ${escapeHtml(entry.text)}`;
+}
+
 export function workDocument(status: string): string {
-  const activity = visibleActivity(status);
-  const history = activity.map((line) => `- ${escapeHtml(line)}`).join("\n");
+  const activity = visibleActivityEntries(status);
+  const history = activity.map(formattedActivityLine).join("\n");
   return `<details><summary>Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
 }
 
-function visibleActivity(status: string): string[] {
-  return activityLines(status).slice(-8);
+function visibleActivityEntries(status: string): ActivityEntry[] {
+  return activityEntries(status).slice(-8);
 }
 
 export const richMessageLimitBytes = 30_000;
@@ -97,29 +173,7 @@ export function splitRichMarkdown(markdown: string, maxBytes = richMessageLimitB
 }
 
 export function activityLines(status: string): string[] {
-  const activities: string[] = [];
-  const narrative: string[] = [];
-  for (const entry of status.split("\n\n")) {
-    const separator = entry.indexOf(":");
-    const kind = separator === -1 ? "status" : entry.slice(0, separator);
-    const text = (separator === -1 ? entry : entry.slice(separator + 1)).trim();
-    let visible: string | null = null;
-    if (kind === "command") {
-      visible = commandActivity(text);
-    } else if (kind === "tool") {
-      visible = toolActivity(text);
-    } else if (kind === "reasoning" || kind === "commentary") {
-      visible = compactActivityText(text);
-      if (visible && narrative.at(-1) !== visible) {
-        narrative.push(visible);
-      }
-      continue;
-    }
-    if (visible && (kind === "command" || kind === "tool" || activities.at(-1) !== visible)) {
-      activities.push(visible);
-    }
-  }
-  return activities.length > 0 ? activities : narrative;
+  return visibleActivityEntries(status).map(activityText);
 }
 
 export function failureMessage(error: string): string {

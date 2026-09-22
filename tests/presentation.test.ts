@@ -36,14 +36,20 @@ describe("activityLines", () => {
     ]);
   });
 
-  test("prefers concrete commands when commentary is also present", () => {
+  test("keeps commentary, commands, and tools in chronological order", () => {
     const status = [
-      "command: uname -a",
       "commentary: Сначала проверю окружение, затем сопоставлю результаты.",
+      "command: uname -a",
+      "tool: Used 'view_image' [tool-call:one]",
       "command: git status --short",
     ].join("\n\n");
 
-    expect(activityLines(status)).toEqual(["Run 'uname -a'", "Run 'git status --short'"]);
+    expect(activityLines(status)).toEqual([
+      "Сначала проверю окружение, затем сопоставлю результаты.",
+      "Run 'uname -a'",
+      "Used 'view_image'",
+      "Run 'git status --short'",
+    ]);
   });
 
   test("keeps each concrete command instead of generic command placeholders", () => {
@@ -60,6 +66,14 @@ describe("activityLines", () => {
       "Run 'whoami'",
       "Run 'git diff --stat'",
     ]);
+  });
+
+  test("shortens long commands with a visible ellipsis", () => {
+    const command = `/bin/bash -lc '${"printf very-long-command ".repeat(30)}'`;
+    const [line] = activityLines(`command: ${command}`);
+
+    expect(line).toEndWith("…'");
+    expect(line?.length).toBeLessThanOrEqual(170);
   });
 
   test("describes the result of a stop command", () => {
@@ -111,9 +125,23 @@ test("renders concrete tool activity in the work dropdown", () => {
   ].join("\n\n");
 
   expect(workDocument(status)).toBe(
-    "<details><summary>Ход работы</summary>\n\n- Searched for 'latest Codex release'\n- Used 'image_gen'\n- Run 'rg -n presentation src tests'\n\n</details>",
+    "<details><summary>Ход работы</summary>\n\n- **Searched for** `latest Codex release`\n- **Used** `image_gen`\n- **Run** `rg -n presentation src tests`\n\n</details>",
   );
   expect(workDocument(status)).not.toContain("Использованные инструменты");
+});
+
+test("formats narrative work alongside concrete actions", () => {
+  expect(
+    workDocument(
+      [
+        "commentary: Проверяю **код** и `конфигурацию`.",
+        "command: git diff -- src/gateway/presentation.ts",
+        "tool: Used 'apply_patch' [tool-call:patch-1]",
+      ].join("\n\n"),
+    ),
+  ).toBe(
+    "<details><summary>Ход работы</summary>\n\n- Проверяю **код** и `конфигурацию`.\n- **Run** `git diff -- src/gateway/presentation.ts`\n- **Used** `apply_patch`\n\n</details>",
+  );
 });
 
 test("keeps the only work dropdown on the first chunk of a long answer", () => {
@@ -124,7 +152,7 @@ test("keeps the only work dropdown on the first chunk of a long answer", () => {
 
   expect(documents.length).toBeGreaterThan(1);
   expect(firstDocument).toContain("<summary>WORK</summary>");
-  expect(firstDocument).toContain("Used 'new_tool'");
+  expect(firstDocument).toContain("- **Used** `new_tool`");
   expect(documents.join("\n")).not.toContain("Использованные инструменты");
   expect(lastDocument).not.toContain("<details>");
 });
