@@ -28,7 +28,7 @@ export function loadAgentConfig(): AgentConfig {
     bridgeToken: secret(),
     codexBinary: process.env.CODEX_BINARY ?? "codex",
     codexHome: process.env.CODEX_HOME ?? "/home/loylex/.codex",
-    model: process.env.CODEX_MODEL ?? "gpt-5.6-luna",
+    model: process.env.CODEX_MODEL ?? "gpt-6-luna",
     reasoningEffort: process.env.CODEX_REASONING_EFFORT ?? "max",
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",
