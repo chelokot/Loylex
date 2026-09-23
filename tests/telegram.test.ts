@@ -95,6 +95,30 @@ test("calls an arbitrary Telegram API method with JSON parameters", async () => 
   expect(requestBody).toEqual({ chat_id: 42 });
 });
 
+test("does not publish the quiz as a Telegram command", async () => {
+  let requestBody: unknown;
+  globalThis.fetch = (async (input, init) => {
+    expect(String(input)).toBe("https://api.telegram.org/bottest-token/setMyCommands");
+    requestBody = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, result: true });
+  }) as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  await expect(client.setCommands()).resolves.toBe(true);
+
+  expect(requestBody).toEqual({
+    commands: [
+      { command: "start", description: "Как обратиться к Loylex" },
+      { command: "help", description: "Возможности и синтаксис" },
+      { command: "stop", description: "Остановить работу" },
+      { command: "tasks", description: "Показать последние задачи" },
+      { command: "resume", description: "Продолжить задачу по ID" },
+      { command: "newchat", description: "Начать новый тред в личке" },
+      { command: "bucks", description: "Баланс и магазин лейлобаксов" },
+    ],
+  });
+});
+
 test("calls an arbitrary Telegram API method with multipart files", async () => {
   let requestBody: FormData | undefined;
   globalThis.fetch = (async (input, init) => {
