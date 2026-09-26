@@ -1,7 +1,7 @@
 FROM quay.io/fedora/fedora:44
 
 ARG BUN_VERSION=1.4.0
-ARG CODEX_VERSION=0.151.0
+ARG CODEX_VERSION=0.157.1
 # Reviewed 2026-09-07 against Cloudflare's signed Fedora 44 RPM.
 ARG WARP_VERSION=2026.7.1377.0
 ARG WARP_RELEASE=1.fc44
