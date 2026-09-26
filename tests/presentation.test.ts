@@ -89,10 +89,14 @@ describe("completedDocuments", () => {
     expect(document).not.toContain("tg-emoji");
   });
 
-  test("keeps work history even when it contains at most one visible item", () => {
-    expect(
-      completedDocuments("status: Готово", "Ответ пользователю").map(normalizeWorkSummary),
-    ).toEqual(["<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет пользователю"]);
+  test("omits the work summary when there are no visible activity items", () => {
+    expect(completedDocuments("status: Готово", "Ответ пользователю")).toEqual([
+      "Ответ пользователю",
+    ]);
+    expect(workDocument("status: Готово")).toBe("");
+  });
+
+  test("keeps a work summary when it contains one visible item", () => {
     expect(
       completedDocuments("commentary: Проверяю код\n\nstatus: Готово", "Ответ пользователю").map(
         normalizeWorkSummary,
@@ -163,10 +167,13 @@ test("keeps the only work dropdown on the first chunk of a long answer", () => {
 });
 
 test("keeps the work summary stable across repeated renders", () => {
-  const expected = "<details><summary>Ход работы</summary>\n\n- Готово\n\n</details>";
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    expect(workDocument("status: Готово")).toBe(expected);
+    expect(workDocument("status: Готово")).toBe("");
   }
+});
+
+test("omits the work summary from failures without visible activity", () => {
+  expect(failedDocument("status: Готово", "error")).toBe(failureMessage("error"));
 });
 
 test("hides Loylebucks help in the disabled runtime mode", () => {

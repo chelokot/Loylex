@@ -747,6 +747,9 @@ export class GatewayServer {
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const now = Date.now();
     const document = workDocument(status);
+    if (!document) {
+      return;
+    }
     if (address.chatType === "private") {
       if (this.#lastStreamDocument.get(jobId) === document) {
         return;

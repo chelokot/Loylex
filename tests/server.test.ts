@@ -83,6 +83,37 @@ test("starts progress as a persistent rich details message", async () => {
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
+test("does not render an empty progress message", async () => {
+  const sent: string[] = [];
+  const database = {
+    jobAddress: () => ({
+      chatId: -10042,
+      chatType: "supergroup" as const,
+      messageId: 10,
+      threadId: null,
+    }),
+    thinkingMessage: () => null,
+    isJobCancelled: () => false,
+    appendStatus: () => "status: Готово",
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    sendRich: async (_chatId: number, markdown: string) => {
+      sent.push(markdown);
+      return botMessage(11);
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const event = (
+    server as unknown as {
+      event: (jobId: number, event: { kind: "status"; text: string }) => Promise<void>;
+    }
+  ).event;
+
+  await event.call(server, 7, { kind: "status", text: "Готово" });
+
+  expect(sent).toEqual([]);
+});
+
 test("keeps repeated tool calls distinct in the job status", async () => {
   const lines: string[] = [];
   const database = {
@@ -209,12 +240,10 @@ test("sends a new final reply and removes the temporary progress message", async
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
   expect(calls).toEqual(["send", "delete"]);
-  expect(
-    sent.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
-  ).toEqual([
+  expect(sent).toEqual([
     {
       chatId: -10042,
-      markdown: "<details><summary>WORK</summary>\n\n- Готово\n\n</details>\n\nОтвет",
+      markdown: "Ответ",
       options: { replyTo: 10, threadId: null },
     },
   ]);

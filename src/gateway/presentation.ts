@@ -121,7 +121,7 @@ function formattedActivityLine(entry: ActivityEntry): string {
 export function workDocument(status: string): string {
   const activity = visibleActivityEntries(status);
   const history = activity.map(formattedActivityLine).join("\n");
-  return `<details><summary>Ход работы</summary>\n\n${history || "- Готово"}\n\n</details>`;
+  return history ? `<details><summary>Ход работы</summary>\n\n${history}\n\n</details>` : "";
 }
 
 function visibleActivityEntries(status: string): ActivityEntry[] {
@@ -184,11 +184,13 @@ export function failureMessage(error: string): string {
 }
 
 export function failedDocument(status: string, error: string): string {
-  return `${workDocument(status)}\n\n${failureMessage(error)}`;
+  const work = workDocument(status);
+  return work ? `${work}\n\n${failureMessage(error)}` : failureMessage(error);
 }
 
 export function completedDocuments(status: string, answer: string): string[] {
-  const prefix = `${workDocument(status)}\n\n`;
+  const work = workDocument(status);
+  const prefix = work ? `${work}\n\n` : "";
   const availableAnswerBytes = richMessageLimitBytes - byteLength(prefix);
   if (availableAnswerBytes <= 0) {
     return [prefix, ...splitRichMarkdown(answer)];
