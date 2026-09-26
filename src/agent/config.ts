@@ -14,6 +14,15 @@ export type AgentConfig = {
   maxConcurrentJobs: number;
 };
 
+const defaultModel = "gpt-6-luna";
+
+export function resolveModel(configuredModel: string | undefined): string {
+  // Existing host-managed Compose files can lag the repository image. The old
+  // 5.6 pin was a temporary compatibility workaround, so migrate that one
+  // known value while preserving every other explicit model selection.
+  return configuredModel === "gpt-5.6-luna" ? defaultModel : (configuredModel ?? defaultModel);
+}
+
 function secret(): string {
   const path = process.env.LOYLEX_BRIDGE_TOKEN_FILE;
   const value = path ? readFileSync(path, "utf8").trim() : process.env.LOYLEX_BRIDGE_TOKEN;
@@ -29,7 +38,7 @@ export function loadAgentConfig(): AgentConfig {
     bridgeToken: secret(),
     codexBinary: process.env.CODEX_BINARY ?? "codex",
     codexHome: process.env.CODEX_HOME ?? "/home/loylex/.codex",
-    model: process.env.CODEX_MODEL ?? "gpt-6-luna",
+    model: resolveModel(process.env.CODEX_MODEL),
     reasoningEffort: process.env.CODEX_REASONING_EFFORT ?? "max",
     serviceTier: process.env.CODEX_SERVICE_TIER ?? "priority",
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",

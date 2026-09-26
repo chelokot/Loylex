@@ -39,7 +39,11 @@ optional dependency path.
   request with `service_tier=priority`.
 - Verified a live `gpt-6-luna` smoke request with the same current ChatGPT
   authentication; it completed successfully with `service_tier=priority`.
-- Ran the Loylex check suite: 211 Bun tests and 13 Python tests passed.
+- Added a narrowly scoped runtime migration for the previous temporary
+  `gpt-5.6-luna` host Compose pin. This is needed because the supervisor pins
+  image digests but does not rewrite the host-managed Compose environment on
+  every repository push; all other explicit model values remain untouched.
+- Ran the Loylex check suite: 214 Bun tests and 13 Python tests passed.
 
 ## Residual risk and rollback
 
