@@ -303,6 +303,14 @@ export class TelegramClient {
     });
   }
 
+  clearMessageReaction(chatId: number, messageId: number): Promise<boolean> {
+    return this.call<boolean>("setMessageReaction", {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [],
+    });
+  }
+
   setCommands(): Promise<boolean> {
     return this.call<boolean>("setMyCommands", {
       commands: [

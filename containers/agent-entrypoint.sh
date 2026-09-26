@@ -13,7 +13,7 @@ fi
 
 if [[ ! -f "$CODEX_HOME/config.toml" ]]; then
   printf '%s\n' \
-    'model = "gpt-6-luna"' \
+    'model = "gpt-5.6-luna"' \
     'model_reasoning_effort = "max"' \
     'check_for_update_on_startup = false' \
     'cli_auth_credentials_store = "file"' \

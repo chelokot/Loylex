@@ -1,18 +1,16 @@
-/**
- * Runtime-only feature flag for the user-local Loylebucks mode.
- *
- * This deliberately does not use the database: switching the mode must not
- * mutate balances, transactions, quiz state, or historical jobs. A gateway
- * restart restores the default enabled state.
- */
+export type LeylobucksModeStore = {
+  isEnabled(userId: number): boolean;
+  setEnabled(userId: number, enabled: boolean): void;
+};
+
 export class LeylobucksMode {
-  readonly #enabledByUser = new Map<number, boolean>();
+  constructor(private readonly store: LeylobucksModeStore) {}
 
   isEnabled(userId: number | null): boolean {
-    return userId === null ? true : (this.#enabledByUser.get(userId) ?? true);
+    return userId === null ? true : this.store.isEnabled(userId);
   }
 
   setEnabled(userId: number, enabled: boolean): void {
-    this.#enabledByUser.set(userId, enabled);
+    this.store.setEnabled(userId, enabled);
   }
 }

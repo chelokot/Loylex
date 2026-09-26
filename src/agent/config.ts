@@ -7,6 +7,7 @@ export type AgentConfig = {
   codexHome: string;
   model: string;
   reasoningEffort: string;
+  serviceTier: string;
   repositoryPath: string;
   memoryPath: string;
   pollIntervalMs: number;
@@ -28,8 +29,9 @@ export function loadAgentConfig(): AgentConfig {
     bridgeToken: secret(),
     codexBinary: process.env.CODEX_BINARY ?? "codex",
     codexHome: process.env.CODEX_HOME ?? "/home/loylex/.codex",
-    model: process.env.CODEX_MODEL ?? "gpt-6-luna",
+    model: process.env.CODEX_MODEL ?? "gpt-5.6-luna",
     reasoningEffort: process.env.CODEX_REASONING_EFFORT ?? "max",
+    serviceTier: process.env.CODEX_SERVICE_TIER ?? "priority",
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",
     pollIntervalMs: Number.parseInt(process.env.LOYLEX_POLL_INTERVAL_MS ?? "1000", 10),

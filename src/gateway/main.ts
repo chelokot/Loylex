@@ -46,7 +46,10 @@ await audit.assertReady();
 const database = new LoylexDatabase(config.databasePath);
 const telegram = new TelegramClient(config.botToken);
 const bot = await telegram.getMe();
-const leylobucksMode = new LeylobucksMode();
+const leylobucksMode = new LeylobucksMode({
+  isEnabled: (userId) => database.isLeylobucksEnabled(userId),
+  setEnabled: (userId, enabled) => database.setLeylobucksEnabled(userId, enabled),
+});
 
 await telegram.call("deleteWebhook", { drop_pending_updates: false });
 await telegram.setCommands();
@@ -58,8 +61,10 @@ server.start();
 let stopping = false;
 let offset = database.nextUpdateOffset();
 
-function acknowledgeWork(message: TelegramMessage): void {
-  void Promise.allSettled([
+const earlyAcknowledgementTimeoutMs = 800;
+
+function acknowledgeWork(message: TelegramMessage): Promise<void> {
+  return Promise.allSettled([
     telegram.sendTyping(message.chat.id, message.message_thread_id ?? null),
     telegram.setThinkingReaction(message.chat.id, message.message_id),
   ]).then((results) => {
@@ -78,6 +83,39 @@ function acknowledgeWork(message: TelegramMessage): void {
       );
     }
   });
+}
+
+function earlyAcknowledgementMessage(
+  update: TelegramUpdate,
+  botUserId: number,
+): TelegramMessage | null {
+  const message = update.message;
+  if (!message || message.from?.is_bot || isSlashCommand(message)) {
+    return null;
+  }
+  return detectTrigger(message, botUserId) ? message : null;
+}
+
+function clearEarlyThinkingReaction(
+  message: TelegramMessage,
+  acknowledgement: Promise<void> | null,
+): void {
+  if (acknowledgement === null) {
+    return;
+  }
+  void acknowledgement.then(() =>
+    telegram.clearMessageReaction(message.chat.id, message.message_id).catch((error) => {
+      console.log(
+        JSON.stringify({
+          level: "warn",
+          component: "poller",
+          event: "early_thinking_reaction_clear_unavailable",
+          messageId: message.message_id,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }),
+  );
 }
 
 function acknowledgeNameMistake(message: TelegramMessage): void {
@@ -216,7 +254,7 @@ async function handleEditedMessage(updateId: number, message: TelegramMessage): 
     economyEnabled,
   );
   if (admission.kind === "queued") {
-    acknowledgeWork(message);
+    void acknowledgeWork(message);
     console.log(
       JSON.stringify({
         level: "info",
@@ -237,8 +275,20 @@ async function poll(): Promise<void> {
       const updates = await telegram.getUpdates(offset, config.pollTimeoutSeconds);
       for (const update of updates) {
         await audit.append(update);
+        const earlyMessage = earlyAcknowledgementMessage(update, bot.id);
+        let earlyAcknowledgement: Promise<void> | null = null;
+        if (earlyMessage !== null) {
+          earlyAcknowledgement = acknowledgeWork(earlyMessage);
+          await Promise.race([earlyAcknowledgement, Bun.sleep(earlyAcknowledgementTimeoutMs)]);
+        }
         database.archiveUpdate(update);
         offset = update.update_id + 1;
+        const acknowledgeQueuedWork = (message: TelegramMessage): void => {
+          if (earlyMessage?.message_id === message.message_id) {
+            return;
+          }
+          void acknowledgeWork(message);
+        };
         if (await handleCallbackQuery(update)) {
           continue;
         }
@@ -458,13 +508,14 @@ async function poll(): Promise<void> {
               economyEnabled,
             );
             if (admission.kind === "blocked") {
+              clearEarlyThinkingReaction(message, earlyAcknowledgement);
               await sendInlineResponse(
                 telegram,
                 message,
                 leylobucksBlockedMessage(admission.statusView),
               );
             } else if (admission.kind === "queued") {
-              acknowledgeWork(message);
+              acknowledgeQueuedWork(message);
             }
           }
           continue;
@@ -498,7 +549,7 @@ async function poll(): Promise<void> {
                 leylobucksBlockedMessage(admission.statusView),
               );
             } else if (admission.kind === "queued") {
-              acknowledgeWork(message);
+              acknowledgeQueuedWork(message);
             }
           }
           continue;
@@ -515,6 +566,7 @@ async function poll(): Promise<void> {
             ? database.leylobucksStatus(currentUserId)
             : null;
         if (economyEnabled && status && status.balance < 0) {
+          clearEarlyThinkingReaction(message, earlyAcknowledgement);
           await sendInlineResponse(telegram, message, leylobucksBlockedMessage(status));
           continue;
         }
@@ -539,13 +591,14 @@ async function poll(): Promise<void> {
           economyEnabled,
         );
         if (admission.kind === "blocked") {
+          clearEarlyThinkingReaction(message, earlyAcknowledgement);
           await sendInlineResponse(
             telegram,
             message,
             leylobucksBlockedMessage(admission.statusView),
           );
         } else if (admission.kind === "queued") {
-          acknowledgeWork(message);
+          acknowledgeQueuedWork(message);
         }
       }
     } catch (error) {

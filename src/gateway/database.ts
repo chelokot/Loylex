@@ -117,6 +117,7 @@ type LeylobucksAccountRow = {
   catgirl_messages: number;
   next_quiz_size: number;
   quiz_attempt: number;
+  enabled: number;
 };
 
 type LeylobucksQuizSessionRow = {
@@ -681,6 +682,7 @@ export class LoylexDatabase {
         catgirl_messages INTEGER NOT NULL DEFAULT 0,
         next_quiz_size INTEGER NOT NULL DEFAULT 5 CHECK (next_quiz_size >= 5),
         quiz_attempt INTEGER NOT NULL DEFAULT 0 CHECK (quiz_attempt >= 0),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
         updated_at INTEGER NOT NULL
       );
 
@@ -712,6 +714,10 @@ export class LoylexDatabase {
         ON leylobucks_transactions(user_id, created_at DESC, id DESC);
     `);
     this.ensureLeylobucksQuizSessionColumn("answers_json", "TEXT NOT NULL DEFAULT '[]'");
+    this.ensureLeylobucksAccountColumn(
+      "enabled",
+      "INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))",
+    );
     this.ensureJobColumn("worker_id", "TEXT");
     this.ensureJobColumn("lease_expires_at", "INTEGER");
     this.ensureJobColumn("worker_generation", "INTEGER NOT NULL DEFAULT 1");
@@ -773,6 +779,15 @@ export class LoylexDatabase {
       .all();
     if (!columns.some((column) => column.name === name)) {
       this.connection.exec(`ALTER TABLE leylobucks_quiz_sessions ADD COLUMN ${name} ${definition}`);
+    }
+  }
+
+  private ensureLeylobucksAccountColumn(name: "enabled", definition: string): void {
+    const columns = this.connection
+      .query<{ name: string }, []>("PRAGMA table_info(leylobucks_accounts)")
+      .all();
+    if (!columns.some((column) => column.name === name)) {
+      this.connection.exec(`ALTER TABLE leylobucks_accounts ADD COLUMN ${name} ${definition}`);
     }
   }
 
@@ -1473,7 +1488,7 @@ export class LoylexDatabase {
       .run(userId, leylobucksInitialQuizSize, now);
     const account = this.connection
       .query<LeylobucksAccountRow, [number]>(`
-        SELECT user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt
+        SELECT user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt, enabled
         FROM leylobucks_accounts
         WHERE user_id = ?
       `)
@@ -1487,7 +1502,7 @@ export class LoylexDatabase {
   private leylobucksStatusView(userId: number): LeylobucksStatus {
     const account = this.connection
       .query<LeylobucksAccountRow, [number]>(`
-        SELECT user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt
+        SELECT user_id, balance, catgirl_messages, next_quiz_size, quiz_attempt, enabled
         FROM leylobucks_accounts
         WHERE user_id = ?
       `)
@@ -1497,6 +1512,7 @@ export class LoylexDatabase {
       catgirl_messages: 0,
       next_quiz_size: leylobucksInitialQuizSize,
       quiz_attempt: 0,
+      enabled: 1,
     };
     const session = this.connection
       .query<LeylobucksQuizSessionRow, [number]>(`
@@ -1529,6 +1545,26 @@ export class LoylexDatabase {
 
   leylobucksStatus(userId: number): LeylobucksStatus {
     return this.leylobucksStatusView(userId);
+  }
+
+  isLeylobucksEnabled(userId: number): boolean {
+    return (
+      (this.connection
+        .query<{ enabled: number }, [number]>(
+          "SELECT enabled FROM leylobucks_accounts WHERE user_id = ?",
+        )
+        .get(userId)?.enabled ?? 1) === 1
+    );
+  }
+
+  setLeylobucksEnabled(userId: number, enabled: boolean): void {
+    const transaction = this.connection.transaction(() => {
+      this.ensureLeylobucksAccount(userId);
+      this.connection
+        .query("UPDATE leylobucks_accounts SET enabled = ?, updated_at = ? WHERE user_id = ?")
+        .run(enabled ? 1 : 0, Date.now(), userId);
+    });
+    transaction.immediate();
   }
 
   testBumpLeylobucks(userId: number, amount: number): LeylobucksTestBumpResult {

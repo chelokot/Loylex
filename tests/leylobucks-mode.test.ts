@@ -1,21 +1,33 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { LeylobucksMode } from "../src/gateway/leylobucks-mode.ts";
 
-describe("Loylebucks runtime mode", () => {
+describe("Loylebucks mode", () => {
   let mode: LeylobucksMode;
+  let enabledByUser: Map<number, boolean>;
 
   afterEach(() => {
-    mode = new LeylobucksMode();
+    mode = new LeylobucksMode({
+      isEnabled: (userId) => enabledByUser.get(userId) ?? true,
+      setEnabled: (userId, enabled) => enabledByUser.set(userId, enabled),
+    });
   });
 
-  test("starts enabled without persistent state", () => {
-    mode = new LeylobucksMode();
+  function createMode(): LeylobucksMode {
+    enabledByUser = new Map();
+    return new LeylobucksMode({
+      isEnabled: (userId) => enabledByUser.get(userId) ?? true,
+      setEnabled: (userId, enabled) => enabledByUser.set(userId, enabled),
+    });
+  }
+
+  test("starts enabled without stored state", () => {
+    mode = createMode();
     expect(mode.isEnabled(100)).toBe(true);
     expect(mode.isEnabled(null)).toBe(true);
   });
 
   test("toggles independently per user and defaults new users to enabled", () => {
-    mode = new LeylobucksMode();
+    mode = createMode();
     mode.setEnabled(100, false);
 
     expect(mode.isEnabled(100)).toBe(false);
@@ -25,10 +37,14 @@ describe("Loylebucks runtime mode", () => {
     expect(mode.isEnabled(100)).toBe(true);
   });
 
-  test("does not survive a new runtime instance", () => {
-    mode = new LeylobucksMode();
+  test("shares stored state across runtime instances", () => {
+    mode = createMode();
     mode.setEnabled(100, false);
 
-    expect(new LeylobucksMode().isEnabled(100)).toBe(true);
+    const restartedMode = new LeylobucksMode({
+      isEnabled: (userId) => enabledByUser.get(userId) ?? true,
+      setEnabled: (userId, enabled) => enabledByUser.set(userId, enabled),
+    });
+    expect(restartedMode.isEnabled(100)).toBe(false);
   });
 });

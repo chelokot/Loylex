@@ -105,6 +105,24 @@ describe("Loylebucks quiz question bank", () => {
 });
 
 describe("LoylexDatabase Loylebucks", () => {
+  test("persists the per-user mode across database instances", () => {
+    const directory = mkdtempSync(join(tmpdir(), "loylex-bucks-mode-"));
+    directories.push(directory);
+    const path = join(directory, "test.sqlite");
+    const first = new LoylexDatabase(path);
+
+    expect(first.isLeylobucksEnabled(7)).toBe(true);
+    first.setLeylobucksEnabled(7, false);
+    expect(first.isLeylobucksEnabled(7)).toBe(false);
+    first.close();
+
+    const restarted = new LoylexDatabase(path);
+    expect(restarted.isLeylobucksEnabled(7)).toBe(false);
+    restarted.setLeylobucksEnabled(7, true);
+    expect(restarted.isLeylobucksEnabled(7)).toBe(true);
+    restarted.close();
+  });
+
   test("charges a request once and exposes its economy to the worker", () => {
     const database = setup();
     const incoming = message(1, "проверь этот баг и предложи конкретный фикс с тестом");

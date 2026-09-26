@@ -88,8 +88,9 @@ services:
       LOYLEX_SUPERVISOR_URL: http://host.containers.internal:8790
       LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       LOYLEX_WORKER_SLOT: blue
-      CODEX_MODEL: gpt-6-luna
+      CODEX_MODEL: gpt-5.6-luna
       CODEX_REASONING_EFFORT: max
+      CODEX_SERVICE_TIER: priority
       LOYLEX_MAX_CONCURRENT_JOBS: "50"
     cpus: 5.5
     mem_limit: 9g
@@ -134,8 +135,9 @@ services:
       LOYLEX_SUPERVISOR_URL: http://host.containers.internal:8790
       LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       LOYLEX_WORKER_SLOT: green
-      CODEX_MODEL: gpt-6-luna
+      CODEX_MODEL: gpt-5.6-luna
       CODEX_REASONING_EFFORT: max
+      CODEX_SERVICE_TIER: priority
       LOYLEX_MAX_CONCURRENT_JOBS: "50"
     cpus: 5.5
     mem_limit: 9g

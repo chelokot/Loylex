@@ -444,6 +444,8 @@ async function runCodexAttempt(
     "-c",
     `model_reasoning_effort=${config.reasoningEffort}`,
     "-c",
+    `service_tier=${config.serviceTier}`,
+    "-c",
     "check_for_update_on_startup=false",
     "--dangerously-bypass-approvals-and-sandbox",
   ];
