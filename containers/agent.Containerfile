@@ -1,7 +1,9 @@
 FROM quay.io/fedora/fedora:44
 
 ARG BUN_VERSION=1.4.0
-ARG CODEX_VERSION=0.157.1
+ARG CODEX_VERSION=0.159.2
+ARG CODEX_WRAPPER_SHA256=cf1e5d7b6e317a4a1d36dbff2ebd9b3cf048ac98d06fcb6682c57248e023cad2
+ARG CODEX_LINUX_X64_SHA256=84a6b35fb45bdcb94cef9fcb329438045a8911f53876cc9a9a7e6f9bb1382eba
 # Reviewed 2026-09-07 against Cloudflare's signed Fedora 44 RPM.
 ARG WARP_VERSION=2026.7.1377.0
 ARG WARP_RELEASE=1.fc44
@@ -58,7 +60,25 @@ RUN dnf install -y \
     && unzip -q /tmp/bun.zip -d /tmp/bun \
     && install -m 0755 /tmp/bun/bun-linux-x64/bun /usr/local/bin/bun \
     && ln -s /usr/local/bin/bun /usr/local/bin/bunx \
-    && npm install --global "@openai/codex@${CODEX_VERSION}" \
+    && mkdir -p /tmp/codex-install \
+      /usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64 \
+    && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 \
+      -o /tmp/codex-install/codex-wrapper.tgz \
+      "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_VERSION}.tgz" \
+    && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 \
+      -o /tmp/codex-install/codex-linux-x64.tgz \
+      "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_VERSION}-linux-x64.tgz" \
+    && printf '%s  %s\n' "${CODEX_WRAPPER_SHA256}" /tmp/codex-install/codex-wrapper.tgz | sha256sum --check - \
+    && printf '%s  %s\n' "${CODEX_LINUX_X64_SHA256}" /tmp/codex-install/codex-linux-x64.tgz | sha256sum --check - \
+    && tar -xzf /tmp/codex-install/codex-wrapper.tgz \
+      --directory /usr/local/lib/node_modules/@openai/codex \
+      --strip-components=1 --no-same-owner --no-same-permissions \
+    && tar -xzf /tmp/codex-install/codex-linux-x64.tgz \
+      --directory /usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64 \
+      --strip-components=1 --no-same-owner --no-same-permissions \
+    && chmod 0755 /usr/local/lib/node_modules/@openai/codex/bin/codex.js \
+    && ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
+    && test "$(node /usr/local/bin/codex --version)" = "codex-cli ${CODEX_VERSION}" \
     && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
       -o /tmp/cloudflare-warp.rpm \
       "https://pkg.cloudflareclient.com/rpm/44/x86_64/cloudflare-warp-${WARP_VERSION}-${WARP_RELEASE}.x86_64.rpm" \
@@ -76,7 +96,7 @@ RUN dnf install -y \
     && mkdir -p /memory /workspace /opt/loylex/app \
     && chown -R loylex:loylex /memory /workspace /opt/loylex \
     && dnf clean all \
-    && rm -rf /tmp/bun /tmp/bun.zip /tmp/cloudflare-warp.rpm /tmp/cloudflare-warp-key.gpg /root/.npm
+    && rm -rf /tmp/bun /tmp/bun.zip /tmp/codex-install /tmp/cloudflare-warp.rpm /tmp/cloudflare-warp-key.gpg /root/.npm
 
 RUN python3 -m pip install \
       --no-cache-dir \
