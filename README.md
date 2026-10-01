@@ -303,13 +303,34 @@ The agent still needs:
 1. a writable GitHub deploy key scoped only to `chelokot/Loylex` in its persistent
    home volume; protected `main` rejects direct changes while personal branches remain
    writable;
-2. `$CODEX_HOME/auth.json` created with `codex login --device-auth` or copied
-   through a trusted channel;
+2. a dedicated ChatGPT session created with `codex login --device-auth` inside the
+   active agent container, stored in its persistent `$CODEX_HOME/auth.json`;
 3. the PM3 projects registered by the installer: `loylex-gateway`,
    `loylex-worker-blue`, and `loylex-worker-green`. Only the active worker project is enabled;
    the supervisor uses the inactive one for the next rollover.
 
 Never commit either Telegram or Codex credentials.
+
+### Codex session ownership
+
+Authenticate Loylex independently from desktop Codex. Do not copy or synchronize a desktop
+`auth.json` into the agent: it duplicates the same OAuth session, not an independent login.
+Either machine can rotate its refresh token and leave the other with an already-used token.
+The September 14 recovery copied a desktop session; on October 1 the desktop and VPS still
+had the same session ID but different token generations, and the VPS failed to refresh.
+
+Run `codex login --device-auth` through `podman exec -it` in the active agent container as its
+normal user, and complete the displayed browser challenge. Do not run `codex logout` against
+the shared old session on the operator's computer. Preserve the agent home volume across
+rollouts; blue and green use that same volume, rather than separate copies of its credentials.
+Do not restore an old credential snapshot as routine recovery: use a new dedicated login.
+
+After login, verify that the agent and desktop have different session IDs without printing
+their tokens. Run a complete `codex exec` task in the agent, then retry only requests that
+failed before execution because of authentication, and verify their Telegram delivery.
+Codex 0.159.2 reloads shared credentials before refreshing, but its refresh semaphore is
+process-local; a common `CODEX_HOME` is not a cross-process refresh lock. Do not describe a
+successful short request as proof that simultaneous refreshes are serialized.
 
 ## Credit and provenance
 
