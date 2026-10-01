@@ -4,7 +4,10 @@ Problem: the previous word/keyword formula charged 12 bucks for the appropriate
 reply “Не меняй, всё правильно”. It rewarded padding, not conversational value.
 
 The worker now evaluates the current message against its explicit reply target and
-bounded recent same-chat context, using the already configured Codex model. The
+bounded recent same-chat context, using the already configured Codex model. Native
+Rich Telegram replies can omit bot text; the scoring context recovers the saved
+answer only through the exact same-chat outbound message ID, with no author-based
+lookup or substitution of a nearby message. The
 rubric rewards originality, substance, insight, interesting questions and apt
 humour. Appropriate routine confirmations are neutral or slightly positive.
 The score remains subjective; this is not an intelligence measurement. JSON

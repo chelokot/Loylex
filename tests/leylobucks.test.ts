@@ -88,6 +88,54 @@ describe("Loylebucks quiz question bank", () => {
 });
 
 describe("LoylexDatabase Loylebucks", () => {
+  test("recovers the exact Rich bot reply for scoring without borrowing another answer", () => {
+    const database = setup();
+    const original = message(80, "Не меняй реакцию");
+    database.archiveMessage(original, "bot_api");
+    database.enqueue(80, original, original.text ?? "", null);
+    const first = database.claimNext(10);
+    if (!first) throw new Error("first job missing");
+    database.complete(
+      first.id,
+      81,
+      "thread",
+      undefined,
+      undefined,
+      "Постоянное правило оставлено без изменений.",
+    );
+    const incoming = message(82, "Не меняй, всё правильно");
+    incoming.reply_to_message = { message_id: 81, date: incoming.date - 1, chat: incoming.chat };
+    database.archiveMessage(incoming, "bot_api");
+    database.enqueueWithLeylobucks(
+      82,
+      incoming,
+      incoming.text ?? "",
+      incoming.text ?? "",
+      "thread",
+    );
+    const followup = database.claimNext(10);
+    expect(followup?.assessmentReplyContext).toContain(
+      "Постоянное правило оставлено без изменений.",
+    );
+    if (!followup) throw new Error("followup missing");
+    database.complete(followup.id, 83, "thread");
+    const unrelated = message(84, "Спасибо");
+    unrelated.reply_to_message = {
+      message_id: 999,
+      date: unrelated.date - 1,
+      chat: unrelated.chat,
+    };
+    database.archiveMessage(unrelated, "bot_api");
+    database.enqueueWithLeylobucks(
+      84,
+      unrelated,
+      unrelated.text ?? "",
+      unrelated.text ?? "",
+      "thread",
+    );
+    expect(database.claimNext(10)?.assessmentReplyContext).not.toContain("Постоянное правило");
+    database.close();
+  });
   test("defers scoring, preserves intervening balance changes, and settles only once", () => {
     const database = setup();
     const incoming = message(91, "Не меняй, всё правильно");

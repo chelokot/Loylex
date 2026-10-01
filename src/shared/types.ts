@@ -146,6 +146,7 @@ export type AgentJob = {
   resumeThreadId: string | null;
   context: string;
   assessmentContext?: string;
+  assessmentReplyContext?: string | null;
   contextMode: AgentContextMode;
   replyToMessageId?: number | null;
   replyContext?: string | null;

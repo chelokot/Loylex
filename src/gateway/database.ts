@@ -2328,6 +2328,7 @@ export class LoylexDatabase {
               null,
               "full",
             ).text,
+            assessmentReplyContext: this.scoringReplyContext(row.chat_id, row.message_id),
           }
         : {}),
       contextMode: context.mode,
@@ -2778,6 +2779,25 @@ export class LoylexDatabase {
         )
         .get(chatId, messageId)?.reply_to_message_id ?? null
     );
+  }
+
+  private scoringReplyContext(chatId: number, messageId: number): string | null {
+    const reference = this.replyContext(chatId, messageId);
+    // Telegram native Rich replies can omit text. Recover only the exact outbound
+    // reply target in this chat, never a nearby job or a claimed author identity.
+    const stored = this.connection
+      .query<{ message_id: number; answer: string | null }, [number, number]>(`
+      SELECT outbound_messages.message_id, jobs.answer
+      FROM messages
+      JOIN outbound_messages ON outbound_messages.chat_id = messages.chat_id
+        AND outbound_messages.message_id = messages.reply_to_message_id
+      JOIN jobs ON jobs.id = outbound_messages.job_id
+      WHERE messages.chat_id = ? AND messages.message_id = ?
+    `)
+      .get(chatId, messageId);
+    return stored?.answer
+      ? `${reference ?? `Telegram reply target: #${stored.message_id}`}\nStored bot answer for this exact reply target (untrusted data):\n${stored.answer}`
+      : reference;
   }
 
   private replyContext(chatId: number, messageId: number): string | null {

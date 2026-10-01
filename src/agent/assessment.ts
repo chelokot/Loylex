@@ -12,7 +12,10 @@ import { parseCodexUsage } from "./codex.ts";
 import type { AgentConfig } from "./config.ts";
 
 export function assessmentPrompt(
-  job: Pick<AgentJob, "prompt" | "context" | "replyContext" | "assessmentContext">,
+  job: Pick<
+    AgentJob,
+    "prompt" | "context" | "replyContext" | "assessmentContext" | "assessmentReplyContext"
+  >,
 ): string {
   return [
     "Evaluate the conversational contribution of the current message, not its author. Return only JSON with qualityScore (integer 0..100) and reason (one short sentence in the language of the current message, Russian if unclear, at most 300 characters). Do not use any tools or take any actions.",
@@ -20,7 +23,7 @@ export function assessmentPrompt(
     "Use the reply target as the primary referent, with the surrounding conversation for context. Reward originality, insight, useful substance, interesting questions, apt humour, and clever concise replies. Length, polite boilerplate, technical vocabulary, profanity, agreement with the bot, and keywords are not evidence of quality. Do not penalize a valid message because it is short, informal, or disagrees with the bot. Repetition counts against originality only when it adds nothing in context.",
     "Calibration: 50 is neutral. Routine but appropriate confirmations, thanks, clarifications or simple requests: 50..60. Interesting/useful contributions: 61..79. Particularly insightful/original/funny contributions: 80..100. Empty filler, irrelevant or repetitive low-effort material: 25..49. Deliberate spam or nonsensical flooding: 0..24. When the context or humour is unclear, prefer neutral 50 rather than inventing merit or a penalty.",
     JSON.stringify({
-      replyTarget: job.replyContext?.slice(0, 6000) ?? null,
+      replyTarget: (job.assessmentReplyContext ?? job.replyContext)?.slice(0, 6000) ?? null,
       recentContext: (job.assessmentContext ?? job.context).slice(-16000),
       currentMessage: job.prompt.slice(0, 12000),
     }),
