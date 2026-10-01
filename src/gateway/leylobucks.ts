@@ -1360,118 +1360,11 @@ export const leylobucksQuizQuestions: readonly LeylobucksQuizQuestion[] = [
   },
 ] as const;
 
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(Math.max(value, minimum), maximum);
-}
-
 function normalizedText(value: string): string {
   return value
     .toLocaleLowerCase()
     .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
-}
-
-function words(value: string): string[] {
-  return normalizedText(value).split(/\s+/u).filter(Boolean);
-}
-
-function containsAny(value: string, candidates: readonly string[]): boolean {
-  return candidates.some((candidate) => value.includes(candidate));
-}
-
-export type LeylobucksAssessment = {
-  qualityScore: number;
-  delta: number;
-};
-
-export function assessLeylobucksRequest(
-  text: string,
-  previousTexts: readonly string[] = [],
-): LeylobucksAssessment {
-  const normalized = normalizedText(text);
-  if (!normalized) {
-    return { qualityScore: 5, delta: -90 };
-  }
-
-  const textWords = words(text);
-  const uniqueWords = new Set(textWords).size;
-  let quality = 36;
-  if (textWords.length >= 3) quality += 8;
-  if (textWords.length >= 8) quality += 8;
-  if (textWords.length >= 18) quality += 8;
-  if (/[?!。？！]/u.test(text)) quality += 5;
-  if (
-    containsAny(normalized, [
-      "проверь",
-      "объясни",
-      "сравни",
-      "найди",
-      "сделай",
-      "напиши",
-      "помоги",
-      "разбери",
-      "почему",
-      "как",
-      "план",
-      "check",
-      "explain",
-      "compare",
-      "find",
-      "build",
-      "write",
-      "how",
-      "why",
-    ])
-  ) {
-    quality += 10;
-  }
-  if (
-    containsAny(normalized, [
-      "потому",
-      "контекст",
-      "огранич",
-      "формат",
-      "результат",
-      "срок",
-      "критер",
-      "пример",
-      "ошиб",
-      "контекст",
-      "because",
-      "constraint",
-      "format",
-      "result",
-    ])
-  ) {
-    quality += 10;
-  }
-  if (textWords.length > 4 && uniqueWords / textWords.length >= 0.75) {
-    quality += 5;
-  }
-  if (/([!?])\1{2,}/u.test(text) || /(.)\1{4,}/u.test(normalized)) {
-    quality -= 25;
-  }
-  if (textWords.length <= 2) {
-    quality -= 12;
-  }
-  if (/^[\p{So}\p{Sk}\s]+$/u.test(text)) {
-    quality -= 25;
-  }
-  if (text.length >= 80 && text.length <= 2_000) {
-    quality += 5;
-  }
-  if (
-    previousTexts.some((previous) => {
-      const normalizedPrevious = normalizedText(previous);
-      return normalizedPrevious.length > 0 && normalizedPrevious === normalized;
-    })
-  ) {
-    quality -= 30;
-  }
-
-  const qualityScore = clamp(Math.round(quality), 0, 100);
-  const delta = qualityScore === 50 ? 0 : (qualityScore - 50) * 2;
-  return { qualityScore, delta: clamp(delta, -100, 100) };
 }
 
 function stableSeed(userId: number, attempt: number): number {

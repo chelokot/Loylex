@@ -125,6 +125,8 @@ export type TelegramUpdate = {
 export type AgentContextMode = "full" | "delta" | "none";
 
 export type AgentJobLeylobucks = {
+  pendingAssessment?: boolean;
+  assessmentReason?: string | undefined;
   qualityScore: number;
   delta: number;
   balance: number;
@@ -143,6 +145,7 @@ export type AgentJob = {
   prompt: string;
   resumeThreadId: string | null;
   context: string;
+  assessmentContext?: string;
   contextMode: AgentContextMode;
   replyToMessageId?: number | null;
   replyContext?: string | null;
@@ -158,6 +161,7 @@ export type AgentEvent = {
 };
 
 export type AgentCompletion = {
+  assessment?: { qualityScore: number; reason: string };
   answer: string;
   threadId: string;
   usage?: AgentTokenUsage;

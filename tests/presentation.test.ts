@@ -330,10 +330,12 @@ test("keeps purchase, blocked, and earned-bucks messages scannable", () => {
     balance: 1_000_064,
     catgirlMode: true,
     catgirlMessagesLeft: 9,
+    assessmentReason: "Уместная шутка <script> & пояснение.",
   });
   expect(footer).toContain("<details><summary>💰 Лейлобаксы · +64 · баланс 1 000 064</summary>");
   expect(footer).toContain("| Оценка запроса | **82/100** |");
   expect(footer).toContain("| Осталось сообщений | **9** |");
+  expect(footer).toContain("Уместная шутка &lt;script&gt; &amp; пояснение.");
 });
 
 test("explains a busy Codex thread without exposing CLI diagnostics", () => {

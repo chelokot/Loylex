@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+import { isContextualAssessment, unavailableAssessment } from "../shared/assessment.ts";
 import {
   isJsonObject,
   isTelegramApiFieldName,
@@ -218,6 +219,9 @@ export class GatewayServer {
       const completionMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/complete$/);
       if (request.method === "POST" && completionMatch?.[1]) {
         const payload = await body<AgentCompletion>(request);
+        if (payload.assessment !== undefined && !isContextualAssessment(payload.assessment)) {
+          return json({ error: "invalid contextual assessment" }, 400);
+        }
         if (payload.usage !== undefined && !isAgentTokenUsage(payload.usage)) {
           return json({ error: "usage must contain non-negative integer token counts" }, 400);
         }
@@ -817,9 +821,14 @@ export class GatewayServer {
     if (status === null) {
       return;
     }
-    const economy = this.isLeylobucksEnabled(address.userId)
-      ? (this.database.jobEconomy?.(jobId) ?? null)
-      : null;
+    const economyEnabled = this.isLeylobucksEnabled(address.userId);
+    if (economyEnabled) {
+      this.database.settleLeylobucksAssessment?.(
+        jobId,
+        completion.assessment ?? unavailableAssessment,
+      );
+    }
+    const economy = economyEnabled ? (this.database.jobEconomy?.(jobId) ?? null) : null;
     const answer = economy
       ? `${completion.answer}\n\n${leylobucksFooter(economy)}`
       : completion.answer;

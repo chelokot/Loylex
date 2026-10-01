@@ -1,7 +1,9 @@
 import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { unavailableAssessment } from "../shared/assessment.ts";
 import type { AgentJob } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
+import { assessConversation } from "./assessment.ts";
 import { stageAttachments } from "./attachments.ts";
 import { loadBuckets } from "./buckets.ts";
 import { runCodex } from "./codex.ts";
@@ -167,7 +169,31 @@ async function processJob(job: AgentJob): Promise<void> {
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
-    await gateway.complete(job.id, result);
+    const answerUsage = result.usage ?? usage;
+    const assessment = job.leylobucks?.pendingAssessment
+      ? await assessConversation(config, job, cancellation.signal, (evaluationUsage) => {
+          if (!answerUsage) {
+            usage = evaluationUsage;
+            return;
+          }
+          usage = {
+            inputTokens: answerUsage.inputTokens + evaluationUsage.inputTokens,
+            cachedInputTokens: answerUsage.cachedInputTokens + evaluationUsage.cachedInputTokens,
+            cacheWriteInputTokens:
+              answerUsage.cacheWriteInputTokens + evaluationUsage.cacheWriteInputTokens,
+            outputTokens: answerUsage.outputTokens + evaluationUsage.outputTokens,
+            reasoningOutputTokens:
+              answerUsage.reasoningOutputTokens + evaluationUsage.reasoningOutputTokens,
+            totalTokens: answerUsage.totalTokens + evaluationUsage.totalTokens,
+          };
+        }).catch(() => unavailableAssessment)
+      : undefined;
+    if (await cancellationRequested(job.id, cancellation)) return;
+    await gateway.complete(job.id, {
+      ...result,
+      ...(usage ? { usage } : {}),
+      ...(assessment ? { assessment } : {}),
+    });
   } catch (error) {
     if (await cancellationRequested(job.id, cancellation)) {
       return;

@@ -603,6 +603,9 @@ export function leylobucksFooter(economy: LeylobucksJobEconomy): string {
     `| Оценка запроса | **${formatInteger(economy.qualityScore)}/100** |`,
     `| Баланс | **${formatInteger(economy.balance)}** |`,
   ];
+  if (economy.assessmentReason) {
+    lines.push("", `<p>${escapeHtml(economy.assessmentReason)}</p>`);
+  }
   if (economy.catgirlMode) {
     lines.push(
       `| Режим кошкодевочки-жены | использован |`,

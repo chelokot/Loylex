@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LoylexDatabase } from "../src/gateway/database.ts";
-import { assessLeylobucksRequest, leylobucksQuizQuestions } from "../src/gateway/leylobucks.ts";
+import { leylobucksQuizQuestions } from "../src/gateway/leylobucks.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 
 const directories: string[] = [];
@@ -56,23 +56,6 @@ function correctAnswer(database: LoylexDatabase): string {
   return String((questions[row.question_index]?.correctIndex ?? 0) + 1);
 }
 
-describe("Loylebucks assessment", () => {
-  test("keeps the score in range and rewards a concrete request more than a blank one", () => {
-    const good = assessLeylobucksRequest(
-      "Проверь этот баг, объясни причину и предложи конкретный исправленный вариант с тестом.",
-    );
-    const bad = assessLeylobucksRequest("");
-
-    expect(good.qualityScore).toBeGreaterThan(bad.qualityScore);
-    expect(good.delta).toBeGreaterThan(0);
-    expect(bad.delta).toBeLessThan(0);
-    expect(good.qualityScore).toBeGreaterThanOrEqual(0);
-    expect(good.qualityScore).toBeLessThanOrEqual(100);
-    expect(good.delta).toBeGreaterThanOrEqual(-100);
-    expect(good.delta).toBeLessThanOrEqual(100);
-  });
-});
-
 describe("Loylebucks quiz question bank", () => {
   test("contains 60 general and 60 technical questions with balanced technical difficulty", () => {
     const difficultyCounts = { easy: 0, medium: 0, hard: 0 };
@@ -105,6 +88,54 @@ describe("Loylebucks quiz question bank", () => {
 });
 
 describe("LoylexDatabase Loylebucks", () => {
+  test("defers scoring, preserves intervening balance changes, and settles only once", () => {
+    const database = setup();
+    const incoming = message(91, "Не меняй, всё правильно");
+    database.archiveMessage(incoming, "bot_api");
+    database.enqueueWithLeylobucks(91, incoming, incoming.text ?? "", incoming.text ?? "", null);
+    expect(database.leylobucksStatus(7).balance).toBe(0);
+    const job = database.claimNext(10);
+    if (!job) throw new Error("job missing");
+    expect(job.leylobucks?.pendingAssessment).toBe(true);
+    database.testBumpLeylobucks(7, 100);
+    database.settleLeylobucksAssessment(job.id, {
+      qualityScore: 55,
+      reason: "Уместное подтверждение.",
+    });
+    database.settleLeylobucksAssessment(job.id, { qualityScore: 0, reason: "Повторная попытка" });
+    expect(database.leylobucksStatus(7).balance).toBe(110);
+    expect(database.jobEconomy(job.id)).toMatchObject({
+      delta: 10,
+      qualityScore: 55,
+      balance: 110,
+      assessmentReason: "Уместное подтверждение.",
+    });
+    expect(
+      database.connection
+        .query("SELECT id FROM leylobucks_transactions WHERE reason = 'contextual_assessment'")
+        .all(),
+    ).toHaveLength(1);
+    database.close();
+  });
+
+  test("a penalty still gates the next request and a cancelled job is not charged", () => {
+    const database = setup();
+    const incoming = message(92, "спам");
+    database.archiveMessage(incoming, "bot_api");
+    database.enqueueWithLeylobucks(92, incoming, incoming.text ?? "", incoming.text ?? "", null);
+    const job = database.claimNext(10);
+    if (!job) throw new Error("job missing");
+    database.connection.query("UPDATE jobs SET state = 'cancelled' WHERE id = ?").run(job.id);
+    database.settleLeylobucksAssessment(job.id, { qualityScore: 10, reason: "Спам" });
+    expect(database.leylobucksStatus(7).balance).toBe(0);
+    database.connection.query("UPDATE jobs SET state = 'running' WHERE id = ?").run(job.id);
+    database.settleLeylobucksAssessment(job.id, { qualityScore: 10, reason: "Спам" });
+    expect(database.leylobucksStatus(7).balance).toBe(-80);
+    expect(database.enqueueWithLeylobucks(93, message(93, "ещё"), "ещё", "ещё", null).kind).toBe(
+      "blocked",
+    );
+    database.close();
+  });
   test("persists the per-user mode across database instances", () => {
     const directory = mkdtempSync(join(tmpdir(), "loylex-bucks-mode-"));
     directories.push(directory);
@@ -226,6 +257,12 @@ describe("LoylexDatabase Loylebucks", () => {
     );
 
     expect(admission.kind).toBe("queued");
+    const rewardJob = database.claimNext(10);
+    if (!rewardJob) throw new Error("reward job missing");
+    database.settleLeylobucksAssessment(rewardJob.id, {
+      qualityScore: 75,
+      reason: "Полезный вопрос",
+    });
     const balanceAfterReward = database.leylobucksStatus(7).balance;
     expect(balanceAfterReward).toBeGreaterThan(500);
 
@@ -246,7 +283,6 @@ describe("LoylexDatabase Loylebucks", () => {
       modeMessage.text ?? "",
       null,
     );
-    database.claimNext(10);
     const modeJob = database.claimNext(10);
     expect(modeJob?.leylobucks).toMatchObject({ catgirlMode: true, catgirlMessagesLeft: 9 });
 
@@ -292,17 +328,21 @@ describe("LoylexDatabase Loylebucks", () => {
       5,
       "Проверь, пожалуйста, почему этот тест падает и предложи исправление с объяснением.",
     );
-    const assessment = assessLeylobucksRequest(incoming.text ?? "");
-    expect(assessment.delta).toBeGreaterThan(0);
-    const balance = Number.MAX_SAFE_INTEGER - assessment.delta + 1;
+    const balance = Number.MAX_SAFE_INTEGER - 49;
     setBalance(database, balance);
     database.archiveMessage(incoming, "bot_api");
 
+    database.enqueueWithLeylobucks(5, incoming, incoming.text ?? "", incoming.text ?? "", null);
+    const job = database.claimNext(10);
+    if (!job) throw new Error("job missing");
     expect(() =>
-      database.enqueueWithLeylobucks(5, incoming, incoming.text ?? "", incoming.text ?? "", null),
+      database.settleLeylobucksAssessment(job.id, {
+        qualityScore: 75,
+        reason: "Полезный вопрос",
+      }),
     ).toThrow("safe integer range");
     expect(database.leylobucksStatus(7).balance).toBe(balance);
-    expect(database.connection.query("SELECT id FROM jobs").all()).toEqual([]);
+    expect(database.jobEconomy(job.id)?.delta).toBe(0);
     database.close();
   });
 

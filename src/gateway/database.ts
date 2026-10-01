@@ -16,7 +16,6 @@ import type {
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import { feedbackPrompt, isOperatorDislikeReaction } from "./feedback.ts";
 import {
-  assessLeylobucksRequest,
   createLeylobucksQuiz,
   type LeylobucksPackage,
   type LeylobucksQuizQuestion,
@@ -1821,7 +1820,7 @@ export class LoylexDatabase {
     updateId: number,
     message: TelegramMessage,
     prompt: string,
-    qualityText: string,
+    _qualityText: string,
     resumeThreadId: string | null,
     contextMode: AgentContextMode = resumeThreadId === null ? "full" : "delta",
   ): LeylobucksEnqueueResult {
@@ -1843,19 +1842,8 @@ export class LoylexDatabase {
         return { kind: "duplicate" as const };
       }
 
-      const previousTexts = this.connection
-        .query<{ text: string | null }, [number, number, number]>(`
-          SELECT text
-          FROM messages
-          WHERE from_user_id = ?
-            AND NOT (chat_id = ? AND message_id = ?)
-            AND text IS NOT NULL
-          ORDER BY date DESC, message_id DESC
-          LIMIT 20
-        `)
-        .all(authenticatedUserId, message.chat.id, message.message_id)
-        .map((row) => row.text ?? "");
-      const assessment = assessLeylobucksRequest(qualityText, previousTexts);
+      // Contextual assessment is settled by the worker after inference, not by text length.
+      const assessment = { qualityScore: 50, delta: 0 };
       const account = this.ensureLeylobucksAccount(authenticatedUserId);
       if (account.balance < 0) {
         return {
@@ -1908,7 +1896,7 @@ export class LoylexDatabase {
           effectiveContextMode,
           JSON.stringify(jobMedia(message)),
           generation,
-          assessment.qualityScore,
+          null,
           actualDelta,
           newBalance,
           catgirlMode ? 1 : 0,
@@ -1933,7 +1921,7 @@ export class LoylexDatabase {
           newBalance,
           updateId,
           job.id,
-          JSON.stringify({ qualityScore: assessment.qualityScore }),
+          JSON.stringify({ pendingAssessment: true }),
           now,
         );
       return {
@@ -2328,6 +2316,20 @@ export class LoylexDatabase {
       prompt: row.prompt,
       resumeThreadId: row.resume_thread_id,
       context: context.text,
+      ...(leylobucksEnabled &&
+      row.economy_quality === null &&
+      row.economy_balance_after !== null &&
+      row.context_mode !== "none"
+        ? {
+            assessmentContext: this.contextForJob(
+              row.chat_id,
+              row.message_id,
+              contextMessages,
+              null,
+              "full",
+            ).text,
+          }
+        : {}),
       contextMode: context.mode,
       replyToMessageId: this.replyToMessageId(row.chat_id, row.message_id),
       replyContext:
@@ -2339,6 +2341,7 @@ export class LoylexDatabase {
         ? {}
         : {
             leylobucks: {
+              pendingAssessment: row.economy_quality === null,
               qualityScore: row.economy_quality ?? 50,
               delta: row.economy_delta,
               balance: row.economy_balance_after,
@@ -3056,12 +3059,82 @@ export class LoylexDatabase {
       return null;
     }
     return {
+      assessmentReason: this.connection
+        .query<{ reason: string }, [number]>(`
+        SELECT json_extract(metadata_json, '$.reason') AS reason FROM leylobucks_transactions
+        WHERE job_id = ? AND reason = 'contextual_assessment' ORDER BY id DESC LIMIT 1
+      `)
+        .get(jobId)?.reason,
       qualityScore: row.economy_quality ?? 50,
       delta: row.economy_delta,
       balance: row.economy_balance_after,
       catgirlMode: row.catgirl_mode === 1,
       catgirlMessagesLeft: row.catgirl_messages_left,
     };
+  }
+
+  settleLeylobucksAssessment(
+    jobId: number,
+    assessment: { qualityScore: number; reason: string },
+  ): void {
+    if (
+      !Number.isInteger(assessment.qualityScore) ||
+      assessment.qualityScore < 0 ||
+      assessment.qualityScore > 100 ||
+      typeof assessment.reason !== "string" ||
+      !assessment.reason.trim() ||
+      assessment.reason.length > 500
+    ) {
+      throw new Error("Invalid contextual assessment");
+    }
+    const transaction = this.connection.transaction(() => {
+      const job = this.connection
+        .query<
+          {
+            user_id: number | null;
+            economy_quality: number | null;
+            economy_balance_after: number | null;
+          },
+          [number]
+        >(
+          "SELECT user_id, economy_quality, economy_balance_after FROM jobs WHERE id = ? AND state = 'running'",
+        )
+        .get(jobId);
+      // Old jobs are already assessed. Retries must never charge twice.
+      if (
+        !job ||
+        job.user_id === null ||
+        job.economy_balance_after === null ||
+        job.economy_quality !== null
+      )
+        return;
+      const delta = Math.max(-100, Math.min(100, (assessment.qualityScore - 50) * 2));
+      const balance = this.ensureLeylobucksAccount(job.user_id).balance + delta;
+      if (!Number.isSafeInteger(balance))
+        throw new Error("Loylebucks balance would exceed the safe integer range");
+      const now = Date.now();
+      this.connection
+        .query("UPDATE leylobucks_accounts SET balance = ?, updated_at = ? WHERE user_id = ?")
+        .run(balance, now, job.user_id);
+      this.connection
+        .query(
+          "UPDATE jobs SET economy_quality = ?, economy_delta = ?, economy_balance_after = ? WHERE id = ?",
+        )
+        .run(assessment.qualityScore, delta, balance, jobId);
+      this.connection
+        .query(`INSERT INTO leylobucks_transactions
+        (user_id, delta, balance_after, reason, job_id, metadata_json, created_at)
+        VALUES (?, ?, ?, 'contextual_assessment', ?, ?, ?)`)
+        .run(
+          job.user_id,
+          delta,
+          balance,
+          jobId,
+          JSON.stringify({ ...assessment, evaluator: "contextual-v1" }),
+          now,
+        );
+    });
+    transaction.immediate();
   }
 
   recordUsage(
