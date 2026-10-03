@@ -1,3 +1,4 @@
+import { messageText } from "../shared/message-text.ts";
 import type { TelegramMessage } from "../shared/types.ts";
 
 const prefixPattern =
@@ -37,10 +38,6 @@ export type TriggerDecision = {
   prompt: string;
   kind: "prefix" | "private" | "reply";
 };
-
-function messageText(message: TelegramMessage): string {
-  return message.text ?? message.caption ?? "";
-}
 
 export function isTemporaryLeyloAliasActive(now = Date.now()): boolean {
   return now >= TEMPORARY_LEYLO_ALIAS_START_AT && now < TEMPORARY_LEYLO_ALIAS_END_AT;

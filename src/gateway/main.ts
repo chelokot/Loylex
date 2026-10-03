@@ -1,3 +1,4 @@
+import { messageText } from "../shared/message-text.ts";
 import type { TelegramMessage, TelegramUpdate } from "../shared/types.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
@@ -211,7 +212,7 @@ async function handleEditedMessage(updateId: number, message: TelegramMessage): 
   if (message.from?.is_bot) {
     return;
   }
-  const editedText = message.text?.trim();
+  const editedText = messageText(message).trim();
   if (!editedText) {
     return;
   }
@@ -502,7 +503,7 @@ async function poll(): Promise<void> {
               update.update_id,
               message,
               prompt,
-              message.text ?? message.caption ?? prompt,
+              messageText(message) || prompt,
               resumeThreadId,
               undefined,
               economyEnabled,

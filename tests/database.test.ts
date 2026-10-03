@@ -683,6 +683,27 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("reads Rich-only reply targets and archives Rich requests", () => {
+    const database = setup();
+    const current = message(2, "");
+    delete current.text;
+    current.rich_message = { blocks: [{ type: "paragraph", text: "Найди примеры LTX" }] };
+    const target = botMessage(1, "");
+    delete target.text;
+    target.rich_message = {
+      blocks: [{ type: "paragraph", text: { type: "bold", text: "LTX-2.3 FP8" } }],
+    };
+    current.reply_to_message = target;
+    database.archiveMessage(current, "bot_api");
+    database.enqueue(55, current, "Найди примеры LTX", null);
+    const job = database.claimNext(10);
+    expect(job?.replyContext).toContain("LTX-2.3 FP8");
+    expect(
+      database.readQuery("SELECT text FROM messages WHERE message_id = ?", [2], 1).rows,
+    ).toEqual([{ text: "Найди примеры LTX" }]);
+    database.close();
+  });
+
   test("preserves the explicit reply target when resuming a Codex thread", () => {
     const database = setup();
     const first = message(1, "первая задача");

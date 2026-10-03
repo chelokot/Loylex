@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { messageText } from "../shared/message-text.ts";
 import type {
   AgentContextMode,
   AgentJob,
@@ -412,7 +413,7 @@ function searchResult(row: SearchRow): SearchResult {
     author: row.from_username
       ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
       : (row.from_display_name ?? "unknown"),
-    text: row.text ?? "",
+    text: row.text || messageText(parseObject(row.raw_json)),
   };
   const origin = forwardOrigin(row.raw_json);
   return origin === null ? result : { ...result, forwardOrigin: origin };
@@ -429,7 +430,7 @@ function archivedMessage(row: ArchivedMessageRow): ArchivedMessage {
     author: row.from_username
       ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
       : (row.from_display_name ?? "unknown"),
-    text: row.text ?? "",
+    text: row.text || messageText(parseObject(row.raw_json)),
     replyToMessageId: row.reply_to_message_id,
     mediaGroupId: row.media_group_id,
     source: row.source as ArchivedMessage["source"],
@@ -444,7 +445,7 @@ function messageReference(message: UnknownRecord, label: string): string | null 
   if (messageId === null) {
     return null;
   }
-  const text = stringField(message.text) ?? stringField(message.caption) ?? "";
+  const text = messageText(message);
   const attachments: JsonValue[] = [];
   for (const key of ["photo", "document", "audio", "video", "voice", "animation"]) {
     const value = message[key];
@@ -1194,7 +1195,7 @@ export class LoylexDatabase {
     if (message.from) {
       this.upsertUser(message.from);
     }
-    const text = message.text ?? message.caption ?? null;
+    const text = messageText(message) || null;
     this.connection
       .query(`
         INSERT INTO messages (
@@ -2766,7 +2767,7 @@ export class LoylexDatabase {
         ].filter(Boolean);
         const relationText = relations.length > 0 ? ` ${relations.join(" ")}` : "";
         const edited = row.edit_date === null ? "" : " (edited)";
-        return `[${timestamp}] #${row.message_id} ${author}${userId}${edited}: ${row.text ?? ""}${attachmentText}${relationText}`;
+        return `[${timestamp}] #${row.message_id} ${author}${userId}${edited}: ${row.text || messageText(parseObject(row.raw_json))}${attachmentText}${relationText}`;
       })
       .join("\n");
   }
