@@ -75,10 +75,10 @@ describe("activityLines", () => {
   });
 
   test("describes the result of a stop command", () => {
-    expect(stopResultMessage(1)).toBe("⏹️ Остановлено: 1 задача.");
-    expect(stopResultMessage(2)).toBe("⏹️ Остановлено: 2 задачи.");
-    expect(stopResultMessage(5)).toBe("⏹️ Остановлено: 5 задач.");
-    expect(stopResultMessage(0)).toBe("Активных задач для остановки нет.");
+    expect(stopResultMessage(1)).toBe("**Работа остановлена**\n\nОтменено: 1 задача.");
+    expect(stopResultMessage(2)).toBe("**Работа остановлена**\n\nОтменено: 2 задачи.");
+    expect(stopResultMessage(5)).toBe("**Работа остановлена**\n\nОтменено: 5 задач.");
+    expect(stopResultMessage(0)).toBe("Сейчас ничего не выполняется.");
   });
 });
 

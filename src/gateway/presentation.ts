@@ -637,6 +637,6 @@ function taskCountLabel(count: number): string {
 
 export function stopResultMessage(cancelledCount: number): string {
   return cancelledCount > 0
-    ? `⏹️ Остановлено: ${cancelledCount} ${taskCountLabel(cancelledCount)}.`
-    : "Активных задач для остановки нет.";
+    ? `**Работа остановлена**\n\nОтменено: ${cancelledCount} ${taskCountLabel(cancelledCount)}.`
+    : "Сейчас ничего не выполняется.";
 }
