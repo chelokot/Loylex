@@ -330,11 +330,9 @@ class Supervisor:
 
         target_project = self._project(target)
         old_project = self._project(old_slot) if old_slot is not None else None
-        started = False
         committed = False
         try:
             self._run_pm3(["start", target_project, "--", "--force-recreate"], timeout=900)
-            started = True
             # podman-compose currently applies mem_limit but not memswap_limit;
             # enforce the legacy aggregate cap after Compose creates the target.
             self._apply_agent_resource_limits(target)
@@ -349,7 +347,7 @@ class Supervisor:
                 self._run_pm3(["stop", old_project], timeout=AGENT_DRAIN_TIMEOUT_SECONDS)
                 self._wait_inactive(old_slot)
         except Exception:
-            if started and not committed:
+            if not committed:
                 self._try_command(
                     [PM3_BINARY, "stop", target_project],
                     timeout=AGENT_DRAIN_TIMEOUT_SECONDS,
