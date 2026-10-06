@@ -80,3 +80,24 @@ test("rejects malformed read-query parameters and limits before touching the dat
   expect(response.status).toBe(400);
   expect(called).toBe(false);
 });
+
+test("persists a mode correction through the authenticated bridge", async () => {
+  const changes: unknown[] = [];
+  const database = {
+    setLeylobucksEnabled: (userId: number, enabled: boolean) => changes.push([userId, enabled]),
+    isLeylobucksEnabled: () => false,
+  } as unknown as LoylexDatabase;
+  const server = new GatewayServer(config(), database, {} as TelegramClient);
+  const request = (authorization: string, userId: unknown, enabled: unknown) =>
+    new Request("http://localhost/v1/leylobucks/mode", {
+      method: "POST",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify({ userId, enabled }),
+    });
+  expect((await route(server)(request("Bearer wrong", 7, false))).status).toBe(401);
+  expect((await route(server)(request("Bearer unused", "7", false))).status).toBe(400);
+  expect(changes).toEqual([]);
+  const response = await route(server)(request("Bearer unused", 7, false));
+  expect(await response.json()).toEqual({ userId: 7, enabled: false });
+  expect(changes).toEqual([[7, false]]);
+});

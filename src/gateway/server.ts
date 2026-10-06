@@ -132,6 +132,23 @@ export class GatewayServer {
     }
 
     try {
+      if (request.method === "POST" && url.pathname === "/v1/leylobucks/mode") {
+        const payload = await body<{ userId?: unknown; enabled?: unknown }>(request);
+        if (
+          typeof payload.userId !== "number" ||
+          !Number.isSafeInteger(payload.userId) ||
+          payload.userId <= 0 ||
+          typeof payload.enabled !== "boolean"
+        ) {
+          return json({ error: "positive integer userId and boolean enabled are required" }, 400);
+        }
+        this.database.setLeylobucksEnabled(payload.userId, payload.enabled);
+        return json({
+          userId: payload.userId,
+          enabled: this.database.isLeylobucksEnabled(payload.userId),
+        });
+      }
+
       if (request.method === "POST" && url.pathname === "/v1/workers/register") {
         const currentWorkerId = workerId(request);
         if (!currentWorkerId) {

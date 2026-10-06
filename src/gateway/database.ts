@@ -1032,6 +1032,8 @@ export class LoylexDatabase {
       this.migrateMessages();
       this.connection.exec(`
         CREATE INDEX IF NOT EXISTS messages_chat_date_idx ON messages(chat_id, date DESC);
+        CREATE INDEX IF NOT EXISTS messages_context_idx
+          ON messages(chat_id, date DESC, message_id DESC);
 
         CREATE TABLE IF NOT EXISTS reactions (
           update_id INTEGER PRIMARY KEY,
@@ -2298,12 +2300,21 @@ export class LoylexDatabase {
     if (!row) {
       return null;
     }
+    const contextStartedAt = performance.now();
     const context = this.contextForJob(
       row.chat_id,
       row.message_id,
       contextMessages,
       row.resume_thread_id,
       row.context_mode,
+    );
+    console.log(
+      JSON.stringify({
+        event: "job_context_ready",
+        jobId: row.id,
+        contextMs: Math.round(performance.now() - contextStartedAt),
+        createdToContextMs: Date.now() - row.created_at,
+      }),
     );
     const leylobucksEnabled = isLeylobucksEnabled(row.user_id);
     return {
@@ -2705,7 +2716,7 @@ export class LoylexDatabase {
                users.display_name AS from_display_name, users.username AS from_username,
                messages.text, messages.media_json, messages.message_id,
                messages.message_thread_id, messages.reply_to_message_id, messages.raw_json
-        FROM messages
+        FROM messages INDEXED BY messages_context_idx
         LEFT JOIN users ON users.user_id = messages.from_user_id
         WHERE messages.chat_id = ? AND messages.message_id < ?
         ORDER BY messages.date DESC, messages.message_id DESC

@@ -84,6 +84,25 @@ async function uploadLocalFile(
 }
 
 async function run(): Promise<void> {
+  if (command === "bucks-mode") {
+    const [user, mode] = arguments_;
+    const userId = Number(user);
+    if (!Number.isSafeInteger(userId) || userId <= 0 || (mode !== "on" && mode !== "off")) {
+      throw new Error("Usage: loylex bucks-mode USER_ID on|off");
+    }
+    console.log(
+      JSON.stringify(
+        await requestJson("/v1/leylobucks/mode", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId, enabled: mode === "on" }),
+        }),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (command === "system") {
     const [operation, scope = "all", delay = "15"] = arguments_;
     if (operation === "status") {

@@ -482,3 +482,17 @@ describe("LoylexDatabase Loylebucks", () => {
     database.close();
   });
 });
+
+test("recent context uses the ordered index without sorting the entire archive", () => {
+  const database = setup();
+  const plan = database.readQuery(
+    `EXPLAIN QUERY PLAN SELECT date, message_id FROM messages INDEXED BY messages_context_idx
+     WHERE chat_id = ? AND message_id < ? ORDER BY date DESC, message_id DESC LIMIT ?`,
+    [-10042, 100, 60],
+    10,
+  );
+  const details = plan.rows.map((row) => String(row.detail)).join("\n");
+  expect(details).toContain("messages_context_idx");
+  expect(details).not.toContain("TEMP B-TREE");
+  database.close();
+});
