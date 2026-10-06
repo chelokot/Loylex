@@ -2313,7 +2313,6 @@ export class LoylexDatabase {
         event: "job_context_ready",
         jobId: row.id,
         contextMs: Math.round(performance.now() - contextStartedAt),
-        createdToContextMs: Date.now() - row.created_at,
       }),
     );
     const leylobucksEnabled = isLeylobucksEnabled(row.user_id);
