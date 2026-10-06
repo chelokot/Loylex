@@ -1,6 +1,7 @@
 import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type { AgentEvent } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
+import { CodexSessionExtensions } from "./codex-session.ts";
 import type { AgentConfig } from "./config.ts";
 
 export type CodexItem = {
@@ -462,6 +463,8 @@ async function runCodexAttempt(
         "/workspace",
         "-",
       ];
+  const sessionExtensions = new CodexSessionExtensions(config.codexHome);
+  if (resumeThreadId) await sessionExtensions.skipExisting(resumeThreadId);
   const child = Bun.spawn([config.codexBinary, ...arguments_], {
     cwd: config.repositoryPath,
     env: {
@@ -562,6 +565,17 @@ async function runCodexAttempt(
       });
     }
 
+    async function reportSessionExtensions(): Promise<void> {
+      if (!threadId) return;
+      try {
+        for (const item of await sessionExtensions.read(threadId)) {
+          await reportToolUse({ item: item as CodexItem }, "item_completed");
+        }
+      } catch (error) {
+        console.warn("Could not read Codex session extensions:", errorText(error));
+      }
+    }
+
     for await (const chunk of child.stdout) {
       buffered += decoder.decode(chunk, { stream: true });
       const lines = buffered.split("\n");
@@ -622,9 +636,11 @@ async function runCodexAttempt(
           });
         }
       }
+      await reportSessionExtensions();
     }
 
     const status = await child.exited;
+    await reportSessionExtensions();
     if (signal?.aborted) {
       throw new CodexCancelledError();
     }
