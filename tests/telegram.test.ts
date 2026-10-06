@@ -113,6 +113,7 @@ test("does not publish the quiz as a Telegram command", async () => {
       { command: "stop", description: "Остановить работу" },
       { command: "tasks", description: "Показать последние задачи" },
       { command: "resume", description: "Продолжить задачу по ID" },
+      { command: "blind", description: "Запрос без истории чата" },
       { command: "newchat", description: "Начать новый тред в личке" },
       { command: "bucks", description: "Баланс и магазин лейлобаксов" },
     ],

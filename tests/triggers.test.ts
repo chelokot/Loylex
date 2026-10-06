@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  blindTrigger,
   detectTrigger,
   isNewChatCommand,
   isSlashCommand,
@@ -221,5 +222,31 @@ describe("promptWithQuote", () => {
     input.quote = { text: "  \n  " };
 
     expect(promptWithQuote(input, "обычный запрос")).toBe("обычный запрос");
+  });
+});
+
+describe("blindTrigger", () => {
+  test("strips an inline marker from a normal request", () => {
+    expect(blindTrigger(message("лойлекс тест /blind"), 42)).toEqual({
+      kind: "prefix",
+      prompt: "тест",
+    });
+  });
+  test("supports standalone commands and bot mentions", () => {
+    expect(blindTrigger(message("/blind@LoylexBot тест"), 42, "loylexbot")?.prompt).toBe("тест");
+    expect(blindTrigger(message("/blind@OtherBot тест"), 42, "loylexbot")).toBeNull();
+  });
+  test("requires a separate token and an invocation", () => {
+    expect(blindTrigger(message("лойлекс /blindness"), 42)).toBeNull();
+    expect(blindTrigger(message("тест /blind"), 42)).toBeNull();
+  });
+  test("supports private and reply requests", () => {
+    expect(blindTrigger(message("тест /blind", "private"), 42)?.prompt).toBe("тест");
+    const reply = message("тест /blind");
+    reply.reply_to_message = {
+      ...message("спойлер"),
+      from: { id: 42, is_bot: true, first_name: "bot" },
+    };
+    expect(blindTrigger(reply, 42)?.prompt).toBe("тест");
   });
 });

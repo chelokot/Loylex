@@ -25,6 +25,7 @@ import { GatewayServer } from "./server.ts";
 import { sendTasks } from "./tasks.ts";
 import { TelegramClient } from "./telegram.ts";
 import {
+  blindTrigger,
   cancelTaskMessageId,
   detectTrigger,
   isHelpCommand,
@@ -555,10 +556,11 @@ async function poll(): Promise<void> {
           }
           continue;
         }
-        if (isSlashCommand(message)) {
+        const blind = blindTrigger(message, bot.id, bot.username);
+        if (isSlashCommand(message) && !blind) {
           continue;
         }
-        const trigger = detectTrigger(message, bot.id);
+        const trigger = blind ?? detectTrigger(message, bot.id);
         if (!trigger) {
           continue;
         }
@@ -580,15 +582,15 @@ async function poll(): Promise<void> {
           (message.chat.type === "private"
             ? database.latestContinuableThread(message.chat.id)
             : null);
-        const prompt = promptWithQuote(message, trigger.prompt);
+        const prompt = blind ? trigger.prompt : promptWithQuote(message, trigger.prompt);
         const admission = enqueueRequest(
           database,
           update.update_id,
           message,
           prompt,
           trigger.prompt,
-          resumeThreadId,
-          undefined,
+          blind ? null : resumeThreadId,
+          blind ? "none" : undefined,
           economyEnabled,
         );
         if (admission.kind === "blocked") {

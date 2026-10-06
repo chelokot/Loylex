@@ -221,6 +221,38 @@ export function resumeTaskMessageId(message: TelegramMessage, botUsername?: stri
   return Number.isSafeInteger(messageId) && messageId > 0 ? messageId : null;
 }
 
+export function blindTrigger(
+  message: TelegramMessage,
+  botUserId: number,
+  botUsername?: string,
+): TriggerDecision | null {
+  const text = messageText(message);
+  const marker = /(^|\s)\/blind(?:@([a-z0-9_]+))?(?=\s|$)/giu;
+  let found = false;
+  const cleaned = text
+    .replace(marker, (token, space: string, mention: string | undefined) => {
+      if (!commandMentionMatches(mention, botUsername)) {
+        return token;
+      }
+      found = true;
+      return space;
+    })
+    .trim();
+  if (!found) {
+    return null;
+  }
+  const stripped = { ...message, text: cleaned };
+  delete stripped.caption;
+  const trigger = detectTrigger(stripped, botUserId);
+  if (trigger) {
+    return trigger;
+  }
+  // A leading /blind is also a standalone command in groups.
+  return /^\/blind(?:@[a-z0-9_]+)?(?=\s|$)/iu.test(text.trim())
+    ? { kind: "prefix", prompt: cleaned || "Ответь на это сообщение." }
+    : null;
+}
+
 export function detectTrigger(
   message: TelegramMessage,
   botUserId: number,
