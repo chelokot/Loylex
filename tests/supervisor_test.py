@@ -1,5 +1,7 @@
 import importlib.util
+import subprocess
 import unittest
+from unittest import mock
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
@@ -134,6 +136,33 @@ class SupervisorTest(unittest.TestCase):
                 "example/image",
                 "example/image@sha256:1",
             )
+
+
+    def test_failed_agent_start_releases_the_target_slot(self) -> None:
+        supervisor = object.__new__(SUPERVISOR.Supervisor)
+        supervisor.active_agent_slot = "green"
+        commands: list[list[str]] = []
+
+        def run_pm3(arguments: list[str], timeout: int = 900) -> str:
+            raise subprocess.TimeoutExpired(arguments, timeout)
+
+        def try_command(command: list[str], timeout: int = 900, cwd: Path | None = None) -> None:
+            commands.append(command[1:])
+
+        with (
+            mock.patch.object(SUPERVISOR, "service_state", lambda slot: "active" if slot == "green" else "inactive"),
+            mock.patch.object(supervisor, "_run_pm3", run_pm3),
+            mock.patch.object(supervisor, "_try_command", try_command),
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                supervisor._roll_agent("blue")
+
+        self.assertEqual(commands, [["stop", "loylex-worker-blue"], ["disable", "loylex-worker-blue"]])
+
+
+    def test_supervisor_restart_leaves_container_monitors_running(self) -> None:
+        unit = (SCRIPT_PATH.parents[1] / "systemd/loylex-supervisor.service").read_text()
+        self.assertIn("KillMode=process", unit.splitlines())
 
 
 if __name__ == "__main__":
