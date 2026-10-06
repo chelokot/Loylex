@@ -26,7 +26,14 @@ The host exposes only the authenticated Loylex supervisor through `loylex system
   restarting the agent and restarts only the named Loylex services.
 - `loylex system deploy agent|gateway|all [DELAY_SECONDS]` validates agent changes, pulls the
   published `main` image, pins its exact digest, restarts the selected services, and verifies
-  health. Push changes and wait for the image workflow before deploying gateway code.
+  health. Before deploying either agent or gateway, push changes and verify that the
+  Images workflow succeeded for the intended commit. A push alone does not update `:main`.
+
+Agent startup checks the complete workspace `AGENTS.md` against the image's pinned copy
+before registering with the gateway. An instruction edit therefore also requires its new
+image to finish publishing before deployment; an older image cannot start against it.
+If another task pushes meanwhile, check the latest published commit and its instruction
+content before deploying. Do not bypass the integrity check to recover a failed rollout.
 
 The delay exists so the Telegram task that schedules an operation can finish first. Check
 `loylex system status` after the restart. The supervisor cannot execute arbitrary commands,
