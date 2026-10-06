@@ -160,5 +160,10 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(commands, [["stop", "loylex-worker-blue"], ["disable", "loylex-worker-blue"]])
 
 
+    def test_supervisor_restart_leaves_container_monitors_running(self) -> None:
+        unit = (SCRIPT_PATH.parents[1] / "systemd/loylex-supervisor.service").read_text()
+        self.assertIn("KillMode=process", unit.splitlines())
+
+
 if __name__ == "__main__":
     unittest.main()

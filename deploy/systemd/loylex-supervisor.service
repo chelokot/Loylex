@@ -7,6 +7,7 @@ Type=simple
 Environment=LOYLEX_SUPERVISOR_LISTEN_HOST=0.0.0.0
 Environment=LOYLEX_SUPERVISOR_LISTEN_PORT=8790
 ExecStart=%h/.local/bin/loylex-supervisor
+KillMode=process
 Restart=always
 RestartSec=3
 
