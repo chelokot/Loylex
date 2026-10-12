@@ -98,3 +98,61 @@ for(const event of [
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("reports Codex JSON failures when stderr is empty without retrying quota errors", async () => {
+  const { runCodex } = await import("../src/agent/codex.ts");
+  const home = await mkdtemp(join(tmpdir(), "loylex-codex-failure-"));
+  try {
+    await mkdir(join(home, "sessions"));
+    for (const failure of [
+      {
+        type: "turn.failed",
+        error: { message: "You’ve hit your usage limit. Try again at 7:33 PM." },
+      },
+      { type: "error", message: "Authentication expired" },
+    ]) {
+      const binary = join(home, "fake-codex");
+      const attempts = join(home, "attempts");
+      await writeFile(attempts, "");
+      await writeFile(
+        binary,
+        `#!/usr/bin/env bun
+import {appendFileSync} from 'node:fs';
+appendFileSync(${JSON.stringify(attempts)}, 'attempt\\n');
+console.log(JSON.stringify({type:'thread.started',thread_id:'failed-thread'}));
+console.log(JSON.stringify(${JSON.stringify(failure)}));
+process.exit(1);
+`,
+        { mode: 0o700 },
+      );
+      const events: import("../src/shared/types.ts").AgentEvent[] = [];
+      const message = failure.error ? failure.error.message : failure.message;
+      await expect(
+        runCodex(
+          {
+            bridgeUrl: "",
+            bridgeToken: "",
+            codexBinary: binary,
+            codexHome: home,
+            model: "test",
+            reasoningEffort: "low",
+            serviceTier: "priority",
+            repositoryPath: home,
+            memoryPath: home,
+            pollIntervalMs: 1000,
+            maxConcurrentJobs: 1,
+          },
+          "test",
+          "failed-thread",
+          async (event) => {
+            events.push(event);
+          },
+        ),
+      ).rejects.toThrow(`Codex exited with 1: ${message}`);
+      expect(await Bun.file(attempts).text()).toBe("attempt\n");
+      expect(events).toContainEqual({ kind: "status", text: message, threadId: "failed-thread" });
+    }
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});

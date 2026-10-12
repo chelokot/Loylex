@@ -32,6 +32,7 @@ type CodexJsonEvent = {
   type?: string;
   thread_id?: string;
   message?: string;
+  error?: { message: string };
   item?: CodexItem;
   name?: string;
   tool?: string;
@@ -501,6 +502,7 @@ async function runCodexAttempt(
     let pendingAgentMessage = "";
     let lastUsage: AgentTokenUsage | null = null;
     let buffered = "";
+    let failureMessage = "";
     let fallbackToolCallSequence = 0;
     const reportedToolCallIds = new Set<string>();
     const startedToolCallsWithoutIds = new Map<string, number>();
@@ -628,10 +630,11 @@ async function runCodexAttempt(
               ...(threadId ? { threadId } : {}),
             });
           }
-        } else if (eventType === "error") {
+        } else if (eventType === "error" || eventType === "turn_failed") {
+          failureMessage = event.error?.message ?? event.message ?? "Codex reported an error";
           await onEvent({
             kind: "status",
-            text: event.message ?? "Codex reported an error",
+            text: failureMessage,
             ...(threadId ? { threadId } : {}),
           });
         }
@@ -649,7 +652,8 @@ async function runCodexAttempt(
     }
     if (status !== 0) {
       const stderr = await new Response(child.stderr).text();
-      throw new Error(`Codex exited with ${status}: ${stderr.slice(-4_000)}`);
+      const detail = failureMessage || stderr.trim();
+      throw new Error(`Codex exited with ${status}${detail ? `: ${detail.slice(-4_000)}` : ""}`);
     }
     if (!threadId) {
       throw new Error("Codex did not provide a thread ID");
