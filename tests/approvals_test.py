@@ -42,8 +42,9 @@ class LocalApprovals(broker.Approvals):
 
     def _telegram(self, method: str, payload: dict, document: bytes | None = None) -> dict:
         self.messages.append((method, payload, document))
-        self.next_message += 1
-        return {"message_id": self.next_message}
+        if method in {"sendMessage", "sendDocument"}:
+            self.next_message += 1
+        return {"message_id": payload.get("message_id", self.next_message)}
 
 
 class ApprovalTest(unittest.TestCase):
@@ -154,12 +155,43 @@ class ApprovalTest(unittest.TestCase):
         self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "main"), self.new_sha)
         self.assertFalse(self.callback(identifier)["accepted"])
 
+    def test_decision_edits_original_notice_and_removes_buttons(self) -> None:
+        for action, decision in (("approve", "✅ Одобрено"), ("cancel", "❌ Не одобрено")):
+            with self.subTest(action=action):
+                identifier = self.submit()
+                notice = self.approvals.messages[-1][1]
+                message_id = self.approvals.status(identifier)["message_id"]
+                self.assertTrue(self.callback(identifier, message=message_id, action=action)["accepted"])
+                edits = [payload for method, payload, _ in self.approvals.messages
+                         if method == "editMessageText" and payload["message_id"] == message_id]
+                self.assertEqual(edits, [{
+                    "chat_id": notice["chat_id"],
+                    "message_id": message_id,
+                    "text": notice["text"] + "\n\n" + decision,
+                    "reply_markup": {"inline_keyboard": []},
+                }])
+                self.assertFalse(self.callback(identifier, message=message_id, action=action)["accepted"])
+                if action == "approve":
+                    self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+
+    def test_failed_notice_edit_does_not_change_decision_or_block_execution(self) -> None:
+        for action, expected in (("approve", "succeeded"), ("cancel", "cancelled")):
+            identifier = self.submit()
+            message_id = self.approvals.status(identifier)["message_id"]
+            with mock.patch.object(self.approvals, "_telegram", side_effect=broker.ApprovalError("offline")):
+                self.assertTrue(self.callback(identifier, message=message_id, action=action)["accepted"])
+                self.assertEqual(self.wait_execution(identifier)["state"], expected)
+            if action == "approve":
+                # Restore the disposable remote for the next request's lease.
+                self.git("--git-dir", str(self.remote), "update-ref", "refs/heads/main", self.old_sha)
+
     def test_other_user_copied_button_and_wrong_chat_fail(self) -> None:
         identifier = self.submit()
         self.assertFalse(self.callback(identifier, user=849670500)["accepted"])
         self.assertFalse(self.callback(identifier, message=103)["accepted"])
         self.assertFalse(self.callback(identifier, chat=-101)["accepted"])
         self.assertEqual(self.approvals.status(identifier)["state"], "pending")
+        self.assertFalse(any(method == "editMessageText" for method, _, _ in self.approvals.messages))
 
     def test_expired_and_cancelled_requests_do_not_execute(self) -> None:
         identifier = self.submit()

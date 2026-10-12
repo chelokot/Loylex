@@ -682,6 +682,22 @@ class Approvals:
             ).fetchall()
             return all(value not in ids for row in rows for value in row if value is not None)
 
+    def _mark_decision(self, row: sqlite3.Row, approved: bool) -> None:
+        decision = "✅ Одобрено" if approved else "❌ Не одобрено"
+        try:
+            self._telegram(
+                "editMessageText",
+                {
+                    "chat_id": row["chat_id"],
+                    "message_id": row["message_id"],
+                    "text": f"@Chelokot\n\nTLDR: {row['review']}\n\n{decision}",
+                    "reply_markup": {"inline_keyboard": []},
+                },
+            )
+        except ApprovalError:
+            # A Telegram edit must not undo a durable decision or prevent execution.
+            pass
+
     def callback(self, callback: dict[str, Any]) -> dict[str, Any]:
         data = callback.get("data", "")
         match = (
@@ -716,8 +732,10 @@ class Approvals:
                 return {"accepted": False, "state": "expired"}
             if match[1] == "cancel":
                 self._update(identifier, state="cancelled")
+                self._mark_decision(row, approved=False)
             else:
                 self._update(identifier, state="executing")
+                self._mark_decision(row, approved=True)
                 threading.Thread(target=self._execute, args=(identifier,), daemon=True).start()
             return {"accepted": True, "state": self._row(identifier)["state"]}
 
