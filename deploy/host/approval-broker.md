@@ -2,7 +2,9 @@
 
 The host supervisor stores immutable packages in its own SQLite database and directories.
 The agent's existing supervisor token cannot submit host callbacks, approve an operation,
-or deploy gateway/all. A separate token is mounted only in the gateway, which forwards
+or deploy gateway/all. Gateway requests use TLS with a pinned host certificate; the
+privileged listener rejects agent credentials and the plaintext listener rejects gateway
+credentials. A separate token is mounted only in the gateway, which forwards
 callbacks after the existing mandatory inbound audit. Approval requires live callback sender
 426043802, the original chat/message pair, pending state and an unexpired request.
 The transition to executing is committed before the single execution attempt. Interrupted

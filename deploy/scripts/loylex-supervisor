@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import subprocess
+import ssl
 import sys
 import threading
 import time
@@ -21,6 +22,8 @@ TOKEN_PATH = Path(
     os.environ.get("LOYLEX_SUPERVISOR_TOKEN_FILE", str(Path.home() / ".config/loylex/supervisor-token"))
 )
 GATEWAY_TOKEN_PATH = Path.home() / ".config/loylex/gateway-supervisor-token"
+GATEWAY_CERTIFICATE_PATH = Path.home() / ".config/loylex/gateway-certificate.pem"
+GATEWAY_KEY_PATH = Path.home() / ".config/loylex/gateway-key.pem"
 STATE_PATH = Path(
     os.environ.get(
         "LOYLEX_SUPERVISOR_STATE_FILE",
@@ -505,6 +508,9 @@ APPROVALS: Approvals
 TOKEN = ""
 GATEWAY_TOKEN = ""
 
+class GatewayHTTPServer(ThreadingHTTPServer):
+    pass
+
 
 class RequestHandler(BaseHTTPRequestHandler):
     server_version = "LoylexSupervisor/1"
@@ -592,12 +598,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         return
 
     def _authorized(self) -> bool:
+        if isinstance(self.server, GatewayHTTPServer):
+            return self._gateway_authorized()
         expected = f"Bearer {TOKEN}"
         supplied = self.headers.get("authorization", "")
-        return hmac.compare_digest(supplied, expected) or self._gateway_authorized()
+        return hmac.compare_digest(supplied, expected)
 
     def _gateway_authorized(self) -> bool:
-        return bool(GATEWAY_TOKEN) and hmac.compare_digest(
+        return isinstance(self.server, GatewayHTTPServer) and bool(GATEWAY_TOKEN) and hmac.compare_digest(
             self.headers.get("authorization", ""), f"Bearer {GATEWAY_TOKEN}"
         )
 
@@ -620,7 +628,11 @@ def main() -> None:
     if not GATEWAY_TOKEN:
         raise SupervisorError("Gateway supervisor token is empty")
     APPROVALS = Approvals(SUPERVISOR)
-    with ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler) as server:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(GATEWAY_CERTIFICATE_PATH, GATEWAY_KEY_PATH)
+    with ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler) as server, GatewayHTTPServer((LISTEN_HOST, 8791), RequestHandler) as gateway:
+        gateway.socket = context.wrap_socket(gateway.socket, server_side=True)
+        threading.Thread(target=gateway.serve_forever, daemon=True).start()
         server.serve_forever()
 
 

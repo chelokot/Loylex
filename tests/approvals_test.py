@@ -255,11 +255,16 @@ class ApprovalTest(unittest.TestCase):
         supervisor.SUPERVISOR = mock.Mock()
         supervisor.SUPERVISOR.schedule.return_value = {"state": "scheduled"}
         server = supervisor.ThreadingHTTPServer(("127.0.0.1", 0), supervisor.RequestHandler)
+        gateway = supervisor.GatewayHTTPServer(("127.0.0.1", 0), supervisor.RequestHandler)
+        gateway_thread = threading.Thread(target=gateway.serve_forever, daemon=True)
+        gateway_thread.start()
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
 
-        def request(path: str, token: str, payload: dict) -> int:
-            connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+        def request(path: str, token: str, payload: dict, privileged: bool = False) -> int:
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", gateway.server_port if privileged else server.server_port
+            )
             connection.request(
                 "POST", path, json.dumps(payload), {"Authorization": f"Bearer {token}"}
             )
@@ -271,7 +276,9 @@ class ApprovalTest(unittest.TestCase):
         try:
             self.assertEqual(request("/v1/approvals/callback", "agent-token", {}), 403)
             self.assertEqual(request("/v1/approvals/callback", "wrong-token", {}), 401)
-            self.assertEqual(request("/v1/approvals/callback", "gateway-token", {}), 200)
+            self.assertEqual(request("/v1/approvals/callback", "gateway-token", {}), 401)
+            self.assertEqual(request("/v1/approvals/callback", "gateway-token", {}, True), 200)
+            self.assertEqual(request("/v1/approvals/callback", "agent-token", {}, True), 401)
             self.assertEqual(request("/v1/deploy/gateway", "agent-token", {}), 403)
             self.assertEqual(request("/v1/deploy/all", "agent-token", {}), 403)
             self.assertEqual(request("/v1/deploy/agent", "agent-token", {}), 202)
@@ -279,6 +286,9 @@ class ApprovalTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+            gateway.shutdown()
+            gateway.server_close()
+            gateway_thread.join()
 
     def test_operation_validation_rejects_extra_fields_and_path_traversal(self) -> None:
         with self.assertRaises(broker.ApprovalError):

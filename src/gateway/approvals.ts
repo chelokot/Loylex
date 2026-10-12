@@ -7,14 +7,18 @@ export class ApprovalClient {
   constructor(
     private readonly token: string,
     private readonly baseUrl: string,
+    private readonly certificate: string,
   ) {}
 
   static fromEnvironment(): ApprovalClient {
     const path = process.env.LOYLEX_GATEWAY_SUPERVISOR_TOKEN_FILE;
     if (!path) throw new Error("LOYLEX_GATEWAY_SUPERVISOR_TOKEN_FILE is required");
+    const certificatePath = process.env.LOYLEX_GATEWAY_SUPERVISOR_CA_FILE;
+    if (!certificatePath) throw new Error("LOYLEX_GATEWAY_SUPERVISOR_CA_FILE is required");
     return new ApprovalClient(
       readFileSync(path, "utf8").trim(),
-      process.env.LOYLEX_SUPERVISOR_URL ?? "http://host.containers.internal:8790",
+      "https://host.containers.internal:8791",
+      readFileSync(certificatePath, "utf8"),
     );
   }
 
@@ -24,6 +28,7 @@ export class ApprovalClient {
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
       ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
       signal: AbortSignal.timeout(120_000),
+      tls: { ca: this.certificate },
     });
     if (!response.ok)
       throw new Error(`Approval broker ${response.status}: ${await response.text()}`);

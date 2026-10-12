@@ -110,6 +110,7 @@ fi
   fuse-overlayfs \
   git \
   jq \
+  openssl \
   podman \
   podman-compose \
   shadow-utils \
@@ -279,6 +280,19 @@ chown loylex:loylex "$gateway_supervisor_token_file"
 chmod 0600 "$gateway_supervisor_token_file"
 if ! as_loylex podman secret inspect loylex-gateway-supervisor-token >/dev/null 2>&1; then
   as_loylex podman secret create loylex-gateway-supervisor-token - <"$gateway_supervisor_token_file"
+fi
+gateway_certificate_file=/home/loylex/.config/loylex/gateway-certificate.pem
+gateway_key_file=/home/loylex/.config/loylex/gateway-key.pem
+if [[ ! -f "$gateway_certificate_file" ]]; then
+  umask 077
+  openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
+    -subj /CN=host.containers.internal \
+    -addext subjectAltName=DNS:host.containers.internal \
+    -keyout "$gateway_key_file" -out "$gateway_certificate_file" >/dev/null 2>&1
+  chown loylex:loylex "$gateway_certificate_file" "$gateway_key_file"
+fi
+if ! as_loylex podman secret inspect loylex-gateway-supervisor-ca >/dev/null 2>&1; then
+  as_loylex podman secret create loylex-gateway-supervisor-ca - <"$gateway_certificate_file"
 fi
 install -d -m 0700 -o loylex -g loylex /home/loylex/.local/state/loylex-approvals
 git -C "$deploy_root" rev-parse HEAD >/home/loylex/.local/state/loylex-approvals/infrastructure-commit

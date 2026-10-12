@@ -61,7 +61,7 @@ test("gateway protects approval messages across JSON, multipart and dedicated mu
     database,
     telegram,
     () => true,
-    new ApprovalClient("gateway-only", broker.url.origin),
+    new ApprovalClient("gateway-only", broker.url.origin, "unused"),
   );
   server.start();
   const route = (server as unknown as { route(request: Request): Promise<Response> }).route.bind(
@@ -119,7 +119,7 @@ test("gateway protects approval messages across JSON, multipart and dedicated mu
     expect(calls).toBe(0);
     broker.stop(true);
     await expect(
-      new ApprovalClient("gateway-only", broker.url.origin).guard("deleteMessage", {
+      new ApprovalClient("gateway-only", broker.url.origin, "unused").guard("deleteMessage", {
         chat_id: -100,
         message_id: 101,
       }),
@@ -132,7 +132,7 @@ test("gateway protects approval messages across JSON, multipart and dedicated mu
 });
 
 test("ordinary messaging does not depend on the approval broker", async () => {
-  const client = new ApprovalClient("gateway-only", "http://127.0.0.1:1");
+  const client = new ApprovalClient("gateway-only", "http://127.0.0.1:1", "unused");
   await client.guard("sendMessage", { chat_id: -100, text: "normal reply" });
   await client.guard("getChat", { chat_id: -100 });
 });
