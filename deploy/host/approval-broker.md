@@ -35,8 +35,9 @@ Review failure leaves the complete package available for manual approval.
 
 Gateway deployment snapshots the complete source diff and uses the base digest installed
 by trusted host maintenance; preparing a proposal never pulls arbitrary candidate images. The host builds that saved recipe from the approved Git object,
-then verifies health with automatic rollback to the previous Compose image. Host supervisor
-updates copy only the two named Python files and check installed file hashes before replacing
+then verifies health with automatic rollback to the previous Compose image. Gateway
+rollouts retain the built image's content digest, so a missing local tag cannot pull substituted
+CI bytes. Host supervisor updates copy only the two named Python files and check installed file hashes before replacing
 them. Compose, service units and host packages require explicit host maintenance.
 No runtime dependency versions are changed: Bun 1.4.0, Codex 0.159.2 and the existing host
 Podman/Compose/PM3 installations are retained.

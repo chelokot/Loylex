@@ -895,5 +895,13 @@ class Approvals:
             ],
             timeout=900,
         )
+        digest = (
+            command(["podman", "image", "inspect", "--format", "{{.Digest}}", image])
+            .decode()
+            .strip()
+        )
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
+            raise ApprovalError("Invalid built gateway image digest")
+        image = f"ghcr.io/chelokot/loylex-gateway@{digest}"
         self.supervisor.deploy_gateway(image, operation["oldCommit"])
         return {"commit": commit, "image": image}

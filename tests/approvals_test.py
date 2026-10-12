@@ -275,6 +275,32 @@ class ApprovalTest(unittest.TestCase):
             result = broker.Approvals._review(self.approvals, "private-auth-test", b"Operation")
         self.assertEqual(result, "Reviewed")
 
+    def test_gateway_deployment_pins_the_built_artifact(self) -> None:
+        identifier = self.submit()
+        original = broker.command
+        digest = "sha256:" + "1" * 64
+
+        def execute(arguments: list[str], **options) -> bytes:
+            if arguments[:2] == ["podman", "build"]:
+                return b""
+            if arguments[:3] == ["podman", "image", "inspect"]:
+                return digest.encode()
+            return original(arguments, **options)
+
+        with mock.patch.object(broker, "command", side_effect=execute):
+            result = self.approvals._deploy(
+                self.approvals.root / identifier,
+                {
+                    "kind": "gateway",
+                    "commit": self.new_sha,
+                    "oldCommit": self.old_sha,
+                    "buildRecipe": "FROM scratch\n",
+                },
+            )
+        expected = "ghcr.io/chelokot/loylex-gateway@" + digest
+        self.assertEqual(result["image"], expected)
+        self.approvals.supervisor.deploy_gateway.assert_called_once_with(expected, self.old_sha)
+
     def test_unknown_callback_is_ignored_and_interrupted_execution_is_not_replayed(
         self,
     ) -> None:
