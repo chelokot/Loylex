@@ -16,6 +16,10 @@ supplies the GitHub secret through process environment. Private Git preflight is
 target, old/new SHAs, bundle checksum, new commit patches, target object and full binary tree
 diff. Existing branches must fast-forward. Exact leases reject changed refs. PR packages
 include branch SHAs and diffs; branch SHAs are checked again immediately before the API call.
+Fork PRs snapshot and recheck the source branch in `headRepository` and the destination
+branch in `repository`, then use GitHub's owner-qualified head and explicit source repository.
+Omitting `headRepository` retains same-repository PRs. Operator consent does not add repository
+write permissions to the configured GitHub account; upstream contributions use a writable fork.
 GitHub cannot atomically bind PR creation to those SHAs, so concurrent changes by another
 repository writer during that call remain a provider limitation.
 

@@ -17,15 +17,24 @@ that job's chat. Report pending as awaiting approval; check succeeded and the re
 Git diff preflight reads public repositories without credentials. Private repository API
 writes are available; private Git push/PR preflight is not supported.
 
+Approval grants consent, not GitHub repository permissions. The configured account is
+`chelokot`; it can write its own repositories but may only read an upstream repository.
+For a contribution, verify the existing fork relationship from public GitHub metadata,
+push to the writable fork, then propose a PR against upstream. Do not keep resubmitting
+a denied push to the same upstream. Never silently change an approved operation's target.
+
 Supported operations:
 
 - Push: `{"kind":"push","repository":"owner/name","ref":"refs/heads/branch","newSha":"FULL_SHA","bundle":"BASE64_GIT_BUNDLE"}`.
   Build with `git bundle create change.bundle HEAD ^BASE_SHA`; omit the exclusion for
   a new repository. Existing branches must advance without removing history; existing tags
   cannot be replaced. A moved target fails its lease and needs a new request.
-- PR: `{"kind":"pull-request","repository":"owner/name","head":"branch","base":"main","title":"Title","body":""}`.
-  Both branches must exist in that repository. Their SHAs are checked again before creating
-  the PR. Push and PR creation are separate approvals.
+- PR: `{"kind":"pull-request","repository":"upstream/name","headRepository":"chelokot/name","head":"branch","base":"main","title":"Title","body":""}`.
+  `repository` is the destination; `headRepository` is the source fork. Omit `headRepository`
+  for branches in the destination repository. Both branches must already exist; the saved
+  package identifies both repositories and SHAs, which are checked again before creating
+  the PR. GitHub requires both repositories to belong to the same fork network.
+  Push and PR creation are separate approvals.
 - Repository API: `{"kind":"github","repository":"owner/name","method":"POST","resource":"releases","body":{...}}`.
   POST/PATCH/PUT/DELETE support issues, releases, repository dispatches and workflow operations.
   PR mutations, credential endpoints, arbitrary URLs and shell commands are unavailable.

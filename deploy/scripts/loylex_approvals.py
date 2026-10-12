@@ -224,7 +224,10 @@ class Approvals:
             "gateway": {"kind", "commit"},
             "infrastructure": {"kind", "commit"},
         }
-        if kind not in fields or set(operation) != fields[kind]:
+        if kind not in fields or set(operation) not in (
+            fields[kind],
+            fields[kind] | ({"headRepository"} if kind == "pull-request" else set()),
+        ):
             raise ApprovalError("Invalid operation fields")
         if kind in {"gateway", "infrastructure"}:
             if not isinstance(operation["commit"], str) or not SHA_PATTERN.fullmatch(
@@ -232,13 +235,16 @@ class Approvals:
             ):
                 raise ApprovalError("A full commit SHA is required")
             return
-        repository = operation["repository"]
-        if (
-            not isinstance(repository, str)
-            or not REPOSITORY_PATTERN.fullmatch(repository)
-            or ".." in repository
-        ):
-            raise ApprovalError("repository must be owner/name")
+        repositories = [operation["repository"]]
+        if "headRepository" in operation:
+            repositories.append(operation["headRepository"])
+        for repository in repositories:
+            if (
+                not isinstance(repository, str)
+                or not REPOSITORY_PATTERN.fullmatch(repository)
+                or ".." in repository
+            ):
+                raise ApprovalError("repository must be owner/name")
         if kind == "push":
             if not isinstance(operation["ref"], str) or not operation["ref"].startswith(
                 ("refs/heads/", "refs/tags/")
@@ -258,7 +264,7 @@ class Approvals:
             for key in ("head", "base"):
                 if not isinstance(operation[key], str):
                     raise ApprovalError(
-                        "head and base must be branch names in the target repository"
+                        "head and base must be branch names"
                     )
                 command(["git", "check-ref-format", f"refs/heads/{operation[key]}"])
             if (
@@ -377,8 +383,9 @@ class Approvals:
                     raise ApprovalError("Existing tags cannot be replaced")
                 self._git(directory, "merge-base", "--is-ancestor", base, head)
         elif kind == "pull-request":
+            operation.setdefault("headRepository", repository)
             operation["headSha"] = self._remote_sha(
-                directory, repository, f"refs/heads/{operation['head']}"
+                directory, operation["headRepository"], f"refs/heads/{operation['head']}"
             )
             operation["baseSha"] = self._remote_sha(
                 directory, repository, f"refs/heads/{operation['base']}"
@@ -386,7 +393,7 @@ class Approvals:
             if ZERO_SHA in (operation["headSha"], operation["baseSha"]):
                 raise ApprovalError("PR branches must already exist")
             self._fetch(directory, repository, operation["baseSha"])
-            self._fetch(directory, repository, operation["headSha"])
+            self._fetch(directory, operation["headRepository"], operation["headSha"])
             base, head = operation["baseSha"], operation["headSha"]
         elif kind in {"gateway", "infrastructure"}:
             head = operation["commit"]
@@ -823,22 +830,29 @@ class Approvals:
                 )
                 result = {"newSha": operation["newSha"], "ref": operation["ref"]}
             elif kind == "pull-request":
+                head_repository = operation.get("headRepository", operation["repository"])
                 for key in ("head", "base"):
+                    repository = head_repository if key == "head" else operation["repository"]
                     if (
                         self._remote_sha(
                             directory,
-                            operation["repository"],
+                            repository,
                             f"refs/heads/{operation[key]}",
                         )
                         != operation[f"{key}Sha"]
                     ):
                         raise ApprovalError("PR branch changed; submit a new request")
+                body = {key: operation[key] for key in ("head", "base", "title", "body")}
+                if head_repository != operation["repository"]:
+                    owner, repository = head_repository.split("/")
+                    body["head"] = f"{owner}:{operation['head']}"
+                    body["head_repo"] = repository
                 result = self._github(
                     {
                         "repository": operation["repository"],
                         "resource": "pulls",
                         "method": "POST",
-                        "body": {key: operation[key] for key in ("head", "base", "title", "body")},
+                        "body": body,
                     }
                 )
             elif kind in {"gateway", "infrastructure"}:

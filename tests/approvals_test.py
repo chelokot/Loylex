@@ -26,13 +26,14 @@ loader.exec_module(supervisor)
 class LocalApprovals(broker.Approvals):
     def __init__(self, root: Path, remote: Path) -> None:
         self.remote = remote
+        self.remotes = {}
         self.messages = []
         self.next_message = 100
         super().__init__(mock.Mock(), root)
 
     def _git(self, directory: Path, *arguments: str, privileged: bool = False) -> bytes:
         arguments = [
-            str(self.remote) if value.startswith("https://github.com/") else value
+            str(self.remotes.get(value, self.remote)) if value.startswith("https://github.com/") else value
             for value in arguments
         ]
         return broker.command(["git", "--git-dir", str(directory / "repository.git"), *arguments])
@@ -74,6 +75,63 @@ class ApprovalTest(unittest.TestCase):
         with mock.patch.object(broker.subprocess, "run", side_effect=fail):
             with self.assertRaisesRegex(broker.ApprovalError, r"^git failed \(exit 128\): authentication rejected$"):
                 broker.command(["git", "push"])
+
+    def test_fork_pr_snapshots_both_repositories_and_rechecks_both_branches(self) -> None:
+        fork = self.directory / "fork.git"
+        self.git("clone", "--bare", str(self.remote), str(fork))
+        self.git("push", str(fork), f"{self.new_sha}:refs/heads/feature")
+        self.approvals.remotes["https://github.com/contributor/fork.git"] = fork
+        operation = {
+            "kind": "pull-request", "repository": "owner/repository",
+            "headRepository": "contributor/fork", "head": "feature", "base": "main",
+            "title": "Change", "body": "Reviewed change",
+        }
+        identifier = self.submit(operation)
+        directory = self.approvals.root / identifier
+        saved = json.loads((directory / "operation.json").read_bytes())
+        self.assertEqual((saved["headSha"], saved["baseSha"]), (self.new_sha, self.old_sha))
+        package = (directory / "package.txt").read_text()
+        self.assertIn('"headRepository": "contributor/fork"', package)
+        self.assertIn("-before\n+after", package)
+        with mock.patch.object(self.approvals, "_github", return_value={"number": 1}) as api:
+            self.assertTrue(self.callback(identifier)["accepted"])
+            self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+            api.assert_called_once_with({
+                "repository": "owner/repository", "resource": "pulls", "method": "POST",
+                "body": {"head": "contributor:feature", "head_repo": "fork", "base": "main",
+                         "title": "Change", "body": "Reviewed change"},
+            })
+        self.git("--git-dir", str(self.remote), "fetch", str(self.source), self.new_sha)
+        for repository, ref, original, changed in (
+            (fork, "refs/heads/feature", self.new_sha, self.old_sha),
+            (self.remote, "refs/heads/main", self.old_sha, self.new_sha),
+        ):
+            with self.subTest(ref=ref):
+                identifier = self.submit(operation)
+                self.git("--git-dir", str(repository), "update-ref", ref, changed)
+                with mock.patch.object(self.approvals, "_github") as api:
+                    message_id = self.approvals.status(identifier)["message_id"]
+                    self.assertTrue(self.callback(identifier, message=message_id)["accepted"])
+                    self.assertEqual(self.wait_execution(identifier)["state"], "failed")
+                    api.assert_not_called()
+                self.git("--git-dir", str(repository), "update-ref", ref, original)
+
+    def test_same_repository_pr_and_invalid_head_repository(self) -> None:
+        self.git("push", str(self.remote), f"{self.new_sha}:refs/heads/feature")
+        operation = {
+            "kind": "pull-request", "repository": "owner/repository", "head": "feature",
+            "base": "main", "title": "Change", "body": "",
+        }
+        identifier = self.submit(operation)
+        with mock.patch.object(self.approvals, "_github", return_value={"number": 1}) as api:
+            self.assertTrue(self.callback(identifier)["accepted"])
+            self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+            self.assertEqual(api.call_args[0][0]["body"], {
+                "head": "feature", "base": "main", "title": "Change", "body": "",
+            })
+        for repository in ("../user", "owner/repo/extra", "https://github.com/owner/repo", None):
+            with self.subTest(repository=repository), self.assertRaises(broker.ApprovalError):
+                self.approvals._validate_operation({**operation, "headRepository": repository})
 
     def setUp(self) -> None:
         self.disk = mock.patch.object(
