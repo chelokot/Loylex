@@ -48,6 +48,33 @@ class LocalApprovals(broker.Approvals):
 
 
 class ApprovalTest(unittest.TestCase):
+    def test_git_error_categories_do_not_echo_remote_output(self) -> None:
+        cases = (
+            (b"fatal: Authentication failed for https://secret@example.test", "authentication rejected"),
+            (b"remote: Write access to repository not granted. secret", "repository access denied"),
+            (b"fatal: Could not resolve host: secret", "network or TLS failure"),
+            (b"fatal: transport 'https' not allowed secret", "transport prohibited"),
+            (b"fatal: bad object secret", "missing Git objects"),
+            (b"remote: protected branch secret", "remote ref rejected"),
+            (b"secret unknown error", "unclassified Git failure"),
+        )
+        for output, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(broker.git_failure_category(output), expected)
+        self.assertEqual(
+            broker.git_failure_category(b"x" * 65536 + b"Authentication failed"),
+            "unclassified Git failure",
+        )
+
+    def test_failed_git_command_reports_fixed_category(self) -> None:
+        def fail(*args, **kwargs):
+            kwargs["stderr"].write(b"fatal: Authentication failed for https://secret@example.test")
+            return mock.Mock(returncode=128)
+
+        with mock.patch.object(broker.subprocess, "run", side_effect=fail):
+            with self.assertRaisesRegex(broker.ApprovalError, r"^git failed \(exit 128\): authentication rejected$"):
+                broker.command(["git", "push"])
+
     def setUp(self) -> None:
         self.disk = mock.patch.object(
             broker.shutil, "disk_usage", return_value=mock.Mock(free=10 * 1024**3)

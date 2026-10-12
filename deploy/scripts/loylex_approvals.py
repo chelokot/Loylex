@@ -28,6 +28,23 @@ class ApprovalError(Exception):
     pass
 
 
+def git_failure_category(stderr: bytes) -> str:
+    # Return only fixed labels: remote output can contain credentials or hostile text.
+    message = stderr[:65536].lower()
+    categories = (
+        ("authentication rejected", (b"authentication failed", b"invalid username or token", b"could not read username")),
+        ("repository access denied", (b"permission to ", b"write access to repository not granted", b"repository not found", b"error: 403")),
+        ("network or TLS failure", (b"could not resolve host", b"failed to connect", b"ssl certificate problem", b"connection reset", b"unable to access")),
+        ("transport prohibited", (b"transport 'https' not allowed", b"transport 'file' not allowed")),
+        ("missing Git objects", (b"bad object", b"not a valid object", b"missing blob", b"missing necessary objects")),
+        ("remote ref rejected", (b"stale info", b"non-fast-forward", b"protected branch", b"repository rule violations")),
+    )
+    for label, patterns in categories:
+        if any(pattern in message for pattern in patterns):
+            return label
+    return "unclassified Git failure"
+
+
 def encoded(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode()
 
@@ -60,7 +77,11 @@ def command(
             timeout=timeout,
         )
         if result.returncode:
-            raise ApprovalError(f"{executable} failed (exit {result.returncode})")
+            detail = ""
+            if executable == "git":
+                errors.seek(0)
+                detail = ": " + git_failure_category(errors.read(65536))
+            raise ApprovalError(f"{executable} failed (exit {result.returncode}){detail}")
         if output.tell() > 128 * 1024 * 1024:
             raise ApprovalError("Command output exceeds size limit")
         output.seek(0)
@@ -297,7 +318,14 @@ class Approvals:
                     "GIT_CONFIG_VALUE_4": f"Authorization: Basic {credentials}",
                 }
             )
-        return command(["git", "--git-dir", str(directory / "repository.git"), *arguments], env=env)
+        try:
+            return command(["git", "--git-dir", str(directory / "repository.git"), *arguments], env=env)
+        except ApprovalError as error:
+            # Only these fixed operation names may be exposed; never echo arguments.
+            stage = arguments[0] if arguments and arguments[0] in {
+                "push", "fetch", "ls-remote", "bundle", "rev-parse", "merge-base", "diff", "show"
+            } else "operation"
+            raise ApprovalError(f"Git {stage}: {error}") from error
 
     def _remote_sha(self, directory: Path, repository: str, ref: str) -> str:
         output = (
