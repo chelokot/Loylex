@@ -452,7 +452,7 @@ class Approvals:
             tempfile.TemporaryDirectory(prefix="loylex-review-") as temporary,
         ):
             directory = Path(temporary)
-            directory.chmod(0o755)
+            directory.chmod(0o700)
             auth = json.loads(
                 command(
                     [
@@ -466,7 +466,7 @@ class Approvals:
             )
             auth_path = directory / "auth.json"
             auth_path.write_bytes(encoded(auth))
-            auth_path.chmod(0o444)
+            auth_path.chmod(0o600)
             image = (
                 command(
                     [
@@ -490,6 +490,10 @@ class Approvals:
                 "podman",
                 "run",
                 "--rm",
+                "--timeout=180",
+                "--userns=keep-id:uid=1000,gid=1000",
+                "--user",
+                "loylex",
                 "-i",
                 "--name",
                 name,

@@ -29,6 +29,8 @@ TLDR runs the existing pinned agent image in a disposable, read-only container, 
 memory/PID limits, no agent workspace or privileged secrets, and a temporary copy of Codex
 authorization. Codex ignores user configuration, disables tools and produces JSON events;
 unexpected tool events invalidate the advisory review. The summary is limited to 50 words.
+Authorization copies retain owner-only permissions and the reviewer uses the host owner's
+UID mapping. Conmon independently kills it after 180 seconds, including supervisor restarts.
 Review failure leaves the complete package available for manual approval.
 
 Gateway deployment snapshots the complete source diff and uses the base digest installed

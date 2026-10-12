@@ -249,6 +249,32 @@ class ApprovalTest(unittest.TestCase):
             identifier = self.submit()
         self.assertIn("TLDR недоступен", self.approvals.status(identifier)["review"])
 
+    def test_reviewer_auth_is_private_and_lifetime_is_independently_bounded(self) -> None:
+        def execute(arguments: list[str], **options) -> bytes:
+            if arguments[:2] == ["podman", "exec"]:
+                return b'{"tokens":{"access_token":"test-only"}}'
+            if arguments[:2] == ["podman", "inspect"]:
+                return b"sha256:test-image"
+            if arguments[:2] == ["podman", "run"]:
+                self.assertIn("--timeout=180", arguments)
+                self.assertIn("--userns=keep-id:uid=1000,gid=1000", arguments)
+                volume = arguments[arguments.index("--volume") + 1]
+                auth_path = Path(volume.split(":")[0])
+                self.assertEqual(auth_path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(auth_path.parent.stat().st_mode & 0o777, 0o700)
+                self.assertIn(":ro,Z", volume)
+                self.assertNotIn("--secret", arguments)
+                return (
+                    b'{"type":"item.completed","item":{"type":"agent_message","text":"Reviewed"}}'
+                )
+            if arguments[:2] == ["podman", "rm"]:
+                return b""
+            self.fail(f"Unexpected command: {arguments[0]}")
+
+        with mock.patch.object(broker, "command", side_effect=execute):
+            result = broker.Approvals._review(self.approvals, "private-auth-test", b"Operation")
+        self.assertEqual(result, "Reviewed")
+
     def test_unknown_callback_is_ignored_and_interrupted_execution_is_not_replayed(
         self,
     ) -> None:
