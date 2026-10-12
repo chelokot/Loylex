@@ -7,6 +7,7 @@ export function buildPrompt(
   stagedAttachments: StagedAttachment[] = [],
 ): string {
   const metadata = {
+    job_id: job.id,
     telegram_chat_id: job.chatId,
     telegram_chat_type: job.chatType,
     telegram_message_id: job.messageId,

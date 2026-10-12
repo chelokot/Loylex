@@ -266,6 +266,30 @@ install -m 0755 -o loylex -g loylex \
 install -m 0755 -o loylex -g loylex \
   "$deploy_root"/scripts/loylex-supervisor \
   /home/loylex/.local/bin/loylex-supervisor
+install -m 0755 -o loylex -g loylex \
+  "$deploy_root"/scripts/loylex_approvals.py \
+  /home/loylex/.local/bin/loylex_approvals.py
+
+gateway_supervisor_token_file=/home/loylex/.config/loylex/gateway-supervisor-token
+if [[ ! -f "$gateway_supervisor_token_file" ]]; then
+  umask 077
+  head -c 48 /dev/urandom | base64 -w 0 >"$gateway_supervisor_token_file"
+fi
+chown loylex:loylex "$gateway_supervisor_token_file"
+chmod 0600 "$gateway_supervisor_token_file"
+if ! as_loylex podman secret inspect loylex-gateway-supervisor-token >/dev/null 2>&1; then
+  as_loylex podman secret create loylex-gateway-supervisor-token - <"$gateway_supervisor_token_file"
+fi
+install -d -m 0700 -o loylex -g loylex /home/loylex/.local/state/loylex-approvals
+git -C "$deploy_root" rev-parse HEAD >/home/loylex/.local/state/loylex-approvals/infrastructure-commit
+chown loylex:loylex /home/loylex/.local/state/loylex-approvals/infrastructure-commit
+gateway_base_file=/home/loylex/.local/state/loylex-approvals/gateway-base-image
+if [[ ! -f "$gateway_base_file" ]]; then
+  as_loylex podman pull docker.io/oven/bun:1.4.0-debian
+  gateway_base_digest="$(as_loylex podman image inspect --format '{{.Digest}}' docker.io/oven/bun:1.4.0-debian)"
+  printf 'docker.io/oven/bun@%s\n' "$gateway_base_digest" >"$gateway_base_file"
+  chown loylex:loylex "$gateway_base_file"
+fi
 
 supervisor_token_file=/home/loylex/.config/loylex/supervisor-token
 if [[ ! -f "$supervisor_token_file" ]]; then
