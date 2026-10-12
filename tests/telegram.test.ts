@@ -111,6 +111,7 @@ test("does not publish the quiz as a Telegram command", async () => {
       { command: "start", description: "Как обратиться к Loylex" },
       { command: "help", description: "Возможности и синтаксис" },
       { command: "stop", description: "Остановить работу" },
+      { command: "mines", description: "Сапёр: одинаковое поле для друзей" },
       { command: "tasks", description: "Показать последние задачи" },
       { command: "resume", description: "Продолжить задачу по ID" },
       { command: "blind", description: "Запрос без истории чата" },

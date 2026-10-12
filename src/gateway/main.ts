@@ -7,6 +7,7 @@ import { editedInstructionPrompt, editedMessageForUpdate } from "./edited-messag
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
 import { LeylobucksMode } from "./leylobucks-mode.ts";
 import { responseOptions } from "./message-options.ts";
+import { MinesGame } from "./mines.ts";
 import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
 import {
   helpMessage,
@@ -48,6 +49,7 @@ await audit.assertReady();
 const database = new LoylexDatabase(config.databasePath);
 const telegram = new TelegramClient(config.botToken);
 const bot = await telegram.getMe();
+const mines = new MinesGame(config.databasePath, telegram);
 const leylobucksMode = new LeylobucksMode({
   isEnabled: (userId) => database.isLeylobucksEnabled(userId),
   setEnabled: (userId, enabled) => database.setLeylobucksEnabled(userId, enabled),
@@ -188,6 +190,7 @@ async function handleCallbackQuery(update: TelegramUpdate): Promise<boolean> {
     return false;
   }
 
+  if (await mines.callback(update)) return true;
   await telegram.answerCallbackQuery(callback.id);
   const answer = parseQuizCallbackData(callback.data);
   const message = callback.message;
@@ -361,6 +364,7 @@ async function poll(): Promise<void> {
         if (!message || message.from?.is_bot) {
           continue;
         }
+        if (await mines.command(message, bot.username)) continue;
         acknowledgeNameMistake(message);
         const currentUserId = userId(message);
         const economyEnabled = leylobucksMode.isEnabled(currentUserId);
@@ -620,6 +624,7 @@ async function poll(): Promise<void> {
 function shutdown(): void {
   stopping = true;
   server.stop();
+  mines.db.close();
   database.close();
 }
 
