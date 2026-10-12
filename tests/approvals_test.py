@@ -147,6 +147,10 @@ class ApprovalTest(unittest.TestCase):
         self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "main"), self.old_sha)
         self.assertTrue(self.callback(identifier)["accepted"])
         self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+        self.assertFalse(any(
+            method == "sendMessage" and "succeeded" in payload.get("text", "")
+            for method, payload, _ in self.approvals.messages
+        ))
         self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "main"), self.new_sha)
         self.assertFalse(self.callback(identifier)["accepted"])
 

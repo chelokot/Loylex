@@ -810,6 +810,8 @@ class Approvals:
             detail = str(error) if isinstance(error, ApprovalError) else type(error).__name__
             self._update(identifier, state="failed", result=detail)
         row = self._row(identifier)
+        if row["state"] == "succeeded":
+            return
         try:
             self._telegram(
                 "sendMessage",
