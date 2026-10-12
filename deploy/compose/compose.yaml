@@ -34,11 +34,15 @@ services:
     secrets:
       - loylex-telegram-token
       - loylex-bridge-token
+      - loylex-gateway-supervisor-token
+      - loylex-gateway-supervisor-ca
     environment:
       TELEGRAM_BOT_TOKEN_FILE: /run/secrets/loylex-telegram-token
       LOYLEX_BRIDGE_TOKEN_FILE: /run/secrets/loylex-bridge-token
       LOYLEX_DATABASE_PATH: /data/loylex.sqlite
       LOYLEX_AUDIT_PATH: /audit/inbound.ndjson
+      LOYLEX_GATEWAY_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-gateway-supervisor-token
+      LOYLEX_GATEWAY_SUPERVISOR_CA_FILE: /run/secrets/loylex-gateway-supervisor-ca
       LOYLEX_CONTEXT_MESSAGES: "80"
     read_only: true
     security_opt:
@@ -190,4 +194,8 @@ secrets:
   loylex-bridge-token:
     external: true
   loylex-supervisor-token:
+    external: true
+  loylex-gateway-supervisor-token:
+    external: true
+  loylex-gateway-supervisor-ca:
     external: true

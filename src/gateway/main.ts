@@ -1,5 +1,6 @@
 import { messageText } from "../shared/message-text.ts";
 import type { TelegramMessage, TelegramUpdate } from "../shared/types.ts";
+import { ApprovalClient } from "./approvals.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
@@ -48,6 +49,7 @@ const audit = new InboundAuditLog(config.auditPath);
 await audit.assertReady();
 const database = new LoylexDatabase(config.databasePath);
 const telegram = new TelegramClient(config.botToken);
+const approvals = ApprovalClient.fromEnvironment();
 const bot = await telegram.getMe();
 const mines = new MinesGame(config.databasePath, telegram);
 const leylobucksMode = new LeylobucksMode({
@@ -57,8 +59,12 @@ const leylobucksMode = new LeylobucksMode({
 
 await telegram.call("deleteWebhook", { drop_pending_updates: false });
 await telegram.setCommands();
-const server = new GatewayServer(config, database, telegram, (userId) =>
-  leylobucksMode.isEnabled(userId),
+const server = new GatewayServer(
+  config,
+  database,
+  telegram,
+  (userId) => leylobucksMode.isEnabled(userId),
+  approvals,
 );
 server.start();
 
@@ -188,6 +194,19 @@ async function handleCallbackQuery(update: TelegramUpdate): Promise<boolean> {
   const callback = update.callback_query;
   if (!callback) {
     return false;
+  }
+
+  if (/^(approve|cancel):/.test(callback.data ?? "")) {
+    const result = await approvals.callback(callback);
+    await telegram.answerCallbackQuery(
+      callback.id,
+      result.accepted
+        ? result.state === "cancelled"
+          ? "Заявка отменена"
+          : "Одобрено; операция выполняется"
+        : "Подтверждение отклонено: только оператор, исходная кнопка и действующая заявка",
+    );
+    return true;
   }
 
   if (await mines.callback(update)) return true;

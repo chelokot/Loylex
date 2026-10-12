@@ -268,8 +268,9 @@ podman build -f containers/agent.Containerfile -t loylex-agent .
 Reviewed main-branch pushes test the TypeScript runtime and publish
 `ghcr.io/chelokot/loylex-gateway:main` and
 `ghcr.io/chelokot/loylex-agent:main`. The deployed gateway and initial agent references are
-immutable digests; an explicit supervisor rollout resolves a requested `:main` update to a new
-digest before changing the active Compose file. PM3 is pinned to the reviewed `3.2.3-1` release
+immutable references; agent rollouts resolve `:main` to a digest, while gateway updates require
+operator approval and a host build from the reviewed commit and base-image digest.
+PM3 is pinned to the reviewed `3.2.3-1` release
 in [`deploy/host/versions.env`](deploy/host/versions.env), with a verified upstream checksum for
 Rocky and verified Fedora 43/44 COPR checksums. The installer version-locks PM3, Podman Compose,
 and Podman, so they change only during an explicit reviewed installer run.
@@ -310,6 +311,18 @@ The agent still needs:
    the supervisor uses the inactive one for the next rollover.
 
 Never commit either Telegram or Codex credentials.
+
+External GitHub operations are proposed with `loylex approve submit REQUEST.json`; see
+[`skills/github-approval/SKILL.md`](skills/github-approval/SKILL.md) for request shapes.
+The host snapshots the operation, sends its full package and advisory TLDR to the originating
+chat, and accepts only operator ID 426043802 pressing that request's own button.
+Execution is single-use; approval messages cannot be edited or deleted through agent APIs.
+
+Bootstrap needs loylex-github-token as a Podman secret owned by loylex. The host supervisor
+reads it; the agent and reviewer never receive it. The installer creates a separate
+loylex-gateway-supervisor-token, mounted only in the gateway. TLDR uses a disposable container
+with the agent's Codex authorization, no other secrets, tools or persistent workspace.
+A failed review does not prevent manual approval of the full package.
 
 ## Credit and provenance
 

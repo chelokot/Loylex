@@ -10,6 +10,7 @@ import {
 } from "../shared/telegram-api.ts";
 import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
 import { isAgentTokenUsage } from "../shared/usage.ts";
+import { type ApprovalClient, ApprovalDeniedError } from "./approvals.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
 import { responseOptions } from "./message-options.ts";
@@ -107,6 +108,7 @@ export class GatewayServer {
     private readonly database: LoylexDatabase,
     private readonly telegram: TelegramClient,
     private readonly isLeylobucksEnabled: (userId: number | null) => boolean = () => true,
+    private readonly approvals: ApprovalClient | null = null,
   ) {}
 
   start(): void {
@@ -132,6 +134,22 @@ export class GatewayServer {
     }
 
     try {
+      if (request.method === "POST" && url.pathname === "/v1/approvals") {
+        const payload = await body<{ jobId?: unknown; operation?: unknown }>(request);
+        if (typeof payload.jobId !== "number" || !Number.isSafeInteger(payload.jobId)) {
+          return json({ error: "jobId is required" }, 400);
+        }
+        if (this.approvals === null) return json({ error: "Approval broker is unavailable" }, 503);
+        return json(
+          await this.approvals.submit(this.database.jobAddress(payload.jobId), payload.operation),
+          202,
+        );
+      }
+      const approvalMatch = url.pathname.match(/^\/v1\/approvals\/([a-f0-9]{32})$/);
+      if (request.method === "GET" && approvalMatch?.[1]) {
+        if (this.approvals === null) return json({ error: "Approval broker is unavailable" }, 503);
+        return json(await this.approvals.status(approvalMatch[1]));
+      }
       if (request.method === "POST" && url.pathname === "/v1/leylobucks/mode") {
         const payload = await body<{ userId?: unknown; enabled?: unknown }>(request);
         if (
@@ -676,6 +694,7 @@ export class GatewayServer {
               400,
             );
           }
+          await this.approvals?.guard(method, parameters);
           const result = await this.telegram.callMultipart(method, parameters, files);
           return json({ method, result });
         }
@@ -693,6 +712,7 @@ export class GatewayServer {
         if (!isJsonObject(parameters)) {
           return json({ error: "params must be a JSON object" }, 400);
         }
+        await this.approvals?.guard(payload.method, parameters);
         const result = await this.telegram.call(payload.method, parameters);
         return json({ method: payload.method, result });
       }
@@ -721,6 +741,10 @@ export class GatewayServer {
         if (!this.database.chatExists(payload.chatId)) {
           return json({ error: "unknown chat" }, 403);
         }
+        await this.approvals?.guard("editMessageCaption", {
+          chat_id: payload.chatId,
+          message_id: payload.messageId,
+        });
         await this.telegram.editMessageCaption(payload.chatId, payload.messageId, payload.caption);
         return json({ chatId: payload.chatId, messageId: payload.messageId });
       }
@@ -739,6 +763,10 @@ export class GatewayServer {
         if (!this.database.chatExists(payload.chatId)) {
           return json({ error: "unknown chat" }, 403);
         }
+        await this.approvals?.guard("deleteMessage", {
+          chat_id: payload.chatId,
+          message_id: payload.messageId,
+        });
         const deleted = await this.telegram.deleteMessage(payload.chatId, payload.messageId);
         return json({
           chatId: payload.chatId,
@@ -749,6 +777,7 @@ export class GatewayServer {
 
       return json({ error: "not found" }, 404);
     } catch (error) {
+      if (error instanceof ApprovalDeniedError) return json({ error: error.message }, 403);
       const message = error instanceof Error ? error.message : String(error);
       console.error(JSON.stringify({ level: "error", message, path: url.pathname }));
       return json({ error: message }, 500);

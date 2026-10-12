@@ -24,10 +24,15 @@ The host exposes only the authenticated Loylex supervisor through `loylex system
 - `loylex system status` shows agent/gateway service state and the latest operation.
 - `loylex system restart agent|gateway|all [DELAY_SECONDS]` validates the workspace before
   restarting the agent and restarts only the named Loylex services.
-- `loylex system deploy agent|gateway|all [DELAY_SECONDS]` validates agent changes, pulls the
+- `loylex system deploy agent [DELAY_SECONDS]` validates agent changes, pulls the
   published `main` image, pins its exact digest, restarts the selected services, and verifies
-  health. Before deploying either agent or gateway, push changes and verify that the
+  health. Before deploying the agent, push changes and verify that the
   Images workflow succeeded for the intended commit. A push alone does not update `:main`.
+
+Gateway deployment requires a full commit SHA and the operator's Telegram approval.
+Read [../github-approval/SKILL.md](../github-approval/SKILL.md) to submit it. The host builds
+the reviewed source. Agent credentials cannot approve it; deploy gateway/all are rejected.
+Restarting an installed gateway remains available.
 
 Agent startup checks the complete workspace `AGENTS.md` against the image's pinned copy
 before registering with the gateway. An instruction edit therefore also requires its new

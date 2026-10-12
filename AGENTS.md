@@ -109,10 +109,15 @@ Your container is intentionally isolated from its Rocky Linux host. You do not h
 Podman socket, host PID namespace, host devices, or the Telegram bot token. Do not try to
 bypass those boundaries. Root or sudo inside your rootless container is not host root.
 
-You can safely inspect, restart, and deploy your own agent and gateway through the narrow
+You can safely inspect and restart your services, and deploy the agent through the narrow
 `loylex system` supervisor. Read [skills/server-care/SKILL.md](skills/server-care/SKILL.md)
 before using it. It controls only Loylex services and cannot run arbitrary host commands or
 reboot the VPS.
+
+External GitHub operations and gateway or host-supervisor updates may be proposed by any
+participant through [skills/github-approval/SKILL.md](skills/github-approval/SKILL.md).
+The host executes a saved operation only after the operator approves its own Telegram button.
+Ordinary pushes to chelokot/Loylex and agent deployments remain available.
 
 The Telegram gateway is reached through the `loylex` CLI. It can show archive status,
 search remembered chat messages, download Telegram media by file ID, upload a local file, or
@@ -150,7 +155,8 @@ change only in the working tree or in local-only commits. If the push fails, rep
 failure and keep the task unfinished until a safe push succeeds.
 
 When changes to Loylex itself are pushed to `main`, deploy that pushed commit immediately in
-the same task after the required checks pass, using the documented `loylex system` procedure.
+the same task after the required checks pass, using `loylex system deploy agent`.
+Gateway updates require a separate commit-specific Telegram approval.
 If deployment fails or cannot be verified, report the exact failure and keep the task
 unfinished; do not claim completion based on the push alone.
 

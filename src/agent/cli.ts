@@ -84,6 +84,28 @@ async function uploadLocalFile(
 }
 
 async function run(): Promise<void> {
+  if (command === "approve") {
+    const [operation, value] = arguments_;
+    if (operation === "status" && value && /^[a-f0-9]{32}$/.test(value)) {
+      console.log(JSON.stringify(await requestJson(`/v1/approvals/${value}`), null, 2));
+      return;
+    }
+    if (operation !== "submit" || !value)
+      throw new Error("Usage: loylex approve submit REQUEST.json | status ID");
+    const payload: unknown = await Bun.file(value).json();
+    console.log(
+      JSON.stringify(
+        await requestJson("/v1/approvals", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (command === "bucks-mode") {
     const [user, mode] = arguments_;
     const userId = Number(user);
