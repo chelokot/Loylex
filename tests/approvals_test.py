@@ -231,6 +231,19 @@ class ApprovalTest(unittest.TestCase):
             self.git("--git-dir", str(self.remote), "rev-parse", "review"), self.new_sha
         )
 
+    def test_approval_notice_is_concise_and_replies_to_package(self) -> None:
+        identifier = self.submit()
+        document = self.approvals.messages[0][1]
+        notice = self.approvals.messages[1][1]
+        self.assertEqual(document["caption"], "Пакет операции")
+        self.assertEqual(notice["text"], "@Chelokot\n\nTLDR: Изменяется тестовый файл.")
+        self.assertEqual(notice["reply_parameters"], {"message_id": 101})
+        self.assertEqual(
+            notice["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
+            f"approve:{identifier}",
+        )
+        self.assertEqual(self.approvals.status(identifier)["state"], "pending")
+
     def test_review_failure_is_advisory(self) -> None:
         with mock.patch.object(self.approvals, "_review", side_effect=RuntimeError("offline")):
             identifier = self.submit()
