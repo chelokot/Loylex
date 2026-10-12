@@ -694,7 +694,7 @@ class Approvals:
                     "reply_markup": {"inline_keyboard": []},
                 },
             )
-        except ApprovalError:
+        except Exception:
             # A Telegram edit must not undo a durable decision or prevent execution.
             pass
 

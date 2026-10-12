@@ -175,10 +175,11 @@ class ApprovalTest(unittest.TestCase):
                     self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
 
     def test_failed_notice_edit_does_not_change_decision_or_block_execution(self) -> None:
-        for action, expected in (("approve", "succeeded"), ("cancel", "cancelled")):
+        for action, expected, error in (("approve", "succeeded", OSError("offline")),
+                                        ("cancel", "cancelled", broker.ApprovalError("offline"))):
             identifier = self.submit()
             message_id = self.approvals.status(identifier)["message_id"]
-            with mock.patch.object(self.approvals, "_telegram", side_effect=broker.ApprovalError("offline")):
+            with mock.patch.object(self.approvals, "_telegram", side_effect=error):
                 self.assertTrue(self.callback(identifier, message=message_id, action=action)["accepted"])
                 self.assertEqual(self.wait_execution(identifier)["state"], expected)
             if action == "approve":
