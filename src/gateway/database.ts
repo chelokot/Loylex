@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { messageMedia } from "../shared/message-media.ts";
 import { messageText } from "../shared/message-text.ts";
 import type {
   AgentContextMode,
@@ -419,6 +420,20 @@ function searchResult(row: SearchRow): SearchResult {
   return origin === null ? result : { ...result, forwardOrigin: origin };
 }
 
+function archivedMedia(mediaJson: string, rawJson: string): JsonValue[] {
+  const stored = JSON.parse(mediaJson) as JsonValue[];
+  const seen = new Set(stored.map((value) => JSON.stringify(value)));
+  return [
+    ...stored,
+    ...messageMedia(parseObject(rawJson)).filter((value) => {
+      const key = JSON.stringify(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  ];
+}
+
 function archivedMessage(row: ArchivedMessageRow): ArchivedMessage {
   const raw = parseObject(row.raw_json) as unknown as JsonObject;
   const origin = forwardOrigin(row.raw_json);
@@ -434,7 +449,7 @@ function archivedMessage(row: ArchivedMessageRow): ArchivedMessage {
     replyToMessageId: row.reply_to_message_id,
     mediaGroupId: row.media_group_id,
     source: row.source as ArchivedMessage["source"],
-    media: JSON.parse(row.media_json) as JsonValue[],
+    media: archivedMedia(row.media_json, row.raw_json),
     raw,
     ...(origin === null ? {} : { forwardOrigin: origin }),
   };
@@ -446,13 +461,7 @@ function messageReference(message: UnknownRecord, label: string): string | null 
     return null;
   }
   const text = messageText(message);
-  const attachments: JsonValue[] = [];
-  for (const key of ["photo", "document", "audio", "video", "voice", "animation"]) {
-    const value = message[key];
-    if (value) {
-      attachments.push({ kind: key, value: value as JsonValue });
-    }
-  }
+  const attachments = messageMedia(message);
   const mediaText = attachments.length > 0 ? ` attachments=${JSON.stringify(attachments)}` : "";
   return `${label} #${messageId} ${nestedAuthor(message)}: ${text}${mediaText}`;
 }
@@ -499,14 +508,7 @@ function displayNameForUser(user: TelegramUser): string {
 }
 
 function media(message: TelegramMessage): JsonValue[] {
-  const values: JsonValue[] = [];
-  for (const key of ["photo", "document", "audio", "video", "voice", "animation"] as const) {
-    const value = message[key];
-    if (value) {
-      values.push({ kind: key, value: value as JsonValue });
-    }
-  }
-  return values;
+  return messageMedia(message);
 }
 
 function jobMedia(message: TelegramMessage): JsonValue[] {
@@ -2767,7 +2769,7 @@ export class LoylexDatabase {
           ? `${row.from_display_name ?? row.from_username} (@${row.from_username})`
           : (row.from_display_name ?? "unknown");
         const userId = row.from_user_id === null ? "" : ` user_id=${row.from_user_id}`;
-        const attachments = JSON.parse(row.media_json) as JsonValue[];
+        const attachments = archivedMedia(row.media_json, row.raw_json);
         const attachmentText =
           attachments.length > 0 ? ` attachments=${JSON.stringify(attachments)}` : "";
         const relations = [

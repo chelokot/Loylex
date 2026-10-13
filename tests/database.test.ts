@@ -683,6 +683,59 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
+  test("archives Rich photos and passes reply media into the job and context", () => {
+    const database = setup();
+    const photo = [{ file_id: "rich-small" }, { file_id: "rich-large" }];
+    const target = botMessage(1, "");
+    delete target.text;
+    target.rich_message = {
+      blocks: [
+        { type: "paragraph", text: "UMM post" },
+        { type: "photo", photo },
+      ],
+    };
+    database.archiveMessage(target, "bot_api");
+    const current = message(2, "объясни скриншот");
+    current.reply_to_message = target;
+    database.archiveMessage(current, "bot_api");
+    database.enqueue(55, current, "объясни скриншот", null);
+    const expected = [{ kind: "photo", value: photo }];
+    const job = database.claimNext(10);
+    expect(job?.attachments).toEqual(expected);
+    expect(job?.replyContext).toContain(`attachments=${JSON.stringify(expected)}`);
+    expect(job?.context).toContain(`attachments=${JSON.stringify(expected)}`);
+    expect(
+      database.readQuery("SELECT media_json FROM messages WHERE message_id = ?", [1], 1).rows,
+    ).toEqual([{ media_json: JSON.stringify(expected) }]);
+    database.close();
+  });
+
+  test("recovers legacy Rich attachments from raw JSON without rewriting the archive", () => {
+    const database = setup();
+    const target = botMessage(1, "post");
+    target.document = { file_id: "native-document" };
+    const photo = [{ file_id: "legacy-rich-photo" }];
+    target.rich_message = { blocks: [{ type: "photo", photo }] };
+    database.archiveMessage(target, "bot_api");
+    const legacy = JSON.stringify([{ kind: "document", value: target.document }]);
+    database.connection
+      .query("UPDATE messages SET media_json = ? WHERE message_id = ?")
+      .run(legacy, 1);
+    const expected = [
+      { kind: "document", value: target.document },
+      { kind: "photo", value: photo },
+    ];
+    expect(database.archivedMessage(-10042, 1)?.media).toEqual(expected);
+    const current = message(2, "объясни");
+    database.archiveMessage(current, "bot_api");
+    database.enqueue(55, current, "объясни", null);
+    expect(database.claimNext(10)?.context).toContain(`attachments=${JSON.stringify(expected)}`);
+    expect(
+      database.readQuery("SELECT media_json FROM messages WHERE message_id = ?", [1], 1).rows,
+    ).toEqual([{ media_json: legacy }]);
+    database.close();
+  });
+
   test("reads Rich-only reply targets and archives Rich requests", () => {
     const database = setup();
     const current = message(2, "");
