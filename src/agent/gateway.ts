@@ -86,6 +86,25 @@ export class GatewayClient {
     };
   }
 
+  async pendingSteers(
+    jobId: number,
+  ): Promise<
+    { id: number; messageId: number; replyToMessageId: number; userId: number; prompt: string }[]
+  > {
+    return this.request(`/v1/jobs/${jobId}/steers`, {}, 5_000);
+  }
+
+  async finishSteer(jobId: number, steerId: number, accepted: boolean): Promise<void> {
+    await this.request(
+      `/v1/jobs/${jobId}/steers/${steerId}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ accepted }),
+      },
+      5_000,
+    );
+  }
+
   async isCancelled(jobId: number): Promise<boolean> {
     const result = await this.request<{ cancelled: boolean }>(
       `/v1/jobs/${jobId}/cancelled`,

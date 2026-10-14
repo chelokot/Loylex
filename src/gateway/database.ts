@@ -660,6 +660,18 @@ export class LoylexDatabase {
         ON jobs(chat_id, message_thread_id, created_at);
       CREATE INDEX IF NOT EXISTS outbound_thread_idx ON outbound_messages(codex_thread_id);
 
+      CREATE TABLE IF NOT EXISTS job_steers (
+        id INTEGER PRIMARY KEY,
+        job_id INTEGER NOT NULL REFERENCES jobs(id),
+        message_id INTEGER NOT NULL,
+        reply_message_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        prompt TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending',
+        UNIQUE(job_id, message_id)
+      );
+      CREATE INDEX IF NOT EXISTS job_steers_pending_idx ON job_steers(job_id, state, id);
+
       CREATE TABLE IF NOT EXISTS workers (
         worker_id TEXT PRIMARY KEY,
         generation INTEGER NOT NULL,
@@ -2936,32 +2948,31 @@ export class LoylexDatabase {
       .run(address.chatId, messageId, jobId, codexThreadId, Date.now());
   }
 
-  cancelJobsForMessage(chatId: number, messageId: number): number[] {
-    const transaction = this.connection.transaction(() => {
-      const outbound = this.connection
-        .query<{ job_id: number | null; codex_thread_id: string | null }, [number, number]>(
-          "SELECT job_id, codex_thread_id FROM outbound_messages WHERE chat_id = ? AND message_id = ?",
-        )
-        .get(chatId, messageId);
-      const sourceJob = this.connection
-        .query<
-          { id: number; codex_thread_id: string | null; resume_thread_id: string | null },
-          [number, number]
-        >(
-          "SELECT id, codex_thread_id, resume_thread_id FROM jobs WHERE chat_id = ? AND message_id = ?",
-        )
-        .get(chatId, messageId);
-      const targetJobId = outbound?.job_id ?? sourceJob?.id ?? -1;
-      const targetThreadId =
-        outbound?.codex_thread_id ??
-        sourceJob?.codex_thread_id ??
-        sourceJob?.resume_thread_id ??
-        null;
-      const jobs = this.connection
-        .query<
-          { id: number },
-          [number, number, number, number, string | null, string | null, string | null]
-        >(`
+  activeJobsForMessage(chatId: number, messageId: number): { id: number }[] {
+    const outbound = this.connection
+      .query<{ job_id: number | null; codex_thread_id: string | null }, [number, number]>(
+        "SELECT job_id, codex_thread_id FROM outbound_messages WHERE chat_id = ? AND message_id = ?",
+      )
+      .get(chatId, messageId);
+    const sourceJob = this.connection
+      .query<
+        { id: number; codex_thread_id: string | null; resume_thread_id: string | null },
+        [number, number]
+      >(
+        "SELECT id, codex_thread_id, resume_thread_id FROM jobs WHERE chat_id = ? AND message_id = ?",
+      )
+      .get(chatId, messageId);
+    const targetJobId = outbound?.job_id ?? sourceJob?.id ?? -1;
+    const targetThreadId =
+      outbound?.codex_thread_id ??
+      sourceJob?.codex_thread_id ??
+      sourceJob?.resume_thread_id ??
+      null;
+    return this.connection
+      .query<
+        { id: number },
+        [number, number, number, number, string | null, string | null, string | null]
+      >(`
           SELECT DISTINCT id
           FROM jobs
           WHERE chat_id = ?
@@ -2977,15 +2988,77 @@ export class LoylexDatabase {
             )
           ORDER BY id
         `)
-        .all(
-          chatId,
-          targetJobId,
-          messageId,
-          messageId,
-          targetThreadId,
-          targetThreadId,
-          targetThreadId,
-        );
+      .all(
+        chatId,
+        targetJobId,
+        messageId,
+        messageId,
+        targetThreadId,
+        targetThreadId,
+        targetThreadId,
+      );
+  }
+
+  queueSteer(
+    chatId: number,
+    replyId: number,
+    messageId: number,
+    userId: number,
+    prompt: string,
+  ): number[] {
+    return this.connection
+      .transaction(() => {
+        const jobs = this.activeJobsForMessage(chatId, replyId);
+        for (const job of jobs) {
+          this.connection
+            .query(
+              "INSERT OR IGNORE INTO job_steers (job_id, message_id, reply_message_id, user_id, prompt) VALUES (?, ?, ?, ?, ?)",
+            )
+            .run(job.id, messageId, replyId, userId, prompt);
+        }
+        return jobs.map((job) => job.id);
+      })
+      .immediate();
+  }
+
+  pendingSteers(
+    jobId: number,
+    workerId: string,
+  ): { id: number; messageId: number; replyToMessageId: number; userId: number; prompt: string }[] {
+    if (!this.isJobOwned(jobId, workerId)) return [];
+    return this.connection
+      .query<
+        { id: number; messageId: number; replyToMessageId: number; userId: number; prompt: string },
+        [number]
+      >(
+        "SELECT id, message_id AS messageId, reply_message_id AS replyToMessageId, user_id AS userId, prompt FROM job_steers WHERE job_id = ? AND state = 'pending' ORDER BY id LIMIT 20",
+      )
+      .all(jobId);
+  }
+
+  finishSteer(jobId: number, steerId: number, workerId: string, accepted: boolean): number | null {
+    if (!this.isJobOwned(jobId, workerId)) return null;
+    return (
+      this.connection
+        .query<{ message_id: number }, [string, number, number]>(
+          "UPDATE job_steers SET state = ? WHERE id = ? AND job_id = ? AND state = 'pending' RETURNING message_id",
+        )
+        .get(accepted ? "accepted" : "failed", steerId, jobId)?.message_id ?? null
+    );
+  }
+
+  failPendingSteers(jobId: number): number[] {
+    return this.connection
+      .query<{ message_id: number }, [number]>(
+        "UPDATE job_steers SET state = 'failed' WHERE job_id = ? AND state = 'pending' AND EXISTS (SELECT 1 FROM jobs WHERE id = job_id AND state NOT IN ('pending', 'running')) RETURNING message_id",
+      )
+      .all(jobId)
+      .map((row) => row.message_id);
+  }
+
+  cancelJobsForMessage(chatId: number, messageId: number): number[] {
+    const transaction = this.connection.transaction(() => {
+      const jobs = this.activeJobsForMessage(chatId, messageId);
       const cancelledAt = Date.now();
       for (const job of jobs) {
         this.connection

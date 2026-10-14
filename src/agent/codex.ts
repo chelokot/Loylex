@@ -407,7 +407,7 @@ export function isThreadStoreConflict(error: unknown): boolean {
   return /thread-store conflict\b[\s\S]*\bactive writer\b/i.test(errorText(error));
 }
 
-async function waitForThreadWriter(
+export async function waitForThreadWriter(
   delayMs: number,
   signal: AbortSignal | undefined,
 ): Promise<void> {

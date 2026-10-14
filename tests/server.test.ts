@@ -1151,3 +1151,41 @@ test("returns the usage report with an optional chat filter", async () => {
     limit: 25,
   });
 });
+
+test("steer delivery acknowledgements validate input and preserve Telegram topic", async () => {
+  const sent: unknown[] = [];
+  let recorded = false;
+  const database = {
+    finishSteer: (_job: number, _steer: number, worker: string, accepted: boolean) => {
+      if (worker !== "worker-one" || recorded || !accepted) return null;
+      recorded = true;
+      return 42;
+    },
+    jobAddress: () => ({ chatId: -10042, threadId: 9 }),
+  } as unknown as LoylexDatabase;
+  const telegram = {
+    sendRich: async (...args: unknown[]) => {
+      sent.push(args);
+    },
+  } as unknown as TelegramClient;
+  const server = new GatewayServer(config(), database, telegram);
+  const route = (server as unknown as { route: (request: Request) => Promise<Response> }).route;
+  const send = (body: unknown, worker = "worker-one") =>
+    route.call(
+      server,
+      new Request("http://localhost/v1/jobs/1/steers/2", {
+        method: "POST",
+        headers: { authorization: "Bearer unused", "x-loylex-worker-id": worker },
+        body: JSON.stringify(body),
+      }),
+    );
+  expect((await send({ accepted: "true" })).status).toBe(400);
+  expect(await (await send({ accepted: true }, "other-worker")).json()).toEqual({
+    recorded: false,
+  });
+  expect(await (await send({ accepted: true })).json()).toEqual({ recorded: true });
+  expect(await (await send({ accepted: true })).json()).toEqual({ recorded: false });
+  expect(sent).toEqual([
+    [-10042, "Уточнение передано в работающую задачу.", { replyTo: 42, threadId: 9 }],
+  ]);
+});

@@ -986,3 +986,33 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 });
+
+test("steering selects stop targets without cancelling, isolates workers, and deduplicates input", () => {
+  const database = setup();
+  database.registerWorker("steer-worker");
+  database.enqueue(55, message(1, "long task"), "long task", null);
+  const job = database.claimNext(10, "steer-worker");
+  const id = job?.id ?? 0;
+  database.setThinkingMessage(id, 10);
+  database.appendStatus(id, "working", "thread-steer", "steer-worker");
+  database.recordOutboundMessage(id, 11, "thread-steer");
+  expect(database.queueSteer(-10043, 10, 12, 8, "wrong chat")).toEqual([]);
+  expect(database.queueSteer(-10042, 11, 12, 8, "new input")).toEqual([id]);
+  expect(database.queueSteer(-10042, 11, 12, 8, "new input")).toEqual([id]);
+  expect(database.isJobCancelled(id)).toBe(false);
+  expect(database.pendingSteers(id, "wrong-worker")).toEqual([]);
+  const entries = database.pendingSteers(id, "steer-worker");
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ messageId: 12, userId: 8, prompt: "new input" });
+  const steerId = entries[0]?.id ?? 0;
+  expect(database.finishSteer(id, steerId, "wrong-worker", true)).toBeNull();
+  expect(database.finishSteer(id, steerId, "steer-worker", true)).toBe(12);
+  expect(database.finishSteer(id, steerId, "steer-worker", true)).toBeNull();
+  expect(database.pendingSteers(id, "steer-worker")).toEqual([]);
+  database.queueSteer(-10042, 10, 13, 8, "too late");
+  database.complete(id, 20, "thread-steer", "steer-worker");
+  expect(database.failPendingSteers(id)).toEqual([13]);
+  expect(database.failPendingSteers(id)).toEqual([]);
+  expect(database.queueSteer(-10042, 11, 14, 8, "finished")).toEqual([]);
+  database.close();
+});

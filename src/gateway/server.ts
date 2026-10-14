@@ -204,6 +204,38 @@ export class GatewayServer {
         return response;
       }
 
+      const steersMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/steers$/);
+      if (request.method === "GET" && steersMatch?.[1]) {
+        const currentWorkerId = workerId(request);
+        if (!currentWorkerId) return json({ error: "worker id required" }, 400);
+        return json(this.database.pendingSteers(Number(steersMatch[1]), currentWorkerId));
+      }
+      const steerResultMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/steers\/(\d+)$/);
+      if (request.method === "POST" && steerResultMatch?.[1] && steerResultMatch[2]) {
+        const currentWorkerId = workerId(request);
+        const payload = await body<{ accepted: unknown }>(request);
+        if (!currentWorkerId || typeof payload.accepted !== "boolean")
+          return json({ error: "worker id and accepted required" }, 400);
+        const jobId = Number(steerResultMatch[1]);
+        const messageId = this.database.finishSteer(
+          jobId,
+          Number(steerResultMatch[2]),
+          currentWorkerId,
+          payload.accepted,
+        );
+        if (messageId !== null) {
+          const address = this.database.jobAddress(jobId);
+          await this.telegram.sendRich(
+            address.chatId,
+            payload.accepted
+              ? "Уточнение передано в работающую задачу."
+              : "Уточнение не удалось передать: задача уже завершилась или steer отклонён.",
+            { replyTo: messageId, threadId: address.threadId },
+          );
+        }
+        return json({ recorded: messageId !== null });
+      }
+
       const cancellationMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/cancelled$/);
       if (request.method === "GET" && cancellationMatch?.[1]) {
         return json({
@@ -841,6 +873,17 @@ export class GatewayServer {
     }
   }
 
+  private async notifyUndeliveredSteers(jobId: number): Promise<void> {
+    const address = this.database.jobAddress(jobId);
+    for (const messageId of this.database.failPendingSteers?.(jobId) ?? []) {
+      await this.telegram.sendRich(
+        address.chatId,
+        "Уточнение не передано: задача завершилась до его доставки.",
+        { replyTo: messageId, threadId: address.threadId },
+      );
+    }
+  }
+
   private async complete(
     jobId: number,
     completion: AgentCompletion,
@@ -910,6 +953,7 @@ export class GatewayServer {
       completion.usage ?? null,
       answer,
     );
+    await this.notifyUndeliveredSteers(jobId);
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);
   }
@@ -946,6 +990,7 @@ export class GatewayServer {
     }
     this.database.recordOutboundMessage(jobId, message.message_id, currentThreadId);
     this.database.fail(jobId, error.slice(0, 8_000), workerId, currentThreadId, usage);
+    await this.notifyUndeliveredSteers(jobId);
     this.#lastStreamEdit.delete(jobId);
     this.#lastStreamDocument.delete(jobId);
   }

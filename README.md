@@ -215,6 +215,13 @@ queues one idempotent recovery job, and resumes the original Codex thread. The r
 requires a substantive postmortem, a durable fix where appropriate, verification, and a complete
 rerun of the original task. The corrected response is sent as a new reply; a dislike on that
 recovery response does not recurse indefinitely.
+Replying `/steer Message` (or `/steer@loylex_bot Message`) to the same working
+bot message sends the text to the active Codex turn without interrupting it.
+The bot reports whether Codex accepted the input; completed tasks cannot be steered.
+Pending linked jobs receive their input once they start. Steering preserves the
+current message sender's authenticated metadata and does not inherit the original
+requester's authority. Empty input shows command usage.
+
 Replying `/stop` to any Loylex message belonging to an active job cancels that Codex thread,
 and Loylex replies with the cancellation result; the command is consumed and is not submitted
 as a new prompt. `/tasks` shows the five latest jobs in the current chat with their status,

@@ -90,6 +90,19 @@ export function isStopCommand(
   return mention.slice(1).toLocaleLowerCase() === botUsername.toLocaleLowerCase();
 }
 
+export function steerCommandText(
+  message: TelegramMessage,
+  botUserId: number,
+  botUsername?: string,
+): string | null {
+  if (message.reply_to_message?.from?.id !== botUserId) return null;
+  const match = messageText(message)
+    .trim()
+    .match(/^\/steer(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu);
+  if (!match || mentionsAnotherBot(match[1], botUsername)) return null;
+  return match[2]?.trim() ?? "";
+}
+
 export function isTasksCommand(message: TelegramMessage, botUsername?: string): boolean {
   const text = messageText(message).trim();
   if (!tasksPattern.test(text)) {

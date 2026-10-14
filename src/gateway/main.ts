@@ -42,6 +42,7 @@ import {
   parseTestBumpCommand,
   promptWithQuote,
   resumeTaskMessageId,
+  steerCommandText,
 } from "./triggers.ts";
 
 const config = loadGatewayConfig();
@@ -459,6 +460,29 @@ async function poll(): Promise<void> {
               message.message_thread_id ?? null,
             ),
           });
+          continue;
+        }
+        const steerText = steerCommandText(message, bot.id, bot.username);
+        if (steerText !== null) {
+          const jobs =
+            steerText && currentUserId !== null && message.reply_to_message
+              ? database.queueSteer(
+                  message.chat.id,
+                  message.reply_to_message.message_id,
+                  message.message_id,
+                  currentUserId,
+                  steerText,
+                )
+              : [];
+          await sendInlineResponse(
+            telegram,
+            message,
+            !steerText
+              ? "Используй `/steer текст уточнения` в ответ на рабочее сообщение бота."
+              : jobs.length
+                ? "Передаю уточнение в задачу…"
+                : "Для этого сообщения нет активной задачи.",
+          );
           continue;
         }
         if (isStopCommand(message, bot.id, bot.username)) {

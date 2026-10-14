@@ -6,7 +6,7 @@ import type { AgentTokenUsage } from "../shared/usage.ts";
 import { assessConversation } from "./assessment.ts";
 import { stageAttachments } from "./attachments.ts";
 import { loadBuckets } from "./buckets.ts";
-import { runCodex } from "./codex.ts";
+import { runCodexAppServer, type SteerControl } from "./codex-app-server.ts";
 import { loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
 import { newGeneratedImages, snapshotGeneratedImages } from "./generated-images.ts";
@@ -96,6 +96,47 @@ function isMediaUploadCommand(event: Parameters<GatewayClient["event"]>[1]): boo
 async function processJob(job: AgentJob): Promise<void> {
   const cancellation = new AbortController();
   const cancellationMonitor = monitorCancellation(job.id, cancellation);
+  const steerControl: { current: SteerControl | null } = { current: null };
+  const deliveredSteers = new Map<number, boolean>();
+  const steeringMonitor = (async () => {
+    while (!cancellation.signal.aborted) {
+      try {
+        if (steerControl.current) {
+          for (const steer of await gateway.pendingSteers(job.id)) {
+            if (!steerControl.current || cancellation.signal.aborted) break;
+            let accepted = deliveredSteers.get(steer.id);
+            if (accepted === undefined) {
+              const prompt = buildPrompt(
+                {
+                  ...job,
+                  messageId: steer.messageId,
+                  userId: steer.userId,
+                  replyToMessageId: steer.replyToMessageId,
+                  replyContext: null,
+                  prompt: steer.prompt,
+                  context: "",
+                  attachments: [],
+                  resumeThreadId: steerControl.current.threadId,
+                },
+                "",
+              );
+              try {
+                await steerControl.current.send(prompt, `telegram-steer-${steer.id}`);
+                accepted = true;
+              } catch {
+                accepted = false;
+              }
+              deliveredSteers.set(steer.id, accepted);
+            }
+            await gateway.finishSteer(job.id, steer.id, accepted);
+          }
+        }
+      } catch {
+        // Retry bridge failures without resubmitting already accepted steering input.
+      }
+      if (!cancellation.signal.aborted) await Bun.sleep(500);
+    }
+  })();
   let stagedAttachments: Awaited<ReturnType<typeof stageAttachments>> | null = null;
   let usage: AgentTokenUsage | null = null;
   let codexThreadId = job.resumeThreadId;
@@ -113,7 +154,7 @@ async function processJob(job: AgentJob): Promise<void> {
     const generatedImagesRoot = join(config.codexHome, "generated_images");
     const generatedImagesBefore = await snapshotGeneratedImages(generatedImagesRoot);
     let explicitMediaUpload = false;
-    const result = await runCodex(
+    const result = await runCodexAppServer(
       config,
       prompt,
       job.resumeThreadId,
@@ -141,7 +182,15 @@ async function processJob(job: AgentJob): Promise<void> {
           );
         });
       },
+      (control) => {
+        steerControl.current = control;
+      },
     );
+    for (const steer of await gateway.pendingSteers(job.id).catch(() => [])) {
+      await gateway
+        .finishSteer(job.id, steer.id, deliveredSteers.get(steer.id) ?? false)
+        .catch(() => {});
+    }
     usage = result.usage ?? usage;
     codexThreadId = result.threadId;
     if (await cancellationRequested(job.id, cancellation)) {
@@ -204,7 +253,7 @@ async function processJob(job: AgentJob): Promise<void> {
   } finally {
     await stagedAttachments?.cleanup();
     cancellation.abort();
-    await cancellationMonitor;
+    await Promise.all([cancellationMonitor, steeringMonitor]);
   }
 }
 

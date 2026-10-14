@@ -13,6 +13,7 @@ import {
   parseQuizCommand,
   parseTestBumpCommand,
   promptWithQuote,
+  steerCommandText,
 } from "../src/gateway/triggers.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 
@@ -249,4 +250,20 @@ describe("blindTrigger", () => {
     };
     expect(blindTrigger(reply, 42)?.prompt).toBe("тест");
   });
+});
+
+test("steer requires a bot reply, respects bot mention and preserves multiline input", () => {
+  const input = message("/steer@LoylexBot change this\nthen that");
+  expect(steerCommandText(input, 42, "LoylexBot")).toBeNull();
+  input.reply_to_message = {
+    ...message("working"),
+    from: { id: 42, is_bot: true, first_name: "Loylex" },
+  };
+  expect(steerCommandText(input, 42, "LoylexBot")).toBe("change this\nthen that");
+  input.text = "/steer@another_bot hello";
+  expect(steerCommandText(input, 42, "LoylexBot")).toBeNull();
+  input.text = "/steer";
+  expect(steerCommandText(input, 42, "LoylexBot")).toBe("");
+  input.text = "/steering hello";
+  expect(steerCommandText(input, 42, "LoylexBot")).toBeNull();
 });
