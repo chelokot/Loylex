@@ -64,3 +64,24 @@ test("uploads a generated MP4 through the animation endpoint", async () => {
   expect((requestBody?.get("file") as File).name).toBe("reaction.mp4");
   expect(requestBody?.get("caption")).toBe("Реакция");
 });
+
+test("steering requests use the same worker identity as registration", async () => {
+  const calls: { path: string; worker: string | null }[] = [];
+  globalThis.fetch = (async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    calls.push({ path, worker: new Headers(init?.headers).get("x-loylex-worker-id") });
+    return Response.json(path.endsWith("/steers") ? [] : { recorded: true });
+  }) as typeof fetch;
+  const client = new GatewayClient("http://gateway", "bridge-token");
+  await client.registerWorker();
+  await client.pendingSteers(123);
+  await client.finishSteer(123, 456, true);
+  expect(calls.map((call) => call.path)).toEqual([
+    "/v1/workers/register",
+    "/v1/jobs/123/steers",
+    "/v1/jobs/123/steers/456",
+  ]);
+  expect(calls[0]?.worker).toBeTruthy();
+  expect(calls[1]?.worker).toBe(calls[0]?.worker);
+  expect(calls[2]?.worker).toBe(calls[0]?.worker);
+});

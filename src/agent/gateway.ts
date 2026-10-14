@@ -91,7 +91,11 @@ export class GatewayClient {
   ): Promise<
     { id: number; messageId: number; replyToMessageId: number; userId: number; prompt: string }[]
   > {
-    return this.request(`/v1/jobs/${jobId}/steers`, {}, 5_000);
+    return this.request(
+      `/v1/jobs/${jobId}/steers`,
+      { headers: { "x-loylex-worker-id": this.workerId } },
+      5_000,
+    );
   }
 
   async finishSteer(jobId: number, steerId: number, accepted: boolean): Promise<void> {
@@ -100,6 +104,7 @@ export class GatewayClient {
       {
         method: "POST",
         body: JSON.stringify({ accepted }),
+        headers: { "x-loylex-worker-id": this.workerId },
       },
       5_000,
     );
