@@ -404,7 +404,9 @@ function sameUsage(left: AgentTokenUsage | null, right: AgentTokenUsage): boolea
 }
 
 export function isThreadStoreConflict(error: unknown): boolean {
-  return /thread-store conflict\b[\s\S]*\bactive writer\b/i.test(errorText(error));
+  return /\bthread(?:-store conflict\b[\s\S]*\bactive writer\b|\s+\S+\s+already has an active writer\b)/i.test(
+    errorText(error),
+  );
 }
 
 export async function waitForThreadWriter(

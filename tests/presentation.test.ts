@@ -361,3 +361,12 @@ test("keeps the work history in a failure document", () => {
   expect(message).toContain("Не получилось завершить задачу.");
   expect(message).toContain("The socket connection was closed unexpectedly");
 });
+
+test("hides bare Codex writer conflict diagnostics", () => {
+  const message = failureMessage(
+    "thread 01a1446d-0172-7ea1-8a00-ecf085d5b340 already has an active writer",
+  );
+  expect(message).toContain("этот Codex-тред уже занят");
+  expect(message).not.toContain("active writer");
+  expect(message).not.toContain("01a1446d");
+});

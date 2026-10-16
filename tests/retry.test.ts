@@ -53,3 +53,12 @@ test("recognizes a Codex thread writer conflict for agent-level retry", () => {
   ).toBe(true);
   expect(isThreadStoreConflict(new Error("Codex exited with 1: invalid prompt"))).toBe(false);
 });
+
+test("recognizes the bare Codex writer conflict without retrying unrelated errors", () => {
+  expect(
+    isThreadStoreConflict(
+      new Error("thread 01a1446d-0172-7ea1-8a00-ecf085d5b340 already has an active writer"),
+    ),
+  ).toBe(true);
+  expect(isThreadStoreConflict(new Error("The document already has an active writer"))).toBe(false);
+});

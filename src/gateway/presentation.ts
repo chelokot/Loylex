@@ -177,7 +177,11 @@ export function activityLines(status: string): string[] {
 }
 
 export function failureMessage(error: string): string {
-  if (/thread-store conflict\b[\s\S]*\bactive writer\b/i.test(error)) {
+  if (
+    /\bthread(?:-store conflict\b[\s\S]*\bactive writer\b|\s+\S+\s+already has an active writer\b)/i.test(
+      error,
+    )
+  ) {
     return "Не получилось продолжить задачу: этот Codex-тред уже занят другим запросом.\n\nДождись завершения текущей задачи и отправь запрос ещё раз — одновременно выполнять два запроса в одном треде нельзя.";
   }
   return `Не получилось завершить задачу.\n\n\`\`\`text\n${error.slice(0, 2_000)}\n\`\`\``;
