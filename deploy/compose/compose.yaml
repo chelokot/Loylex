@@ -78,7 +78,7 @@ services:
         mode: "0400"
     read_only: true
     tmpfs:
-      - /tmp:rw,nodev,nosuid,noexec,size=256m
+      - /tmp:rw,nodev,nosuid,size=256m
       - /run/cloudflare-warp:rw,nodev,nosuid,noexec,size=8m
       - /var/log/cloudflare-warp:rw,nodev,nosuid,noexec,size=32m
     environment:
@@ -129,7 +129,7 @@ services:
         mode: "0400"
     read_only: true
     tmpfs:
-      - /tmp:rw,nodev,nosuid,noexec,size=256m
+      - /tmp:rw,nodev,nosuid,size=256m
       - /run/cloudflare-warp:rw,nodev,nosuid,noexec,size=8m
       - /var/log/cloudflare-warp:rw,nodev,nosuid,noexec,size=32m
     environment:
