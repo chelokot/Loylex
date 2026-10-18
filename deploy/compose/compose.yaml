@@ -4,21 +4,12 @@ x-pm3:
   loylex-gateway:
     required_services:
       - gateway
-    gateway:
-      health:
-        check_at: always
   loylex-worker-blue:
     required_services:
       - agent-blue
-    agent-blue:
-      health:
-        check_at: always
   loylex-worker-green:
     required_services:
       - agent-green
-    agent-green:
-      health:
-        check_at: always
 
 services:
   gateway:
@@ -98,7 +89,6 @@ services:
       LOYLEX_MAX_CONCURRENT_JOBS: "50"
     cpus: 5.5
     mem_limit: 9g
-    memswap_limit: 13g
     pids_limit: 4096
     pull_policy: missing
     restart: on-failure
@@ -145,7 +135,6 @@ services:
       LOYLEX_MAX_CONCURRENT_JOBS: "50"
     cpus: 5.5
     mem_limit: 9g
-    memswap_limit: 13g
     pids_limit: 4096
     pull_policy: missing
     restart: on-failure

@@ -16,28 +16,6 @@ LOADER.exec_module(SUPERVISOR)
 
 
 class SupervisorTest(unittest.TestCase):
-    def test_replaces_only_expected_image(self) -> None:
-        content = "[Container]\nImage=ghcr.io/chelokot/loylex-agent:main\nReadOnly=true\n"
-        updated = SUPERVISOR.replace_image_line(
-            content,
-            "ghcr.io/chelokot/loylex-agent",
-            "ghcr.io/chelokot/loylex-agent@sha256:123",
-        )
-        self.assertEqual(
-            updated,
-            "[Container]\nImage=ghcr.io/chelokot/loylex-agent@sha256:123\nReadOnly=true\n",
-        )
-
-    def test_rejects_missing_or_ambiguous_image(self) -> None:
-        with self.assertRaises(SUPERVISOR.SupervisorError):
-            SUPERVISOR.replace_image_line("[Container]\n", "example/image", "example/image@sha256:1")
-        with self.assertRaises(SUPERVISOR.SupervisorError):
-            SUPERVISOR.replace_image_line(
-                "Image=example/image:main\nImage=example/image:old\n",
-                "example/image",
-                "example/image@sha256:1",
-            )
-
     def test_selects_only_fixed_components(self) -> None:
         self.assertEqual(SUPERVISOR.selected_components("agent"), ["agent"])
         self.assertEqual(SUPERVISOR.selected_components("all"), ["gateway", "agent"])
@@ -95,6 +73,24 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn("loylex-warp-state-green", installer)
         self.assertIn("WARP_RPM_SHA256=", containerfile)
         self.assertIn("rpmkeys --checksig", containerfile)
+
+    def test_pm3_owns_every_container_across_reboots(self) -> None:
+        root = SCRIPT_PATH.parents[1].parent
+        installer = (root / "deploy/scripts/install-host.sh").read_text()
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        supervisor = SCRIPT_PATH.read_text()
+        self.assertIn("rm -f /home/loylex/.config/containers/systemd/loylex*", installer)
+        self.assertNotIn('disable --now "$unit"', installer)
+        self.assertIn("register_pm3_project loylex-gateway --profile gateway\n", installer)
+        for slot in ("blue", "green"):
+            self.assertIn(
+                f"register_pm3_project loylex-worker-{slot} --profile {slot} --podman-run-args=--memory-swap=13g\n",
+                installer,
+            )
+        self.assertNotIn("memswap_limit", compose)
+        self.assertNotIn("check_at: always", compose)
+        self.assertNotIn("podman update", installer)
+        self.assertNotIn('"podman", "update"', supervisor)
 
     def test_agent_runtime_and_cli_use_image_pinned_sources(self) -> None:
         root = SCRIPT_PATH.parents[1].parent

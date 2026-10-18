@@ -236,15 +236,18 @@ as_loylex() {
 }
 
 # Stop the old supervisor and Quadlet units before reusing their exact
-# container names. Named volumes are intentionally left in place.
+# container names. Quadlet regenerates its units on every boot and they cannot
+# be disabled, so their definitions are deleted. Named volumes are left in place.
 as_loylex systemctl --user disable --now loylex-supervisor.service >/dev/null 2>&1 || true
 for unit in \
   loylex-gateway.service \
   loylex-agent.service \
   loylex-agent-blue.service \
   loylex-agent-green.service; do
-  as_loylex systemctl --user disable --now "$unit" >/dev/null 2>&1 || true
+  as_loylex systemctl --user stop "$unit" >/dev/null 2>&1 || true
 done
+rm -f /home/loylex/.config/containers/systemd/loylex*
+as_loylex systemctl --user daemon-reload
 for container in \
   loylex-gateway \
   loylex-agent \
@@ -401,24 +404,35 @@ pm3_run() {
 }
 
 pm3_database=/home/loylex/.local/share/pm3/pm3.sqlite
-pm3_project_exists() {
-  [[ -f "$pm3_database" ]] || return 1
-  [[ "$(as_loylex sqlite3 "$pm3_database" \
-    "SELECT 1 FROM projects WHERE name = '$1' LIMIT 1;")" == 1 ]]
+pm3_project_arguments() {
+  [[ -f "$pm3_database" ]] || return 0
+  as_loylex sqlite3 "$pm3_database" \
+    "SELECT json(composeArgs) FROM projects WHERE name = '$1';"
 }
 
-create_pm3_project() {
+# PM3 recreates containers from these arguments on every start, including at
+# boot, so a registration with stale arguments is replaced rather than kept.
+register_pm3_project() {
   local name="$1"
-  local profile="$2"
-  if ! pm3_project_exists "$name"; then
-    pm3_run create /home/loylex/stack --name "$name" --local -- \
-      -p "$name" --profile "$profile"
+  shift
+  local registered expected
+  registered="$(pm3_project_arguments "$name")"
+  expected="$(jq -cn '$ARGS.positional' --args -- -p "$name" "$@")"
+  if [[ "$registered" == "$expected" ]]; then
+    return
   fi
+  if [[ -n "$registered" ]]; then
+    pm3_run stop "$name"
+    pm3_run rm "$name"
+  fi
+  pm3_run create /home/loylex/stack --name "$name" --local -- -p "$name" "$@"
 }
 
-create_pm3_project loylex-gateway gateway
-create_pm3_project loylex-worker-blue blue
-create_pm3_project loylex-worker-green green
+register_pm3_project loylex-gateway --profile gateway
+# podman-compose ignores memswap_limit, so the worker swap cap is passed to
+# every container it creates for the worker projects.
+register_pm3_project loylex-worker-blue --profile blue --podman-run-args=--memory-swap=13g
+register_pm3_project loylex-worker-green --profile green --podman-run-args=--memory-swap=13g
 
 as_loylex systemctl --user daemon-reload
 as_loylex systemctl --user disable --now podman-auto-update.timer >/dev/null 2>&1 || true
@@ -431,5 +445,4 @@ as_loylex systemctl --user start loylex-backup.timer pm3.service
 pm3_run disable "loylex-worker-$inactive_slot" --now >/dev/null 2>&1 || true
 pm3_run enable loylex-gateway --now
 pm3_run enable "loylex-worker-$active_slot" --now
-as_loylex podman update --memory-swap 13g "loylex-agent-$active_slot"
 as_loylex systemctl --user start loylex-supervisor.service
