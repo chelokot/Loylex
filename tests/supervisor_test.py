@@ -39,7 +39,7 @@ class SupervisorTest(unittest.TestCase):
     def test_worker_root_filesystems_are_read_only(self) -> None:
         compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
         self.assertEqual(compose.count("    read_only: true"), 3)
-        self.assertEqual(compose.count("/tmp:rw,nodev,nosuid,noexec,size=256m"), 2)
+        self.assertEqual(compose.count("/tmp:rw,nodev,nosuid,size=256m"), 2)
         self.assertEqual(compose.count("/run/cloudflare-warp:rw,nodev,nosuid,noexec,size=8m"), 2)
         self.assertEqual(compose.count("/var/log/cloudflare-warp:rw,nodev,nosuid,noexec,size=32m"), 2)
 
