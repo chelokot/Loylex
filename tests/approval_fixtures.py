@@ -125,4 +125,5 @@ class ApprovalTestCase(unittest.TestCase):
             and time.monotonic() < deadline
         ):
             time.sleep(0.01)
-        return self.approvals.status(identifier)
+        with self.approvals.execution_lock:
+            return self.approvals.status(identifier)
