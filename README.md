@@ -272,6 +272,10 @@ podman build -f containers/gateway.Containerfile -t loylex-gateway .
 podman build -f containers/agent.Containerfile -t loylex-agent .
 ```
 
+`bun install` and the agent entrypoint enable `.githooks`. Its pre-commit hook rejects staged
+hand-written files over 5000 tokens (bytes / 4) and explains how to split them; lockfiles and
+generated code are excluded with `linguist-generated` in `.gitattributes`.
+
 Reviewed main-branch pushes test the TypeScript runtime and publish
 `ghcr.io/chelokot/loylex-gateway:main` and
 `ghcr.io/chelokot/loylex-agent:main`. The deployed gateway and initial agent references are

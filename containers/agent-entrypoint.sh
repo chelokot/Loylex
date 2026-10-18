@@ -69,6 +69,7 @@ git config --global user.name "Loylex"
 git config --global user.email "loylex@users.noreply.github.com"
 git config --global pull.rebase true
 git config --global --replace-all safe.directory "$repository_path"
+git -C "$repository_path" config core.hooksPath .githooks
 
 cd "$repository_path"
 if command -v crond >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 \
