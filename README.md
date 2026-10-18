@@ -289,11 +289,12 @@ and Podman, so they change only during an explicit reviewed installer run.
 ## Host installation
 
 On Fedora 43/44, or on the existing Rocky Linux host using the pinned upstream PM3 RPM fallback,
-create two root-readable files containing the Telegram token and a random bridge secret. From
-the freshly pulled `main` checkout, run this once:
+create three root-readable files containing the Telegram token, a random bridge secret, and
+the OpenAI API key the agent uses for OpenAI API tasks. From the freshly pulled `main` checkout,
+run this once:
 
 ```bash
-sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token
+sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token /root/loylex-openai-api-key
 ```
 
 The installer creates the locked `loylex` host user, enables lingering rootless Podman, installs

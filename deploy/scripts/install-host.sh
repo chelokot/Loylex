@@ -6,13 +6,14 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ "$#" -ne 2 ]]; then
-  echo "Usage: install-host.sh TELEGRAM_TOKEN_FILE BRIDGE_TOKEN_FILE" >&2
+if [[ "$#" -ne 3 ]]; then
+  echo "Usage: install-host.sh TELEGRAM_TOKEN_FILE BRIDGE_TOKEN_FILE OPENAI_API_KEY_FILE" >&2
   exit 1
 fi
 
 telegram_token_file="$(realpath "$1")"
 bridge_token_file="$(realpath "$2")"
+openai_api_key_file="$(realpath "$3")"
 deploy_root="$(realpath "$(dirname "$0")/..")"
 versions_file="$deploy_root/host/versions.env"
 
@@ -325,6 +326,9 @@ if ! as_loylex podman secret inspect loylex-bridge-token >/dev/null 2>&1; then
 fi
 if ! as_loylex podman secret inspect loylex-supervisor-token >/dev/null 2>&1; then
   as_loylex podman secret create loylex-supervisor-token - <"$supervisor_token_file"
+fi
+if ! as_loylex podman secret inspect loylex-openai-api-key >/dev/null 2>&1; then
+  as_loylex podman secret create loylex-openai-api-key - <"$openai_api_key_file"
 fi
 
 for volume in \
