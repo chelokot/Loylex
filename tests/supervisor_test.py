@@ -22,26 +22,6 @@ class SupervisorTest(unittest.TestCase):
         with self.assertRaises(SUPERVISOR.SupervisorError):
             SUPERVISOR.selected_components("host")
 
-    def test_replaces_only_expected_compose_service_image(self) -> None:
-        content = (
-            "services:\n"
-            "  gateway:\n"
-            "    image: ghcr.io/chelokot/loylex-gateway@sha256:old\n"
-            "  agent-blue:\n"
-            "    image: ghcr.io/chelokot/loylex-agent:main\n"
-            "  agent-green:\n"
-            "    image: ghcr.io/chelokot/loylex-agent:main\n"
-            "volumes:\n"
-        )
-        updated = SUPERVISOR.replace_compose_image_line(
-            content,
-            "agent-blue",
-            "ghcr.io/chelokot/loylex-agent",
-            "ghcr.io/chelokot/loylex-agent@sha256:new",
-        )
-        self.assertIn("agent-blue:\n    image: ghcr.io/chelokot/loylex-agent@sha256:new", updated)
-        self.assertIn("agent-green:\n    image: ghcr.io/chelokot/loylex-agent:main", updated)
-
     def test_initial_compose_images_are_immutable(self) -> None:
         compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
         self.assertNotIn("ghcr.io/chelokot/loylex-agent:main", compose)
@@ -93,6 +73,11 @@ class SupervisorTest(unittest.TestCase):
         self.assertNotIn("podman update", installer)
         self.assertNotIn('"podman", "update"', supervisor)
 
+    def test_reinstall_keeps_deployed_images_and_installs_every_module(self) -> None:
+        installer = (SCRIPT_PATH.parents[1] / "scripts/install-host.sh").read_text()
+        self.assertIn('scripts/loylex_compose.py \\\n    /home/loylex/stack/compose.yaml', installer)
+        self.assertIn('"$deploy_root"/scripts/loylex_*.py \\\n  /home/loylex/.local/bin/', installer)
+
     def test_agent_runtime_and_cli_use_image_pinned_sources(self) -> None:
         root = SCRIPT_PATH.parents[1].parent
         entrypoint = (root / "containers/agent-entrypoint.sh").read_text()
@@ -114,26 +99,6 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(compose.count("agent-home:/home/loylex:z,U"), 2)
         self.assertEqual(compose.count("memory:/memory:z,U"), 2)
         self.assertEqual(compose.count("workspace:/workspace:z,U"), 2)
-
-    def test_rejects_missing_or_ambiguous_compose_service_image(self) -> None:
-        with self.assertRaises(SUPERVISOR.SupervisorError):
-            SUPERVISOR.replace_compose_image_line(
-                "services:\n  agent-blue:\n    restart: on-failure\n",
-                "agent-blue",
-                "example/image",
-                "example/image@sha256:1",
-            )
-        with self.assertRaises(SUPERVISOR.SupervisorError):
-            SUPERVISOR.replace_compose_image_line(
-                "services:\n"
-                "  agent-blue:\n"
-                "    image: example/image:main\n"
-                "    image: example/image:old\n",
-                "agent-blue",
-                "example/image",
-                "example/image@sha256:1",
-            )
-
 
     def test_failed_agent_start_releases_the_target_slot(self) -> None:
         supervisor = object.__new__(SUPERVISOR.Supervisor)
