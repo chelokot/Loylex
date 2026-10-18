@@ -1,29 +1,20 @@
 #!/usr/bin/env python3
 
-import hmac
 import json
 import os
 import subprocess
-import ssl
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
-from loylex_approvals import ApprovalError, Approvals
+from loylex_compose import SERVICE_REPOSITORIES, replace_compose_image_line
+from loylex_supervisor_errors import BusyError, SupervisorError
+from loylex_supervisor_http import serve
 
 
-LISTEN_HOST = os.environ.get("LOYLEX_SUPERVISOR_LISTEN_HOST", "0.0.0.0")
-LISTEN_PORT = int(os.environ.get("LOYLEX_SUPERVISOR_LISTEN_PORT", "8790"))
-TOKEN_PATH = Path(
-    os.environ.get("LOYLEX_SUPERVISOR_TOKEN_FILE", str(Path.home() / ".config/loylex/supervisor-token"))
-)
-GATEWAY_TOKEN_PATH = Path.home() / ".config/loylex/gateway-supervisor-token"
-GATEWAY_CERTIFICATE_PATH = Path.home() / ".config/loylex/gateway-certificate.pem"
-GATEWAY_KEY_PATH = Path.home() / ".config/loylex/gateway-key.pem"
 STATE_PATH = Path(
     os.environ.get(
         "LOYLEX_SUPERVISOR_STATE_FILE",
@@ -35,10 +26,6 @@ STACK_DIRECTORY = Path(
 )
 COMPOSE_FILE = STACK_DIRECTORY / "compose.yaml"
 PM3_BINARY = os.environ.get("LOYLEX_PM3_BINARY", "pm3")
-IMAGE_REPOSITORIES = {
-    "agent": "ghcr.io/chelokot/loylex-agent",
-    "gateway": "ghcr.io/chelokot/loylex-gateway",
-}
 PM3_PROJECTS = {
     "gateway": "loylex-gateway",
     "blue": "loylex-worker-blue",
@@ -64,14 +51,6 @@ AGENT_DRAIN_TIMEOUT_SECONDS = 360
 HEALTH_TIMEOUT_SECONDS = 600
 
 
-class SupervisorError(Exception):
-    pass
-
-
-class BusyError(SupervisorError):
-    pass
-
-
 def run_command(command: list[str], timeout: int = 900, cwd: Path | None = None) -> str:
     result = subprocess.run(
         command,
@@ -85,40 +64,6 @@ def run_command(command: list[str], timeout: int = 900, cwd: Path | None = None)
         detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
         raise SupervisorError(f"{command[0]} failed: {detail}")
     return result.stdout.strip()
-
-
-def replace_compose_image_line(content: str, service: str, repository: str, reference: str) -> str:
-    """Replace one image in one top-level Compose service, without touching other slots."""
-    lines = content.splitlines()
-    services_index = next((index for index, line in enumerate(lines) if line == "services:"), None)
-    if services_index is None:
-        raise SupervisorError("Compose file has no services section")
-
-    service_header = f"  {service}:"
-    service_indexes = [index for index in range(services_index + 1, len(lines)) if lines[index] == service_header]
-    if len(service_indexes) != 1:
-        raise SupervisorError(f"Expected exactly one Compose service: {service}")
-    service_index = service_indexes[0]
-
-    service_end = len(lines)
-    for index in range(service_index + 1, len(lines)):
-        if lines[index] and not lines[index].startswith("   "):
-            service_end = index
-            break
-
-    expected_images: list[int] = []
-    for index in range(service_index + 1, service_end):
-        line = lines[index]
-        if not line.startswith("    image:"):
-            continue
-        value = line[len("    image:"):].strip()
-        if value == repository or value.startswith(f"{repository}:") or value.startswith(f"{repository}@"):
-            expected_images.append(index)
-    if len(expected_images) != 1:
-        raise SupervisorError(f"Expected exactly one image for {service} using {repository}")
-
-    lines[expected_images[0]] = f"    image: {reference}"
-    return "\n".join(lines) + "\n"
 
 
 def selected_components(scope: str) -> list[str]:
@@ -348,18 +293,14 @@ class Supervisor:
             raise
 
     def _pin_compose_image(self, content: str, component: str) -> str:
-        repository = IMAGE_REPOSITORIES["agent" if component in AGENT_SLOTS else component]
+        service = COMPOSE_SERVICES[component]
+        repository = SERVICE_REPOSITORIES[service]
         tag = f"{repository}:main"
         run_command(["podman", "pull", tag])
         digest = run_command(["podman", "image", "inspect", tag, "--format", "{{.Digest}}"])
         if not digest.startswith("sha256:") or len(digest) != 71:
             raise SupervisorError(f"Invalid digest returned for {repository}")
-        return replace_compose_image_line(
-            content,
-            COMPOSE_SERVICES[component],
-            repository,
-            f"{repository}@{digest}",
-        )
+        return replace_compose_image_line(content, service, f"{repository}@{digest}")
 
     def _deploy(self, scope: str) -> None:
         components = selected_components(scope)
@@ -411,9 +352,7 @@ class Supervisor:
             if revision != expected_commit:
                 raise SupervisorError("Installed gateway changed after review")
             original = COMPOSE_FILE.read_text()
-            updated = replace_compose_image_line(
-                original, "gateway", IMAGE_REPOSITORIES["gateway"], image
-            )
+            updated = replace_compose_image_line(original, "gateway", image)
             self._atomic_write(COMPOSE_FILE, updated)
             try:
                 self._restart_gateway()
@@ -483,138 +422,5 @@ class Supervisor:
         os.replace(temporary, STATE_PATH)
 
 
-SUPERVISOR: Supervisor
-APPROVALS: Approvals
-TOKEN = ""
-GATEWAY_TOKEN = ""
-
-class GatewayHTTPServer(ThreadingHTTPServer):
-    pass
-
-
-class RequestHandler(BaseHTTPRequestHandler):
-    server_version = "LoylexSupervisor/1"
-
-    def do_GET(self) -> None:
-        if not self._authorized():
-            self._json(401, {"error": "unauthorized"})
-            return
-        if self.path.startswith("/v1/approvals/") and self._gateway_authorized():
-            try:
-                self._json(
-                    200, APPROVALS.status(self.path.removeprefix("/v1/approvals/"))
-                )
-            except ApprovalError as error:
-                self._json(404, {"error": str(error)})
-            return
-        if self.path != "/v1/status":
-            self._json(404, {"error": "not found"})
-            return
-        self._json(200, SUPERVISOR.status())
-
-    def do_POST(self) -> None:
-        if not self._authorized():
-            self._json(401, {"error": "unauthorized"})
-            return
-        parts = self.path.strip("/").split("/")
-        if len(parts) != 3 or parts[0] != "v1":
-            self._json(404, {"error": "not found"})
-            return
-        try:
-            content_length = int(self.headers.get("content-length", "0"))
-            limit = (
-                30 * 1024 * 1024 if self.path == "/v1/approvals/submit" else 1024 * 1024
-            )
-            if content_length < 0 or content_length > limit:
-                self._json(413, {"error": "request too large"})
-                return
-            payload = json.loads(self.rfile.read(content_length) or b"{}")
-            if not isinstance(payload, dict):
-                raise ValueError("JSON object required")
-            if parts[1] == "approvals":
-                if not self._gateway_authorized():
-                    self._json(403, {"error": "Gateway authorization required"})
-                    return
-                if parts[2] == "submit":
-                    self._json(202, APPROVALS.submit(payload))
-                elif parts[2] == "callback":
-                    self._json(200, APPROVALS.callback(payload))
-                elif parts[2] == "telegram-guard":
-                    self._json(
-                        200,
-                        {
-                            "allowed": APPROVALS.telegram_allowed(
-                                payload["method"], payload["params"]
-                            )
-                        },
-                    )
-                else:
-                    self._json(404, {"error": "not found"})
-                return
-            if parts[1] == "deploy" and parts[2] in {"gateway", "all"}:
-                self._json(
-                    403,
-                    {
-                        "error": "Gateway deployment requires a commit-specific Telegram approval; deploy agent separately"
-                    },
-                )
-                return
-            delay_seconds = int(payload.get("delaySeconds", 15))
-            result = SUPERVISOR.schedule(parts[1], parts[2], delay_seconds)
-            self._json(202, result)
-        except BusyError as error:
-            self._json(409, {"error": str(error)})
-        except (
-            SupervisorError,
-            ApprovalError,
-            ValueError,
-            KeyError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as error:
-            self._json(400, {"error": str(error)})
-
-    def log_message(self, _: str, *arguments: Any) -> None:
-        return
-
-    def _authorized(self) -> bool:
-        if isinstance(self.server, GatewayHTTPServer):
-            return self._gateway_authorized()
-        expected = f"Bearer {TOKEN}"
-        supplied = self.headers.get("authorization", "")
-        return hmac.compare_digest(supplied, expected)
-
-    def _gateway_authorized(self) -> bool:
-        return isinstance(self.server, GatewayHTTPServer) and bool(GATEWAY_TOKEN) and hmac.compare_digest(
-            self.headers.get("authorization", ""), f"Bearer {GATEWAY_TOKEN}"
-        )
-
-    def _json(self, status: int, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode()
-        self.send_response(status)
-        self.send_header("content-type", "application/json")
-        self.send_header("content-length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-
-def main() -> None:
-    global SUPERVISOR, APPROVALS, TOKEN, GATEWAY_TOKEN
-    TOKEN = TOKEN_PATH.read_text().strip()
-    if not TOKEN:
-        raise SupervisorError("Supervisor token is empty")
-    SUPERVISOR = Supervisor()
-    GATEWAY_TOKEN = GATEWAY_TOKEN_PATH.read_text().strip()
-    if not GATEWAY_TOKEN:
-        raise SupervisorError("Gateway supervisor token is empty")
-    APPROVALS = Approvals(SUPERVISOR)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(GATEWAY_CERTIFICATE_PATH, GATEWAY_KEY_PATH)
-    with ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler) as server, GatewayHTTPServer((LISTEN_HOST, 8791), RequestHandler) as gateway:
-        gateway.socket = context.wrap_socket(gateway.socket, server_side=True)
-        threading.Thread(target=gateway.serve_forever, daemon=True).start()
-        server.serve_forever()
-
-
 if __name__ == "__main__":
-    main()
+    serve(Supervisor())

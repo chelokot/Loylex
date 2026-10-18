@@ -259,9 +259,19 @@ for container in \
   fi
 done
 
+# The supervisor pins every deployed image into the host Compose file, so a
+# reinstall keeps those images and refreshes only the declared settings.
+if [[ -f /home/loylex/stack/compose.yaml ]]; then
+  python3 "$deploy_root"/scripts/loylex_compose.py \
+    /home/loylex/stack/compose.yaml "$deploy_root"/compose/compose.yaml \
+    >/home/loylex/stack/compose.yaml.new
+else
+  cp "$deploy_root"/compose/compose.yaml /home/loylex/stack/compose.yaml.new
+fi
 install -m 0644 -o loylex -g loylex \
-  "$deploy_root"/compose/compose.yaml \
+  /home/loylex/stack/compose.yaml.new \
   /home/loylex/stack/compose.yaml
+rm /home/loylex/stack/compose.yaml.new
 install -m 0644 -o loylex -g loylex \
   "$deploy_root"/systemd/* \
   /home/loylex/.config/systemd/user/
@@ -272,8 +282,8 @@ install -m 0755 -o loylex -g loylex \
   "$deploy_root"/scripts/loylex-supervisor \
   /home/loylex/.local/bin/loylex-supervisor
 install -m 0755 -o loylex -g loylex \
-  "$deploy_root"/scripts/loylex_approvals.py \
-  /home/loylex/.local/bin/loylex_approvals.py
+  "$deploy_root"/scripts/loylex_*.py \
+  /home/loylex/.local/bin/
 
 gateway_supervisor_token_file=/home/loylex/.config/loylex/gateway-supervisor-token
 if [[ ! -f "$gateway_supervisor_token_file" ]]; then
