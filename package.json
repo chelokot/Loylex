@@ -9,6 +9,7 @@
     "gateway": "bun src/gateway/main.ts",
     "import": "bun src/gateway/import.ts",
     "lint": "biome check .",
+    "prepare": "git config core.hooksPath .githooks",
     "typecheck": "tsc --noEmit",
     "worker": "bun src/agent/main.ts"
   },

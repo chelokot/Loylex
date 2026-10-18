@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+import math
+import subprocess
+import sys
+
+MAX_TOKENS = 5000
+BYTES_PER_TOKEN = 4
+
+SPLIT_INSTRUCTIONS = f"""
+Every hand-written file must stay within {MAX_TOKENS} tokens (bytes / {BYTES_PER_TOKEN}) so that
+an agent can read it whole. Split each file listed above before committing:
+
+1. Find the independent responsibilities inside the file: a feature, a table and its queries,
+   a command, a group of related types, a test suite for one behaviour.
+2. Move each responsibility as-is into its own file next to the original, named after what it
+   does. Do not create generic dumping grounds such as utils, helpers, or misc.
+3. Keep the original path as the small entry point that composes the new files, so existing
+   imports keep working, or update every import in the same commit.
+4. Split the matching tests the same way, one test file per new module.
+5. Move code without rewriting its logic, run the checks, stage the new files, and commit again.
+
+Only files that nobody writes by hand, such as lockfiles and generated code, may be excluded,
+by marking them linguist-generated in .gitattributes.
+"""
+
+
+def git(*arguments: str, stdin: bytes = b"") -> str:
+    return subprocess.run(["git", *arguments], input=stdin, capture_output=True, check=True).stdout.decode()
+
+
+def staged_text_files() -> list[str]:
+    numstat = git("diff", "--cached", "--numstat", "--no-renames", "--diff-filter=ACM", "-z")
+    entries = [entry.split("\t", 2) for entry in numstat.split("\0") if entry]
+    return [path for added, _, path in entries if added != "-"]
+
+
+def generated_files(paths: list[str]) -> set[str]:
+    fields = git("check-attr", "--cached", "--stdin", "-z", "linguist-generated", stdin="\0".join(paths).encode())
+    values = fields.split("\0")
+    return {path for path, value in zip(values[0::3], values[2::3]) if value not in ("unspecified", "unset", "false")}
+
+
+def staged_tokens(path: str) -> int:
+    return math.ceil(int(git("cat-file", "-s", f":{path}")) / BYTES_PER_TOKEN)
+
+
+paths = staged_text_files()
+generated = generated_files(paths) if paths else set()
+oversized = [(path, tokens) for path in paths if path not in generated if (tokens := staged_tokens(path)) > MAX_TOKENS]
+
+if oversized:
+    print(f"Commit blocked: staged files exceed {MAX_TOKENS} tokens.\n", file=sys.stderr)
+    for path, tokens in oversized:
+        print(f"  {path}: {tokens} tokens", file=sys.stderr)
+    print(SPLIT_INSTRUCTIONS, file=sys.stderr)
+    sys.exit(1)
