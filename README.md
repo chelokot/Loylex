@@ -296,7 +296,8 @@ The installer creates the locked `loylex` host user, enables lingering rootless 
 Podman Compose (from EPEL on Rocky) and the exact pinned PM3 RPM (from the `exposedcat/pm3` COPR on Fedora),
 adds a 4 GiB swap file when
 the server has no swap, opens only SSH, and enables backups plus the narrow self-management
-supervisor. Existing Quadlet units and exact old container names are stopped during migration;
+supervisor. Existing Quadlet units are stopped and their definitions deleted, because Quadlet
+regenerates them on every boot; exact old container names are removed during migration;
 the five named volumes are preserved. The installer creates and verifies the host-managed
 append-only audit file; see [`deploy/host/inbound-audit.md`](deploy/host/inbound-audit.md).
 

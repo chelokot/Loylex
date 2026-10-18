@@ -60,7 +60,6 @@ SERVICE_COMPONENTS = {
 }
 AGENT_SLOTS = ("blue", "green")
 ACTIVE_CONTAINER_STATES = {"active", "activating"}
-AGENT_MEMORY_SWAP_LIMIT = "13g"
 AGENT_DRAIN_TIMEOUT_SECONDS = 360
 HEALTH_TIMEOUT_SECONDS = 600
 
@@ -86,16 +85,6 @@ def run_command(command: list[str], timeout: int = 900, cwd: Path | None = None)
         detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
         raise SupervisorError(f"{command[0]} failed: {detail}")
     return result.stdout.strip()
-
-
-def replace_image_line(content: str, repository: str, reference: str) -> str:
-    """Keep the old Quadlet helper available for callers and migration tests."""
-    expected_prefix = f"Image={repository}"
-    matching = [line for line in content.splitlines() if line.startswith(expected_prefix)]
-    if len(matching) != 1:
-        raise SupervisorError(f"Expected exactly one {expected_prefix} line")
-    lines = [f"Image={reference}" if line.startswith(expected_prefix) else line for line in content.splitlines()]
-    return "\n".join(lines) + "\n"
 
 
 def replace_compose_image_line(content: str, service: str, repository: str, reference: str) -> str:
@@ -301,12 +290,6 @@ class Supervisor:
     def _check_agent(self) -> None:
         run_command(["podman", "exec", self._current_agent_container(), "bun", "run", "check"])
 
-    @staticmethod
-    def _apply_agent_resource_limits(slot: str) -> None:
-        run_command(
-            ["podman", "update", "--memory-swap", AGENT_MEMORY_SWAP_LIMIT, CONTAINER_NAMES[slot]]
-        )
-
     def _wait_inactive(self, component: str, timeout: int = AGENT_DRAIN_TIMEOUT_SECONDS) -> None:
         deadline = time.monotonic() + timeout
         last_state = "unknown"
@@ -341,9 +324,6 @@ class Supervisor:
         committed = False
         try:
             self._run_pm3(["start", target_project, "--", "--force-recreate"], timeout=900)
-            # podman-compose currently applies mem_limit but not memswap_limit;
-            # enforce the legacy aggregate cap after Compose creates the target.
-            self._apply_agent_resource_limits(target)
             self._wait_healthy(target)
             # The new process registers with the gateway before it starts polling. From this
             # point on, new jobs have the new generation while the old worker drains its own.
