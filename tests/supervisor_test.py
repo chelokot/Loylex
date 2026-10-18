@@ -54,6 +54,7 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn("/run/secrets/loylex-telegram-token", compose)
         self.assertEqual(compose.count("/run/secrets/loylex-bridge-token"), 3)
         self.assertEqual(compose.count("/run/secrets/loylex-supervisor-token"), 2)
+        self.assertEqual(compose.count("/run/secrets/loylex-openai-api-key"), 2)
 
     def test_worker_root_filesystems_are_read_only(self) -> None:
         compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
