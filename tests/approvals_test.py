@@ -1,5 +1,5 @@
-import gzip
 import hashlib
+import base64
 import json
 import time
 from unittest import mock
@@ -64,25 +64,6 @@ class ApprovalTest(ApprovalTestCase):
         for repository in ("../user", "owner/repo/extra", "https://github.com/owner/repo", None):
             with self.subTest(repository=repository), self.assertRaises(broker.ApprovalError):
                 self.approvals._validate_operation({**operation, "headRepository": repository})
-
-    def test_document_transport_compresses_large_packages_losslessly(self) -> None:
-        for package, compressed in ((b"small package", False), (b"full diff\n" * 10000, True)):
-            with self.subTest(compressed=compressed):
-                with mock.patch.object(broker, "secret", return_value="test"), mock.patch.object(
-                    broker, "https_request", return_value=(200, b'{"ok":true,"result":{}}')
-                ) as request:
-                    broker.Approvals._telegram(self.approvals, "sendDocument", {"chat_id": -1}, package)
-                body = request.call_args.args[3]
-                header, payload = body.split(b'name="document";', 1)[1].split(b"\r\n\r\n", 1)
-                data = payload.rsplit(b"\r\n--", 1)[0]
-                if compressed:
-                    self.assertIn(b'filename="operation.txt.gz"', header)
-                    self.assertIn(b"application/gzip", header)
-                    self.assertLess(len(data), len(package))
-                    self.assertEqual(gzip.decompress(data), package)
-                else:
-                    self.assertIn(b'filename="operation.txt"', header)
-                    self.assertEqual(data, package)
 
     def test_full_diff_and_approved_push(self) -> None:
         identifier = self.submit()
@@ -201,6 +182,39 @@ class ApprovalTest(ApprovalTestCase):
         self.assertFalse(
             self.approvals.telegram_allowed("deleteMessage", {"chat_id": -100, "message_id": 102})
         )
+
+    def test_stale_fork_new_branch_reviews_contribution_not_upstream_history(self) -> None:
+        upstream = self.directory / "upstream.git"
+        self.git("clone", "--bare", str(self.source), str(upstream))
+        self.approvals.remotes["https://github.com/upstream/project.git"] = upstream
+        (self.source / "contribution.txt").write_text("actual contribution\n")
+        self.git("add", "contribution.txt")
+        self.git("commit", "-m", "Contribution")
+        contribution = self.git("rev-parse", "HEAD")
+        bundle = self.directory / "contribution.bundle"
+        # Upstream prerequisites are absent from the stale fork.
+        self.git("bundle", "create", str(bundle), "HEAD", "^" + self.new_sha)
+        operation = {**self.operation, "ref": "refs/heads/contribution", "newSha": contribution,
+                     "bundle": base64.b64encode(bundle.read_bytes()).decode()}
+        with mock.patch.object(self.approvals, "_fork_parent", return_value="upstream/project"):
+            identifier = self.submit(operation)
+        package = self.approvals.messages[0][2]
+        self.assertIn(b"actual contribution", package)
+        self.assertNotIn(b"-before\n+after", package)
+        self.assertNotIn(b"    Change\n", package)
+        saved = json.loads((self.approvals.root / identifier / "operation.json").read_bytes())
+        self.assertEqual(saved["reviewBaseSha"], self.new_sha)
+        self.assertEqual(saved["reviewBaseRepository"], "upstream/project")
+        self.assertEqual(saved["forkBaseSha"], self.old_sha)
+        self.assertTrue(self.callback(identifier)["accepted"])
+        self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+        self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "contribution"), contribution)
+        self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "main"), self.old_sha)
+
+    def test_existing_fork_branch_does_not_hide_changes_against_upstream(self) -> None:
+        with mock.patch.object(self.approvals, "_fork_parent", side_effect=AssertionError("unexpected")):
+            self.submit()
+        self.assertIn(b"-before\n+after", self.approvals.messages[0][2])
 
     def test_new_branch_fetches_bundle_prerequisites_and_shows_only_new_changes(
         self,

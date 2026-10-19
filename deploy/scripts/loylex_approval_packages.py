@@ -1,12 +1,13 @@
 import base64
 import hashlib
+import json
 import os
 import re
 from pathlib import Path
 from typing import Any
 
-from loylex_approval_host import MAX_PACKAGE_BYTES, ApprovalError, command, encoded, secret
-from loylex_approval_validation import MAX_BUNDLE_BYTES, SHA_PATTERN
+from loylex_approval_host import MAX_PACKAGE_BYTES, ApprovalError, command, encoded, https_request, secret
+from loylex_approval_validation import MAX_BUNDLE_BYTES, REPOSITORY_PATTERN, SHA_PATTERN
 
 
 ZERO_SHA = "0" * 40
@@ -82,6 +83,22 @@ class ApprovalPackages:
                 sha,
             )
 
+    def _fork_parent(self, repository: str) -> str | None:
+        # Public metadata supplies comparison context, never authorization or a push target.
+        status, data = https_request(
+            "api.github.com", f"/repos/{repository}", "GET", b"",
+            {"Accept": "application/vnd.github+json", "User-Agent": "Loylex-Approvals"},
+        )
+        if status != 200:
+            raise ApprovalError(f"Cannot verify fork comparison base (HTTP {status})")
+        metadata = json.loads(data)
+        if not metadata.get("fork"):
+            return None
+        parent = metadata.get("parent", {}).get("full_name")
+        if not isinstance(parent, str) or not REPOSITORY_PATTERN.fullmatch(parent) or ".." in parent:
+            raise ApprovalError("Invalid fork parent metadata")
+        return parent
+
     def _snapshot(self, identifier: str, operation: dict[str, Any]) -> bytes:
         directory = self.root / identifier
         operation = dict(operation)
@@ -96,7 +113,16 @@ class ApprovalPackages:
             if review_base == ZERO_SHA:
                 review_base = self._remote_sha(directory, repository, "HEAD")
                 self._fetch(directory, repository, review_base)
-            operation["reviewBaseSha"] = review_base
+            parent_sha = ZERO_SHA
+            if operation["oldSha"] == ZERO_SHA and operation["ref"].startswith("refs/heads/"):
+                parent = self._fork_parent(repository)
+                if parent is not None:
+                    parent_sha = self._remote_sha(directory, parent, "HEAD")
+                    if parent_sha == ZERO_SHA:
+                        raise ApprovalError("Fork parent has no published comparison base")
+                    self._fetch(directory, parent, parent_sha)
+                    operation["reviewBaseRepository"] = parent
+                    operation["upstreamSha"] = parent_sha
             bundle = base64.b64decode(operation.pop("bundle"), validate=True)
             if len(bundle) > MAX_BUNDLE_BYTES:
                 raise ApprovalError("Bundle exceeds size limit")
@@ -106,8 +132,19 @@ class ApprovalPackages:
             self._git(directory, "bundle", "unbundle", str(bundle_path))
             self._git(directory, "rev-parse", "--verify", f"{operation['newSha']}^{{commit}}")
             operation["bundleSha256"] = hashlib.sha256(bundle).hexdigest()
-            base = review_base
             head = operation["newSha"]
+            if parent_sha != ZERO_SHA:
+                # Like a PR: published upstream history is baseline, not this contribution.
+                # No caller-supplied SHA can hide unpublished commits from review.
+                operation["forkBaseSha"] = review_base
+                review_base = self._git(directory, "merge-base", parent_sha, head).decode().strip()
+                operation["comparisonNote"] = (
+                    "New fork branch: contribution compared with the merge base of published "
+                    "upstream HEAD; existing upstream history is excluded from this diff. "
+                    "The destination default branch is not modified."
+                )
+            operation["reviewBaseSha"] = review_base
+            base = review_base
             if operation["oldSha"] != ZERO_SHA:
                 if operation["ref"].startswith("refs/tags/"):
                     raise ApprovalError("Existing tags cannot be replaced")

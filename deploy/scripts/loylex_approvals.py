@@ -1,5 +1,4 @@
 import hashlib
-import gzip
 import json
 import re
 import shutil
@@ -136,12 +135,7 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
             for key, value in payload.items():
                 text = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
                 body += f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{text}\r\n'.encode()
-            compressed = len(document) > 64 * 1024
-            filename = "operation.txt.gz" if compressed else "operation.txt"
-            mime_type = "application/gzip" if compressed else "text/plain"
-            if compressed:
-                document = gzip.compress(document, mtime=0)
-            body += f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="{filename}"\r\nContent-Type: {mime_type}\r\n\r\n'.encode()
+            body += f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="operation.txt"\r\nContent-Type: text/plain\r\n\r\n'.encode()
             body += document + f"\r\n--{boundary}--\r\n".encode()
             content_type = f"multipart/form-data; boundary={boundary}"
         status, data = https_request(
@@ -173,8 +167,7 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                         "caption": (
                             f"Проверка операции: {operation['kind']} · "
                             f"{operation.get('repository', 'chelokot/Loylex')}\n"
-                            + ("Полный пакет сжат без потерь (gzip)." if len(package) > 64 * 1024
-                               else "Полный пакет изменений.")
+                            + "Изменения относительно указанной в пакете базы сравнения."
                         ),
                         "reply_parameters": {
                             "message_id": row["reply_id"],

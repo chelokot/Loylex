@@ -13,6 +13,19 @@ import loylex_supervisor_http as supervisor_http
 
 
 class ApprovalBoundaryTest(ApprovalTestCase):
+    def test_fork_comparison_metadata_is_public_and_validated(self) -> None:
+        for metadata, expected in (({"fork": False}, None),
+                                   ({"fork": True, "parent": {"full_name": "upstream/project"}}, "upstream/project")):
+            with mock.patch.object(packages, "https_request", return_value=(200, json.dumps(metadata).encode())) as request:
+                self.assertEqual(packages.ApprovalPackages._fork_parent(self.approvals, "owner/project"), expected)
+                self.assertEqual(request.call_args.args[:4], ("api.github.com", "/repos/owner/project", "GET", b""))
+                self.assertNotIn("Authorization", request.call_args.args[4])
+        for status, data in ((503, b"{}"), (200, b'{"fork":true}'),
+                             (200, b'{"fork":true,"parent":{"full_name":"../bad"}}')):
+            with mock.patch.object(packages, "https_request", return_value=(status, data)):
+                with self.assertRaises(broker.ApprovalError):
+                    packages.ApprovalPackages._fork_parent(self.approvals, "owner/project")
+
     def test_git_error_categories_do_not_echo_remote_output(self) -> None:
         cases = (
             (b"fatal: Authentication failed for https://secret@example.test", "authentication rejected"),

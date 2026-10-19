@@ -28,6 +28,9 @@ class LocalApprovals(broker.Approvals):
         ]
         return host.command(["git", "--git-dir", str(directory / "repository.git"), *arguments])
 
+    def _fork_parent(self, repository: str) -> str | None:
+        return None
+
     def _review(self, identifier: str, package: bytes) -> str:
         return "Изменяется тестовый файл."
 
