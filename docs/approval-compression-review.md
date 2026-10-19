@@ -18,7 +18,7 @@ files. Existing supervisor snapshots and rollback remain in place; rollback is a
 reviewable revert through the same infrastructure approval path. Agent deployment
 uses the normal published image; it does not apply the host broker update.
 
-Validation: full bun run check (249 JS tests, 40 Python tests, typecheck and lint),
+Validation: full bun run check (249 JS tests, 38 Python tests, typecheck and lint),
 git diff --check, and a real multipart transport regression that decompresses large
 uploads and compares exact bytes, also checking small plain-text uploads. Existing
 integrity, authorization, lease, expiry and push tests pass. Residual limitation:
