@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import json
 import time
@@ -63,6 +64,25 @@ class ApprovalTest(ApprovalTestCase):
         for repository in ("../user", "owner/repo/extra", "https://github.com/owner/repo", None):
             with self.subTest(repository=repository), self.assertRaises(broker.ApprovalError):
                 self.approvals._validate_operation({**operation, "headRepository": repository})
+
+    def test_document_transport_compresses_large_packages_losslessly(self) -> None:
+        for package, compressed in ((b"small package", False), (b"full diff\n" * 10000, True)):
+            with self.subTest(compressed=compressed):
+                with mock.patch.object(broker, "secret", return_value="test"), mock.patch.object(
+                    broker, "https_request", return_value=(200, b'{"ok":true,"result":{}}')
+                ) as request:
+                    broker.Approvals._telegram(self.approvals, "sendDocument", {"chat_id": -1}, package)
+                body = request.call_args.args[3]
+                header, payload = body.split(b'name="document";', 1)[1].split(b"\r\n\r\n", 1)
+                data = payload.rsplit(b"\r\n--", 1)[0]
+                if compressed:
+                    self.assertIn(b'filename="operation.txt.gz"', header)
+                    self.assertIn(b"application/gzip", header)
+                    self.assertLess(len(data), len(package))
+                    self.assertEqual(gzip.decompress(data), package)
+                else:
+                    self.assertIn(b'filename="operation.txt"', header)
+                    self.assertEqual(data, package)
 
     def test_full_diff_and_approved_push(self) -> None:
         identifier = self.submit()
@@ -200,7 +220,7 @@ class ApprovalTest(ApprovalTestCase):
         identifier = self.submit()
         document = self.approvals.messages[0][1]
         notice = self.approvals.messages[1][1]
-        self.assertEqual(document["caption"], "Пакет операции")
+        self.assertIn("Проверка операции: push", document["caption"])
         self.assertEqual(notice["text"], "@Chelokot\n\nTLDR: Изменяется тестовый файл.")
         self.assertEqual(notice["reply_parameters"], {"message_id": 101})
         self.assertEqual(
