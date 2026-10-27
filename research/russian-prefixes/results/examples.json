@@ -1,0 +1,1315 @@
+{
+  "красный": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "красный",
+        "family": "R:красн",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "красн",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "краса",
+        "roots": "красн",
+        "root_start": 0,
+        "root_end": 5,
+        "root_letters": 5,
+        "root_relation": "exact_root",
+        "morphemes": "красн:ROOT/ый:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "красный",
+        "family": "T0523:красный",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "красны",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "красноармейский",
+        "roots": "красн",
+        "root_start": 0,
+        "root_end": 5,
+        "root_letters": 5,
+        "root_relation": "after_root_end",
+        "morphemes": "красн:ROOT/ый:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "красный",
+        "family": "красн",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "красны",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "красно-бурый",
+        "roots": "красн",
+        "root_start": 0,
+        "root_end": 5,
+        "root_letters": 5,
+        "root_relation": "after_root_end",
+        "morphemes": "красн:ROOT/ый:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "красный",
+        "family": "красн",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "красн",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "краса",
+        "roots": "красн",
+        "root_start": 0,
+        "root_end": 5,
+        "root_letters": 5,
+        "root_relation": "exact_root",
+        "morphemes": "красн:ROOT/ый:END"
+      }
+    ]
+  },
+  "красивый": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "красивый",
+        "family": "K:крас¹",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "красивы",
+        "prefix_letters": 7,
+        "prefix_characters": 7,
+        "suffix": "асивый",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "красивее",
+        "roots": "крас",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "after_root_end",
+        "morphemes": "крас:ROOT/ив:SUFF/ый:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "красивый",
+        "family": "T0521:красивый",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "красив",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "асивый",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "красильный",
+        "roots": "крас",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "after_root_end",
+        "morphemes": "крас:ROOT/ив:SUFF/ый:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "красивый",
+        "family": "крас",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "красивы",
+        "prefix_letters": 7,
+        "prefix_characters": 7,
+        "suffix": "асивый",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "красивенький",
+        "roots": "крас",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "after_root_end",
+        "morphemes": "крас:ROOT/ив:SUFF/ый:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "красивый",
+        "family": "крас",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "краси",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "асивый",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "красненький",
+        "roots": "крас",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "after_root_end",
+        "morphemes": "крас:ROOT/ив:SUFF/ый:END"
+      }
+    ]
+  },
+  "мрачный": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "мрачный",
+        "family": "K:мер³",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "мрачный",
+        "suffix_letters": 7,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/ый:END"
+      }
+    ],
+    "tikhonov_nests": [],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "мрачный",
+        "family": "мрач",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "мрачный",
+        "suffix_letters": 7,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/ый:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "мрачный",
+        "family": "мрач",
+        "word_letters": 7,
+        "word_characters": 7,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "мрачный",
+        "suffix_letters": 7,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/ый:END"
+      }
+    ]
+  },
+  "мрачность": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "мрачность",
+        "family": "K:мер³",
+        "word_letters": 9,
+        "word_characters": 9,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "мрачность",
+        "suffix_letters": 9,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/ость:SUFF"
+      }
+    ],
+    "tikhonov_nests": [],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "мрачность",
+        "family": "мрач",
+        "word_letters": 9,
+        "word_characters": 9,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "мрачность",
+        "suffix_letters": 9,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/ость:SUFF"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "мрачность",
+        "family": "мрач",
+        "word_letters": 9,
+        "word_characters": 9,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "мрачность",
+        "suffix_letters": 9,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/ость:SUFF"
+      }
+    ]
+  },
+  "мрачнеть": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "мрачнеть",
+        "family": "K:мер³",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ачнеть",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/е:SUFF/ть:SUFF"
+      }
+    ],
+    "tikhonov_nests": [],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "мрачнеть",
+        "family": "мрач",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ачнеть",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/е:SUFF/ть:SUFF"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "мрачнеть",
+        "family": "мрач",
+        "word_letters": 8,
+        "word_characters": 8,
+        "prefix": "мрач",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ачнеть",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "мразь",
+        "roots": "мрач",
+        "root_start": 0,
+        "root_end": 4,
+        "root_letters": 4,
+        "root_relation": "exact_root",
+        "morphemes": "мрач:ROOT/н:SUFF/е:SUFF/ть:SUFF"
+      }
+    ]
+  },
+  "рука": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "рука",
+        "family": "K:рук",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "рука",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "рука",
+        "suffix_letters": 4,
+        "needs_end_marker": false,
+        "competitor": "руководитель",
+        "roots": "рук",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "рук:ROOT/а:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "рука",
+        "family": "T1109:рука",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "рука",
+        "suffix_letters": 4,
+        "needs_end_marker": true,
+        "competitor": "рукаводержатель",
+        "roots": "рук",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "рук:ROOT/а:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "рука",
+        "family": "рук",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "рука",
+        "suffix_letters": 4,
+        "needs_end_marker": true,
+        "competitor": "рукаводержатель",
+        "roots": "рук",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "рук:ROOT/а:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "рука",
+        "family": "рук",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "рука",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "рука",
+        "suffix_letters": 4,
+        "needs_end_marker": false,
+        "competitor": "руководитель",
+        "roots": "рук",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "рук:ROOT/а:END"
+      }
+    ]
+  },
+  "ручной": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "ручной",
+        "family": "K:рук",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "ручн",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ручной",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "ручеек",
+        "roots": "руч",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "руч:ROOT/н:SUFF/ой:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "ручной",
+        "family": "T1109:рука",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "ручн",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ручной",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "ручка",
+        "roots": "руч",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "руч:ROOT/н:SUFF/ой:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "ручной",
+        "family": "руч",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "ручн",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ручной",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "ручеек",
+        "roots": "руч",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "руч:ROOT/н:SUFF/ой:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "ручной",
+        "family": "руч",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "ручн",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ручной",
+        "suffix_letters": 6,
+        "needs_end_marker": false,
+        "competitor": "ручеек",
+        "roots": "руч",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "руч:ROOT/н:SUFF/ой:END"
+      }
+    ]
+  },
+  "кот": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "кот",
+        "family": "K:кот¹",
+        "word_letters": 3,
+        "word_characters": 3,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": true,
+        "competitor": "котангенс",
+        "roots": "кот",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "кот:ROOT"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "кот",
+        "family": "T0515:кот",
+        "word_letters": 3,
+        "word_characters": 3,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "кот",
+        "suffix_letters": 3,
+        "needs_end_marker": true,
+        "competitor": "котлоочистка",
+        "roots": "кот",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "кот:ROOT"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "кот",
+        "family": "кот",
+        "word_letters": 3,
+        "word_characters": 3,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": true,
+        "competitor": "котангенс",
+        "roots": "кот",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "кот:ROOT"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "кот",
+        "family": "кот",
+        "word_letters": 3,
+        "word_characters": 3,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": true,
+        "competitor": "котангенс",
+        "roots": "кот",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "кот:ROOT"
+      }
+    ]
+  },
+  "водный": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "водный",
+        "family": "K:вод²",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "водны",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водно-воздушный",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/н:SUFF/ый:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "водный",
+        "family": "T0125:вода",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "водны",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водноспортивный",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/н:SUFF/ый:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "водный",
+        "family": "вод",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "водны",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водно-воздушный",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/н:SUFF/ый:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "водный",
+        "family": "вод",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "водны",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водноспортивный",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/н:SUFF/ый:END"
+      }
+    ]
+  },
+  "водить": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "водить",
+        "family": "K:важ²",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "водит",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водица",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/и:SUFF/ть:SUFF"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "водить",
+        "family": "T0094:вести",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "водит",
+        "prefix_letters": 5,
+        "prefix_characters": 5,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водица",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/и:SUFF/ть:SUFF"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "водить",
+        "family": "вод",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "води",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водворение",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/и:SUFF/ть:SUFF"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "водить",
+        "family": "вод",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "води",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "водворение",
+        "roots": "вод",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "after_root_end",
+        "morphemes": "вод:ROOT/и:SUFF/ть:SUFF"
+      }
+    ]
+  },
+  "прекрасный": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "прекрасный",
+        "family": "R:прекрасн",
+        "word_letters": 10,
+        "word_characters": 10,
+        "prefix": "прекрасн",
+        "prefix_letters": 8,
+        "prefix_characters": 8,
+        "suffix": "екрасный",
+        "suffix_letters": 8,
+        "needs_end_marker": false,
+        "competitor": "прекрасивый",
+        "roots": "прекрасн",
+        "root_start": 0,
+        "root_end": 8,
+        "root_letters": 8,
+        "root_relation": "exact_root",
+        "morphemes": "прекрасн:ROOT/ый:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "прекрасный",
+        "family": "T0523:красный",
+        "word_letters": 10,
+        "word_characters": 10,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "прекрасный",
+        "roots": "прекрасн",
+        "root_start": 0,
+        "root_end": 8,
+        "root_letters": 8,
+        "root_relation": "no_prefix",
+        "morphemes": "прекрасн:ROOT/ый:END"
+      },
+      {
+        "dataset": "tikhonov_nests",
+        "word": "прекрасный",
+        "family": "T0974:прекрасный",
+        "word_letters": 10,
+        "word_characters": 10,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "",
+        "suffix_letters": null,
+        "needs_end_marker": false,
+        "competitor": "прекрасный",
+        "roots": "прекрасн",
+        "root_start": 0,
+        "root_end": 8,
+        "root_letters": 8,
+        "root_relation": "no_prefix",
+        "morphemes": "прекрасн:ROOT/ый:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "прекрасный",
+        "family": "прекрасн",
+        "word_letters": 10,
+        "word_characters": 10,
+        "prefix": "прекрасны",
+        "prefix_letters": 9,
+        "prefix_characters": 9,
+        "suffix": "екрасный",
+        "suffix_letters": 8,
+        "needs_end_marker": false,
+        "competitor": "прекраснодушие",
+        "roots": "прекрасн",
+        "root_start": 0,
+        "root_end": 8,
+        "root_letters": 8,
+        "root_relation": "after_root_end",
+        "morphemes": "прекрасн:ROOT/ый:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "прекрасный",
+        "family": "прекрасн",
+        "word_letters": 10,
+        "word_characters": 10,
+        "prefix": "прекрасн",
+        "prefix_letters": 8,
+        "prefix_characters": 8,
+        "suffix": "екрасный",
+        "suffix_letters": 8,
+        "needs_end_marker": false,
+        "competitor": "прекрасивый",
+        "roots": "прекрасн",
+        "root_start": 0,
+        "root_end": 8,
+        "root_letters": 8,
+        "root_relation": "exact_root",
+        "morphemes": "прекрасн:ROOT/ый:END"
+      }
+    ]
+  },
+  "безопасность": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "безопасность",
+        "family": "R:опас",
+        "word_letters": 12,
+        "word_characters": 12,
+        "prefix": "безопа",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "пасность",
+        "suffix_letters": 8,
+        "needs_end_marker": false,
+        "competitor": "безопилочный",
+        "roots": "опас",
+        "root_start": 3,
+        "root_end": 7,
+        "root_letters": 4,
+        "root_relation": "before_root_end",
+        "morphemes": "без:PREF/опас:ROOT/н:SUFF/ость:SUFF"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "безопасность",
+        "family": "T0786:опасаться",
+        "word_letters": 12,
+        "word_characters": 12,
+        "prefix": "безопа",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "асность",
+        "suffix_letters": 7,
+        "needs_end_marker": false,
+        "competitor": "безопытный",
+        "roots": "опас",
+        "root_start": 3,
+        "root_end": 7,
+        "root_letters": 4,
+        "root_relation": "before_root_end",
+        "morphemes": "без:PREF/опас:ROOT/н:SUFF/ость:SUFF"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "безопасность",
+        "family": "опас",
+        "word_letters": 12,
+        "word_characters": 12,
+        "prefix": "безопа",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "пасность",
+        "suffix_letters": 8,
+        "needs_end_marker": false,
+        "competitor": "безопилочный",
+        "roots": "опас",
+        "root_start": 3,
+        "root_end": 7,
+        "root_letters": 4,
+        "root_relation": "before_root_end",
+        "morphemes": "без:PREF/опас:ROOT/н:SUFF/ость:SUFF"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "безопасность",
+        "family": "опас",
+        "word_letters": 12,
+        "word_characters": 12,
+        "prefix": "безопа",
+        "prefix_letters": 6,
+        "prefix_characters": 6,
+        "suffix": "пасность",
+        "suffix_letters": 8,
+        "needs_end_marker": false,
+        "competitor": "безопилочный",
+        "roots": "опас",
+        "root_start": 3,
+        "root_end": 7,
+        "root_letters": 4,
+        "root_relation": "before_root_end",
+        "morphemes": "без:PREF/опас:ROOT/н:SUFF/ость:SUFF"
+      }
+    ]
+  },
+  "электрификация": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "электрификация",
+        "family": "K:электр",
+        "word_letters": 14,
+        "word_characters": 14,
+        "prefix": "элек",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ктрификация",
+        "suffix_letters": 11,
+        "needs_end_marker": false,
+        "competitor": "элеватор",
+        "roots": "электр",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "before_root_end",
+        "morphemes": "электр:ROOT/ифик:SUFF/аци:SUFF/я:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "электрификация",
+        "family": "T1544:электричество",
+        "word_letters": 14,
+        "word_characters": 14,
+        "prefix": "электри",
+        "prefix_letters": 7,
+        "prefix_characters": 7,
+        "suffix": "рификация",
+        "suffix_letters": 9,
+        "needs_end_marker": false,
+        "competitor": "электроанализ",
+        "roots": "электр",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "after_root_end",
+        "morphemes": "электр:ROOT/ифик:SUFF/аци:SUFF/я:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "электрификация",
+        "family": "электр",
+        "word_letters": 14,
+        "word_characters": 14,
+        "prefix": "электри",
+        "prefix_letters": 7,
+        "prefix_characters": 7,
+        "suffix": "ктрификация",
+        "suffix_letters": 11,
+        "needs_end_marker": false,
+        "competitor": "электроакустика",
+        "roots": "электр",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "after_root_end",
+        "morphemes": "электр:ROOT/ифик:SUFF/аци:SUFF/я:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "электрификация",
+        "family": "электр",
+        "word_letters": 14,
+        "word_characters": 14,
+        "prefix": "элек",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "ктрификация",
+        "suffix_letters": 11,
+        "needs_end_marker": false,
+        "competitor": "элеватор",
+        "roots": "электр",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "before_root_end",
+        "morphemes": "электр:ROOT/ифик:SUFF/аци:SUFF/я:END"
+      }
+    ]
+  },
+  "абажур": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "абажур",
+        "family": "R:абажур",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "абаж",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "бажур",
+        "suffix_letters": 5,
+        "needs_end_marker": false,
+        "competitor": "абаз",
+        "roots": "абажур",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "before_root_end",
+        "morphemes": "абажур:ROOT"
+      }
+    ],
+    "tikhonov_nests": [],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "абажур",
+        "family": "абажур",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "бажур",
+        "suffix_letters": 5,
+        "needs_end_marker": true,
+        "competitor": "абажуродержатель",
+        "roots": "абажур",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "no_prefix",
+        "morphemes": "абажур:ROOT"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "абажур",
+        "family": "абажур",
+        "word_letters": 6,
+        "word_characters": 6,
+        "prefix": "абаж",
+        "prefix_letters": 4,
+        "prefix_characters": 4,
+        "suffix": "бажур",
+        "suffix_letters": 5,
+        "needs_end_marker": false,
+        "competitor": "абаз",
+        "roots": "абажур",
+        "root_start": 0,
+        "root_end": 6,
+        "root_letters": 6,
+        "root_relation": "before_root_end",
+        "morphemes": "абажур:ROOT"
+      }
+    ]
+  },
+  "мама": {
+    "mapped_roots": [
+      {
+        "dataset": "mapped_roots",
+        "word": "мама",
+        "family": "K:мам",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "мама",
+        "suffix_letters": 4,
+        "needs_end_marker": true,
+        "competitor": "мамалыга",
+        "roots": "мам",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "мам:ROOT/а:END"
+      }
+    ],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "мама",
+        "family": "T0608:мама",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "мам",
+        "prefix_letters": 3,
+        "prefix_characters": 3,
+        "suffix": "мама",
+        "suffix_letters": 4,
+        "needs_end_marker": false,
+        "competitor": "магазин",
+        "roots": "мам",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "exact_root",
+        "morphemes": "мам:ROOT/а:END"
+      }
+    ],
+    "surface_roots": [
+      {
+        "dataset": "surface_roots",
+        "word": "мама",
+        "family": "мам",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "мама",
+        "suffix_letters": 4,
+        "needs_end_marker": true,
+        "competitor": "мамалыга",
+        "roots": "мам",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "мам:ROOT/а:END"
+      }
+    ],
+    "first_root": [
+      {
+        "dataset": "first_root",
+        "word": "мама",
+        "family": "мам",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "мама",
+        "suffix_letters": 4,
+        "needs_end_marker": true,
+        "competitor": "мамалыга",
+        "roots": "мам",
+        "root_start": 0,
+        "root_end": 3,
+        "root_letters": 3,
+        "root_relation": "no_prefix",
+        "morphemes": "мам:ROOT/а:END"
+      }
+    ]
+  },
+  "стол": {
+    "mapped_roots": [],
+    "tikhonov_nests": [
+      {
+        "dataset": "tikhonov_nests",
+        "word": "стол",
+        "family": "T1277:стол",
+        "word_letters": 4,
+        "word_characters": 4,
+        "prefix": "",
+        "prefix_letters": null,
+        "prefix_characters": null,
+        "suffix": "стол",
+        "suffix_letters": 4,
+        "needs_end_marker": true,
+        "competitor": "столб",
+        "roots": "",
+        "root_start": "",
+        "root_end": "",
+        "root_letters": "",
+        "root_relation": "unknown_or_multiple_roots",
+        "morphemes": ""
+      }
+    ],
+    "surface_roots": [],
+    "first_root": []
+  }
+}

@@ -1,0 +1,6 @@
+__pycache__/
+results/*.csv.gz
+results/*_families.jsonl.gz
+artifacts/explorer.html
+artifacts/*.zip
+artifacts/page-*.png

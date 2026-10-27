@@ -1,0 +1,46 @@
+[
+  {
+    "file": "rumorphs-lemmas.txt",
+    "url": "https://github.com/cmc-msu-ai/NLPDatasets/releases/download/v0.2/RuMorphs-Lemmas.txt",
+    "bytes": 6242924,
+    "sha256": "1ac873726ee6197068d2945890160ea752db5680192a9ac4a467af20d806afd0"
+  },
+  {
+    "file": "nests.zip",
+    "url": "https://raw.githubusercontent.com/mashashaitz/Russian-Derinet/5e5d994cd148323c795b8373a1eed1ac951fc3af/preprocessed_dicts/nests.json.zip",
+    "bytes": 1184028,
+    "sha256": "76fdfd1aa206792fecc025f4334d2c5e2d1a520111b2401a61387ab1aba87d46"
+  },
+  {
+    "file": "russian-derinet.zip",
+    "url": "https://raw.githubusercontent.com/mashashaitz/Russian-Derinet/5e5d994cd148323c795b8373a1eed1ac951fc3af/result/ru-der-no-duplicates-NX.tsv.zip",
+    "bytes": 1344599,
+    "sha256": "65d97750751c5049bee9d38dc3ff6b24728e9fbafadf1cc24ee198e96b9e2813"
+  },
+  {
+    "file": "tikhonovsource.txt",
+    "url": "https://raw.githubusercontent.com/cmc-msu-ai/NLPDatasets/f533458a53adfb61338bb707bf8d7766817d1897/morphemic/dicts/tikhonovsource.txt",
+    "bytes": 5409734,
+    "sha256": "a9c247fca8b40b91141dcc601de2a124b10689408fb6eb5e0b6423ac190338b2"
+  },
+  {
+    "file": "root_groups.txt",
+    "url": "https://raw.githubusercontent.com/tabidots/ru_roots/67e1e1e5a6b23b11d57f262c2e75ccc0018580c1/root_groups.txt",
+    "bytes": 77238,
+    "sha256": "180fe6a97fe66a32980621bef7b82208f4d1b192e1d987d476397fe55fa1e676"
+  },
+  {
+    "file": "lemmas_to_roots.tsv",
+    "url": "https://raw.githubusercontent.com/tabidots/ru_roots/67e1e1e5a6b23b11d57f262c2e75ccc0018580c1/lemmas_to_roots.tsv",
+    "bytes": 1567880,
+    "sha256": "ba956349c3d1fc72239971fc14f6ed975c3d137b5979703455050fe00cc12358"
+  },
+  {
+    "file": "inputs/UDer-1.1-ru-DeriNetRU.tsv.gz",
+    "url": "https://lindat.mff.cuni.cz/repository/server/api/core/bitstreams/b988724d-8aef-4614-900d-563e4f1e49b5/content",
+    "archive": "UDer-1.1.tgz",
+    "archive_md5": "bf05839a5324cce1f1665667247c9eb7",
+    "member": "UDer-1.1/ru-DeriNetRU/UDer-1.1-ru-DeriNetRU.tsv.gz",
+    "sha256": "5c769d95a2e49caa7f50f75fdacb1db1f1d2a23aa06a9d3de0364b03ca92ac55"
+  }
+]

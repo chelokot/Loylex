@@ -1,0 +1,1013 @@
+{
+  "individual_words": {
+    "rows": 95893,
+    "spellings": 95893,
+    "families": 95893,
+    "singletons": 95893,
+    "solved": 79420,
+    "solved_pct": 82.82147810580543,
+    "mean_letters": 10.258611160355814,
+    "mean_prefix": 8.016406446738857,
+    "median_prefix": 8.0,
+    "p90_prefix": 12,
+    "family_balanced_mean": 8.016406446738857,
+    "mean_suffix": 8.575664708376234,
+    "mean_saved": 2.6081969277260137,
+    "eof_only": 16473,
+    "homograph_unresolved": 0,
+    "prefix_distribution": {
+      "2": 32,
+      "3": 408,
+      "4": 3224,
+      "5": 8220,
+      "6": 13383,
+      "7": 13567,
+      "8": 11484,
+      "9": 9141,
+      "10": 6728,
+      "11": 4956,
+      "12": 3329,
+      "13": 2118,
+      "14": 1302,
+      "15": 722,
+      "16": 389,
+      "17": 230,
+      "18": 113,
+      "19": 45,
+      "20": 12,
+      "21": 5,
+      "22": 9,
+      "23": 3
+    },
+    "within": [
+      {
+        "k": 1,
+        "pct": 0.0
+      },
+      {
+        "k": 2,
+        "pct": 0.033370527567184255
+      },
+      {
+        "k": 3,
+        "pct": 0.45884475404878355
+      },
+      {
+        "k": 4,
+        "pct": 3.8209254064425973
+      },
+      {
+        "k": 5,
+        "pct": 12.392979675263053
+      },
+      {
+        "k": 6,
+        "pct": 26.349160001251395
+      },
+      {
+        "k": 7,
+        "pct": 40.49722086075104
+      },
+      {
+        "k": 8,
+        "pct": 52.473068941424295
+      },
+      {
+        "k": 9,
+        "pct": 62.00556870678778
+      },
+      {
+        "k": 10,
+        "pct": 69.02172212778827
+      },
+      {
+        "k": 11,
+        "pct": 74.18998258475592
+      },
+      {
+        "k": 12,
+        "pct": 77.66156028072956
+      },
+      {
+        "k": 13,
+        "pct": 79.87027207408258
+      },
+      {
+        "k": 14,
+        "pct": 81.22803541447239
+      },
+      {
+        "k": 15,
+        "pct": 81.98095794270698
+      }
+    ],
+    "largest_families": [
+      {
+        "family": "абажур",
+        "size": 1
+      },
+      {
+        "family": "абажуродержатель",
+        "size": 1
+      },
+      {
+        "family": "абаз",
+        "size": 1
+      },
+      {
+        "family": "абазин",
+        "size": 1
+      },
+      {
+        "family": "абазинец",
+        "size": 1
+      },
+      {
+        "family": "абазинка",
+        "size": 1
+      },
+      {
+        "family": "абазинский",
+        "size": 1
+      },
+      {
+        "family": "абак",
+        "size": 1
+      },
+      {
+        "family": "абака",
+        "size": 1
+      },
+      {
+        "family": "аббат",
+        "size": 1
+      },
+      {
+        "family": "аббатиса",
+        "size": 1
+      },
+      {
+        "family": "аббатский",
+        "size": 1
+      },
+      {
+        "family": "аббатство",
+        "size": 1
+      },
+      {
+        "family": "аббревиатура",
+        "size": 1
+      },
+      {
+        "family": "аббревиация",
+        "size": 1
+      }
+    ],
+    "root_relations": {
+      "no_prefix": 15177,
+      "unknown_or_multiple_roots": 18102,
+      "after_root_end": 52989,
+      "before_root_end": 4829,
+      "exact_root": 2351,
+      "prefix_plus_root": 2445
+    },
+    "root_annotated": 95893
+  },
+  "ambiguous_prefixes": {
+    "2": [
+      {
+        "prefix": "по",
+        "families": 1809
+      },
+      {
+        "prefix": "пр",
+        "families": 1404
+      },
+      {
+        "prefix": "за",
+        "families": 1145
+      },
+      {
+        "prefix": "на",
+        "families": 914
+      },
+      {
+        "prefix": "не",
+        "families": 782
+      },
+      {
+        "prefix": "пе",
+        "families": 770
+      },
+      {
+        "prefix": "ра",
+        "families": 756
+      },
+      {
+        "prefix": "от",
+        "families": 606
+      },
+      {
+        "prefix": "ко",
+        "families": 584
+      },
+      {
+        "prefix": "бе",
+        "families": 549
+      }
+    ],
+    "3": [
+      {
+        "prefix": "под",
+        "families": 697
+      },
+      {
+        "prefix": "пер",
+        "families": 684
+      },
+      {
+        "prefix": "про",
+        "families": 649
+      },
+      {
+        "prefix": "при",
+        "families": 602
+      },
+      {
+        "prefix": "рас",
+        "families": 386
+      },
+      {
+        "prefix": "пре",
+        "families": 336
+      },
+      {
+        "prefix": "раз",
+        "families": 307
+      },
+      {
+        "prefix": "без",
+        "families": 244
+      },
+      {
+        "prefix": "бес",
+        "families": 225
+      },
+      {
+        "prefix": "пос",
+        "families": 215
+      }
+    ],
+    "4": [
+      {
+        "prefix": "пере",
+        "families": 631
+      },
+      {
+        "prefix": "пред",
+        "families": 158
+      },
+      {
+        "prefix": "анти",
+        "families": 109
+      },
+      {
+        "prefix": "прос",
+        "families": 103
+      },
+      {
+        "prefix": "недо",
+        "families": 93
+      },
+      {
+        "prefix": "расп",
+        "families": 92
+      },
+      {
+        "prefix": "непр",
+        "families": 88
+      },
+      {
+        "prefix": "раск",
+        "families": 86
+      },
+      {
+        "prefix": "бесп",
+        "families": 83
+      },
+      {
+        "prefix": "подс",
+        "families": 83
+      }
+    ],
+    "5": [
+      {
+        "prefix": "перес",
+        "families": 83
+      },
+      {
+        "prefix": "перек",
+        "families": 82
+      },
+      {
+        "prefix": "переп",
+        "families": 80
+      },
+      {
+        "prefix": "микро",
+        "families": 69
+      },
+      {
+        "prefix": "сверх",
+        "families": 56
+      },
+      {
+        "prefix": "контр",
+        "families": 48
+      },
+      {
+        "prefix": "перет",
+        "families": 43
+      },
+      {
+        "prefix": "перем",
+        "families": 39
+      },
+      {
+        "prefix": "прост",
+        "families": 38
+      },
+      {
+        "prefix": "непри",
+        "families": 36
+      }
+    ]
+  },
+  "remaining_candidates": [
+    {
+      "k": 1,
+      "median_candidates": 1255
+    },
+    {
+      "k": 2,
+      "median_candidates": 215.0
+    },
+    {
+      "k": 3,
+      "median_candidates": 22
+    },
+    {
+      "k": 4,
+      "median_candidates": 4.0
+    },
+    {
+      "k": 5,
+      "median_candidates": 1
+    },
+    {
+      "k": 6,
+      "median_candidates": 1.0
+    }
+  ],
+  "longest": [
+    {
+      "dataset": "lemma_families",
+      "word": "интенсифицироваться",
+      "family": "R:тенс",
+      "word_letters": "19",
+      "word_characters": "19",
+      "prefix": "интенсифицироватьс",
+      "prefix_letters": "18",
+      "prefix_characters": "18",
+      "suffix": "нсифицироваться",
+      "suffix_letters": "15",
+      "needs_end_marker": "False",
+      "competitor": "интенсифицировать",
+      "roots": "тенс",
+      "root_start": "2",
+      "root_end": "6",
+      "root_letters": "4",
+      "root_relation": "after_root_end",
+      "morphemes": "ин:PREF/тенс:ROOT/ифиц:SUFF/ир:SUFF/ова:SUFF/ть:SUFF/ся:POSTFIX"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "водонагревательный",
+      "family": "R:вод",
+      "word_letters": "18",
+      "word_characters": "18",
+      "prefix": "водонагревательн",
+      "prefix_letters": "16",
+      "prefix_characters": "16",
+      "suffix": "донагревательный",
+      "suffix_letters": "16",
+      "needs_end_marker": "False",
+      "competitor": "водонагреватель",
+      "roots": "вод+гре",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "вод:ROOT/о:LINK/на:PREF/гре:ROOT/ва:SUFF/тельн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "интенсифицированный",
+      "family": "R:ин",
+      "word_letters": "19",
+      "word_characters": "19",
+      "prefix": "интенсифицирован",
+      "prefix_letters": "16",
+      "prefix_characters": "16",
+      "suffix": "нсифицированный",
+      "suffix_letters": "15",
+      "needs_end_marker": "False",
+      "competitor": "интенсифицироваться",
+      "roots": "ин+тенс",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "ин:ROOT/тенс:ROOT/ифиц:SUFF/ир:SUFF/ова:SUFF/нн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "подлакировываться",
+      "family": "R:лак",
+      "word_letters": "17",
+      "word_characters": "17",
+      "prefix": "подлакировыватьс",
+      "prefix_letters": "16",
+      "prefix_characters": "16",
+      "suffix": "длакировываться",
+      "suffix_letters": "15",
+      "needs_end_marker": "False",
+      "competitor": "подлакировывать",
+      "roots": "лак",
+      "root_start": "3",
+      "root_end": "6",
+      "root_letters": "3",
+      "root_relation": "after_root_end",
+      "morphemes": "под:PREF/лак:ROOT/ир:SUFF/ов:SUFF/ыва:SUFF/ть:SUFF/ся:POSTFIX"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "располосовываться",
+      "family": "R:полос",
+      "word_letters": "17",
+      "word_characters": "17",
+      "prefix": "располосовыватьс",
+      "prefix_letters": "16",
+      "prefix_characters": "16",
+      "suffix": "асполосовываться",
+      "suffix_letters": "16",
+      "needs_end_marker": "False",
+      "competitor": "располосовывать",
+      "roots": "полос",
+      "root_start": "3",
+      "root_end": "8",
+      "root_letters": "5",
+      "root_relation": "after_root_end",
+      "morphemes": "рас:PREF/полос:ROOT/ов:SUFF/ыва:SUFF/ть:SUFF/ся:POSTFIX"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "налакировываться",
+      "family": "R:лак",
+      "word_letters": "16",
+      "word_characters": "16",
+      "prefix": "налакировыватьс",
+      "prefix_letters": "15",
+      "prefix_characters": "15",
+      "suffix": "алакировываться",
+      "suffix_letters": "15",
+      "needs_end_marker": "False",
+      "competitor": "налакировывать",
+      "roots": "лак",
+      "root_start": "2",
+      "root_end": "5",
+      "root_letters": "3",
+      "root_relation": "after_root_end",
+      "morphemes": "на:PREF/лак:ROOT/ир:SUFF/ов:SUFF/ыва:SUFF/ть:SUFF/ся:POSTFIX"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "разведывательно-информационный",
+      "family": "R:вед",
+      "word_letters": "29",
+      "word_characters": "30",
+      "prefix": "разведывательно",
+      "prefix_letters": "15",
+      "prefix_characters": "15",
+      "suffix": "ательно-информационный",
+      "suffix_letters": "21",
+      "needs_end_marker": "False",
+      "competitor": "разведывательный",
+      "roots": "вед+информ",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "раз:PREF/вед:ROOT/ыва:SUFF/тельн:SUFF/о:LINK/-:HYPH/информ:ROOT/аци:SUFF/онн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "разведывательный",
+      "family": "K:вед¹",
+      "word_letters": "16",
+      "word_characters": "16",
+      "prefix": "разведывательны",
+      "prefix_letters": "15",
+      "prefix_characters": "15",
+      "suffix": "",
+      "suffix_letters": "",
+      "needs_end_marker": "False",
+      "competitor": "разведывательно-информационный",
+      "roots": "вед",
+      "root_start": "3",
+      "root_end": "6",
+      "root_letters": "3",
+      "root_relation": "after_root_end",
+      "morphemes": "раз:PREF/вед:ROOT/ыва:SUFF/тельн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "водогрязелечебница",
+      "family": "K:вод²",
+      "word_letters": "18",
+      "word_characters": "18",
+      "prefix": "водогрязелечеб",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "догрязелечебница",
+      "suffix_letters": "16",
+      "needs_end_marker": "False",
+      "competitor": "водогрязелечение",
+      "roots": "вод+гряз+леч",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "вод:ROOT/о:LINK/гряз:ROOT/е:LINK/леч:ROOT/ебн:SUFF/иц:SUFF/а:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "водогрязелечение",
+      "family": "R:вод",
+      "word_letters": "16",
+      "word_characters": "16",
+      "prefix": "водогрязелечен",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "огрязелечение",
+      "suffix_letters": "13",
+      "needs_end_marker": "False",
+      "competitor": "водогрязелечебница",
+      "roots": "вод+гряз+леч",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "вод:ROOT/о:LINK/гряз:ROOT/е:LINK/леч:ROOT/ени:SUFF/е:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "воспроизведение",
+      "family": "R:произвед",
+      "word_letters": "15",
+      "word_characters": "15",
+      "prefix": "воспроизведени",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "",
+      "suffix_letters": "",
+      "needs_end_marker": "False",
+      "competitor": "воспроизведенный",
+      "roots": "произвед",
+      "root_start": "3",
+      "root_end": "11",
+      "root_letters": "8",
+      "root_relation": "after_root_end",
+      "morphemes": "вос:PREF/произвед:ROOT/ени:SUFF/е:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "воспроизведенный",
+      "family": "R:произвест",
+      "word_letters": "16",
+      "word_characters": "16",
+      "prefix": "воспроизведенн",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "спроизведенный",
+      "suffix_letters": "14",
+      "needs_end_marker": "False",
+      "competitor": "воспроизведение",
+      "roots": "произвед",
+      "root_start": "3",
+      "root_end": "11",
+      "root_letters": "8",
+      "root_relation": "after_root_end",
+      "morphemes": "вос:PREF/произвед:ROOT/енн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "перенапрягшийся",
+      "family": "R:напрячь",
+      "word_letters": "15",
+      "word_characters": "15",
+      "prefix": "перенапрягшийс",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "енапрягшийся",
+      "suffix_letters": "12",
+      "needs_end_marker": "False",
+      "competitor": "перенапрягший",
+      "roots": "напряг",
+      "root_start": "4",
+      "root_end": "10",
+      "root_letters": "6",
+      "root_relation": "after_root_end",
+      "morphemes": "пере:PREF/напряг:ROOT/ш:SUFF/ий:SUFF/ся:POSTFIX"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "переподготовленный",
+      "family": "K:готав",
+      "word_letters": "18",
+      "word_characters": "18",
+      "prefix": "переподготовле",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "реподготовленный",
+      "suffix_letters": "16",
+      "needs_end_marker": "False",
+      "competitor": "переподготовлять",
+      "roots": "готовл",
+      "root_start": "7",
+      "root_end": "13",
+      "root_letters": "6",
+      "root_relation": "after_root_end",
+      "morphemes": "пере:PREF/под:PREF/готовл:ROOT/енн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "переподготовлять",
+      "family": "R:готовл",
+      "word_letters": "16",
+      "word_characters": "16",
+      "prefix": "переподготовля",
+      "prefix_letters": "14",
+      "prefix_characters": "14",
+      "suffix": "товлять",
+      "suffix_letters": "7",
+      "needs_end_marker": "False",
+      "competitor": "переподготовленный",
+      "roots": "готовл",
+      "root_start": "7",
+      "root_end": "13",
+      "root_letters": "6",
+      "root_relation": "after_root_end",
+      "morphemes": "пере:PREF/под:PREF/готовл:ROOT/я:SUFF/ть:SUFF"
+    }
+  ],
+  "largest_savings": [
+    {
+      "dataset": "lemma_families",
+      "word": "бронебойно-зажигательно-трассирующий",
+      "family": "K:брон",
+      "word_letters": "34",
+      "word_characters": "36",
+      "prefix": "броне",
+      "prefix_letters": "5",
+      "prefix_characters": "5",
+      "suffix": "-трассирующий",
+      "suffix_letters": "12",
+      "needs_end_marker": "False",
+      "competitor": "бронза",
+      "roots": "брон+бой+жиг+трасс",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "брон:ROOT/е:LINK/бой:ROOT/н:SUFF/о:LINK/-:HYPH/за:PREF/жиг:ROOT/а:SUFF/тельн:SUFF/о:LINK/-:HYPH/трасс:ROOT/ир:SUFF/у:SUFF/ющ:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "экспериментально-исследовательский",
+      "family": "R:эксперимент",
+      "word_letters": "33",
+      "word_characters": "34",
+      "prefix": "экспери",
+      "prefix_letters": "7",
+      "prefix_characters": "7",
+      "suffix": "ьно-исследовательский",
+      "suffix_letters": "20",
+      "needs_end_marker": "False",
+      "competitor": "эксперт",
+      "roots": "эксперимент+исследова",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "эксперимент:ROOT/альн:SUFF/о:LINK/-:HYPH/исследова:ROOT/тель:SUFF/ск:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "административно-территориальный",
+      "family": "R:администр",
+      "word_letters": "30",
+      "word_characters": "31",
+      "prefix": "админ",
+      "prefix_letters": "5",
+      "prefix_characters": "5",
+      "suffix": "вно-территориальный",
+      "suffix_letters": "18",
+      "needs_end_marker": "False",
+      "competitor": "адмирал",
+      "roots": "администр+территор",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "администр:ROOT/ат:SUFF/ивн:SUFF/о:LINK/-:HYPH/территор:ROOT/и:SUFF/альн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "информационно-публицистический",
+      "family": "R:информ",
+      "word_letters": "29",
+      "word_characters": "30",
+      "prefix": "инфо",
+      "prefix_letters": "4",
+      "prefix_characters": "4",
+      "suffix": "но-публицистический",
+      "suffix_letters": "18",
+      "needs_end_marker": "False",
+      "competitor": "инфантерия",
+      "roots": "информ+публицист",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "информ:ROOT/аци:SUFF/онн:SUFF/о:LINK/-:HYPH/публицист:ROOT/ич:SUFF/еск:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "административно-дисциплинарный",
+      "family": "R:администр",
+      "word_letters": "29",
+      "word_characters": "30",
+      "prefix": "админ",
+      "prefix_letters": "5",
+      "prefix_characters": "5",
+      "suffix": "-дисциплинарный",
+      "suffix_letters": "14",
+      "needs_end_marker": "False",
+      "competitor": "адмирал",
+      "roots": "администр+дисциплин",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "администр:ROOT/ат:SUFF/ивн:SUFF/о:LINK/-:HYPH/дисциплин:ROOT/арн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "административно-управленческий",
+      "family": "R:администр",
+      "word_letters": "29",
+      "word_characters": "30",
+      "prefix": "админ",
+      "prefix_letters": "5",
+      "prefix_characters": "5",
+      "suffix": "вно-управленческий",
+      "suffix_letters": "17",
+      "needs_end_marker": "False",
+      "competitor": "адмирал",
+      "roots": "администр+правл",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "администр:ROOT/ат:SUFF/ивн:SUFF/о:LINK/-:HYPH/у:PREF/правл:ROOT/ен:SUFF/ческ:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "воспитательно-профилактический",
+      "family": "R:воспит",
+      "word_letters": "29",
+      "word_characters": "30",
+      "prefix": "воспи",
+      "prefix_letters": "5",
+      "prefix_characters": "5",
+      "suffix": "ьно-профилактический",
+      "suffix_letters": "19",
+      "needs_end_marker": "False",
+      "competitor": "воспаление",
+      "roots": "воспит+профилакт",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "воспит:ROOT/а:SUFF/тельн:SUFF/о:LINK/-:HYPH/профилакт:ROOT/ич:SUFF/еск:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "территориально-административный",
+      "family": "R:территори",
+      "word_letters": "30",
+      "word_characters": "31",
+      "prefix": "террит",
+      "prefix_letters": "6",
+      "prefix_characters": "6",
+      "suffix": "ьно-административный",
+      "suffix_letters": "19",
+      "needs_end_marker": "False",
+      "competitor": "террикон",
+      "roots": "территори+администр",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "территори:ROOT/альн:SUFF/о:LINK/-:HYPH/администр:ROOT/ат:SUFF/ивн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "территориально-производственный",
+      "family": "R:территори",
+      "word_letters": "30",
+      "word_characters": "31",
+      "prefix": "террит",
+      "prefix_letters": "6",
+      "prefix_characters": "6",
+      "suffix": "ьно-производственный",
+      "suffix_letters": "19",
+      "needs_end_marker": "False",
+      "competitor": "террикон",
+      "roots": "территори+производ",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "территори:ROOT/альн:SUFF/о:LINK/-:HYPH/производ:ROOT/ств:SUFF/енн:SUFF/ый:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "функционально-морфологический",
+      "family": "R:функци",
+      "word_letters": "28",
+      "word_characters": "29",
+      "prefix": "функ",
+      "prefix_letters": "4",
+      "prefix_characters": "4",
+      "suffix": "-морфологический",
+      "suffix_letters": "15",
+      "needs_end_marker": "False",
+      "competitor": "фундамент",
+      "roots": "функци+морф+лог",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "функци:ROOT/он:SUFF/альн:SUFF/о:LINK/-:HYPH/морф:ROOT/о:LINK/лог:ROOT/ическ:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "экспериментально-конструкторский",
+      "family": "R:эксперимент",
+      "word_letters": "31",
+      "word_characters": "32",
+      "prefix": "экспери",
+      "prefix_letters": "7",
+      "prefix_characters": "7",
+      "suffix": "ьно-конструкторский",
+      "suffix_letters": "18",
+      "needs_end_marker": "False",
+      "competitor": "эксперт",
+      "roots": "эксперимент+конструкт",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "эксперимент:ROOT/альн:SUFF/о:LINK/-:HYPH/конструкт:ROOT/ор:SUFF/ск:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "экспериментально-психологический",
+      "family": "R:эксперимент",
+      "word_letters": "31",
+      "word_characters": "32",
+      "prefix": "экспери",
+      "prefix_letters": "7",
+      "prefix_characters": "7",
+      "suffix": "тально-психологический",
+      "suffix_letters": "21",
+      "needs_end_marker": "False",
+      "competitor": "эксперт",
+      "roots": "эксперимент+псих+лог",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "эксперимент:ROOT/альн:SUFF/о:LINK/-:HYPH/псих:ROOT/о:LINK/лог:ROOT/ическ:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "экспериментально-физиологический",
+      "family": "R:эксперимент",
+      "word_letters": "31",
+      "word_characters": "32",
+      "prefix": "экспери",
+      "prefix_letters": "7",
+      "prefix_characters": "7",
+      "suffix": "но-физиологический",
+      "suffix_letters": "17",
+      "needs_end_marker": "False",
+      "competitor": "эксперт",
+      "roots": "эксперимент+физи+лог",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "эксперимент:ROOT/альн:SUFF/о:LINK/-:HYPH/физи:ROOT/о:LINK/лог:ROOT/ическ:SUFF/ий:END"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "электровоздухораспределитель",
+      "family": "K:электр",
+      "word_letters": "28",
+      "word_characters": "28",
+      "prefix": "элек",
+      "prefix_letters": "4",
+      "prefix_characters": "4",
+      "suffix": "овоздухораспределитель",
+      "suffix_letters": "22",
+      "needs_end_marker": "False",
+      "competitor": "элеватор",
+      "roots": "электр+воздух+дел",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "электр:ROOT/о:LINK/воздух:ROOT/о:LINK/распре:PREF/дел:ROOT/и:SUFF/тель:SUFF"
+    },
+    {
+      "dataset": "lemma_families",
+      "word": "административно-хозяйственный",
+      "family": "R:администр",
+      "word_letters": "28",
+      "word_characters": "29",
+      "prefix": "админ",
+      "prefix_letters": "5",
+      "prefix_characters": "5",
+      "suffix": "вно-хозяйственный",
+      "suffix_letters": "16",
+      "needs_end_marker": "False",
+      "competitor": "адмирал",
+      "roots": "администр+хозяй",
+      "root_start": "",
+      "root_end": "",
+      "root_letters": "",
+      "root_relation": "unknown_or_multiple_roots",
+      "morphemes": "администр:ROOT/ат:SUFF/ивн:SUFF/о:LINK/-:HYPH/хозяй:ROOT/ств:SUFF/енн:SUFF/ый:END"
+    }
+  ],
+  "length_bins": [
+    {
+      "label": "1–4",
+      "n": 1818,
+      "mean_word": 3.735973597359736,
+      "mean_prefix": 3.668131868131868,
+      "solved_pct": 50.05500550055005
+    },
+    {
+      "label": "5–7",
+      "n": 16599,
+      "mean_word": 6.302367612506777,
+      "mean_prefix": 4.660200537387771,
+      "solved_pct": 91.92722453159828
+    },
+    {
+      "label": "8–10",
+      "n": 37228,
+      "mean_word": 9.045181046524121,
+      "mean_prefix": 5.3577430319510535,
+      "solved_pct": 98.78317395508756
+    },
+    {
+      "label": "11–13",
+      "n": 26979,
+      "mean_word": 11.82178731606064,
+      "mean_prefix": 5.858450206465533,
+      "solved_pct": 99.63675451276919
+    },
+    {
+      "label": "14+",
+      "n": 13871,
+      "mean_word": 15.89020258092423,
+      "mean_prefix": 5.902294703420407,
+      "solved_pct": 99.90627928772258
+    }
+  ]
+}

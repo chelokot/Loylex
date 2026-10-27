@@ -1,0 +1,901 @@
+{
+  "mapped_roots": {
+    "rows": 95979,
+    "spellings": 95893,
+    "families": 14442,
+    "singletons": 5157,
+    "solved": 94040,
+    "solved_pct": 97.97976640723492,
+    "mean_letters": 10.256827014242699,
+    "mean_prefix": 5.482379838366652,
+    "median_prefix": 5.0,
+    "p90_prefix": 7,
+    "family_balanced_mean": 5.501443062167015,
+    "mean_suffix": 8.08338262056415,
+    "mean_saved": 4.872267120374309,
+    "eof_only": 1768,
+    "homograph_unresolved": 171,
+    "prefix_distribution": {
+      "2": 338,
+      "3": 4350,
+      "4": 19462,
+      "5": 28179,
+      "6": 21939,
+      "7": 11744,
+      "8": 4975,
+      "9": 1834,
+      "10": 725,
+      "11": 328,
+      "12": 102,
+      "13": 48,
+      "14": 7,
+      "15": 4,
+      "16": 4,
+      "18": 1
+    },
+    "within": [
+      {
+        "k": 1,
+        "pct": 0.0
+      },
+      {
+        "k": 2,
+        "pct": 0.3521603684139239
+      },
+      {
+        "k": 3,
+        "pct": 4.884401796226258
+      },
+      {
+        "k": 4,
+        "pct": 25.16175413371675
+      },
+      {
+        "k": 5,
+        "pct": 54.521301534710716
+      },
+      {
+        "k": 6,
+        "pct": 77.37942674960148
+      },
+      {
+        "k": 7,
+        "pct": 89.61543671011367
+      },
+      {
+        "k": 8,
+        "pct": 94.79886225111743
+      },
+      {
+        "k": 9,
+        "pct": 96.70969691286636
+      },
+      {
+        "k": 10,
+        "pct": 97.46507048416841
+      },
+      {
+        "k": 11,
+        "pct": 97.80681190677127
+      },
+      {
+        "k": 12,
+        "pct": 97.91308515404411
+      },
+      {
+        "k": 13,
+        "pct": 97.96309609393721
+      },
+      {
+        "k": 14,
+        "pct": 97.97038935600496
+      },
+      {
+        "k": 15,
+        "pct": 97.97455693432939
+      }
+    ],
+    "largest_families": [
+      {
+        "family": "K:дв",
+        "size": 360
+      },
+      {
+        "family": "K:пол⁵",
+        "size": 337
+      },
+      {
+        "family": "K:сам",
+        "size": 337
+      },
+      {
+        "family": "K:дер",
+        "size": 316
+      },
+      {
+        "family": "R:мал",
+        "size": 263
+      },
+      {
+        "family": "K:сад",
+        "size": 258
+      },
+      {
+        "family": "K:электр",
+        "size": 254
+      },
+      {
+        "family": "K:наш",
+        "size": 247
+      },
+      {
+        "family": "K:мног",
+        "size": 242
+      },
+      {
+        "family": "K:дел",
+        "size": 233
+      },
+      {
+        "family": "K:тр¹",
+        "size": 233
+      },
+      {
+        "family": "K:тя",
+        "size": 230
+      },
+      {
+        "family": "K:ч³",
+        "size": 228
+      },
+      {
+        "family": "K:хаж",
+        "size": 222
+      },
+      {
+        "family": "K:кат¹",
+        "size": 211
+      }
+    ],
+    "root_relations": {
+      "before_root_end": 23309,
+      "unknown_or_multiple_roots": 18104,
+      "no_prefix": 1919,
+      "exact_root": 13543,
+      "after_root_end": 25792,
+      "prefix_plus_root": 13312
+    },
+    "root_annotated": 95979
+  },
+  "tikhonov_nests": {
+    "rows": 41877,
+    "spellings": 36201,
+    "families": 1555,
+    "singletons": 97,
+    "solved": 30296,
+    "solved_pct": 72.34520142321561,
+    "mean_letters": 10.536810182200254,
+    "mean_prefix": 5.346382360707684,
+    "median_prefix": 5.0,
+    "p90_prefix": 7,
+    "family_balanced_mean": 5.3190368714617975,
+    "mean_suffix": 7.400729419937479,
+    "mean_saved": 4.643187219434909,
+    "eof_only": 436,
+    "homograph_unresolved": 11145,
+    "prefix_distribution": {
+      "2": 147,
+      "3": 1996,
+      "4": 6256,
+      "5": 9076,
+      "6": 7446,
+      "7": 3594,
+      "8": 1075,
+      "9": 430,
+      "10": 146,
+      "11": 70,
+      "12": 38,
+      "13": 16,
+      "14": 3,
+      "15": 2,
+      "18": 1
+    },
+    "within": [
+      {
+        "k": 1,
+        "pct": 0.0
+      },
+      {
+        "k": 2,
+        "pct": 0.3510280106024787
+      },
+      {
+        "k": 3,
+        "pct": 5.117367528715047
+      },
+      {
+        "k": 4,
+        "pct": 20.056355517348425
+      },
+      {
+        "k": 5,
+        "pct": 41.72935023998854
+      },
+      {
+        "k": 6,
+        "pct": 59.509993552546746
+      },
+      {
+        "k": 7,
+        "pct": 68.09227021992979
+      },
+      {
+        "k": 8,
+        "pct": 70.65931179406357
+      },
+      {
+        "k": 9,
+        "pct": 71.68612842371708
+      },
+      {
+        "k": 10,
+        "pct": 72.0347684886692
+      },
+      {
+        "k": 11,
+        "pct": 72.20192468419418
+      },
+      {
+        "k": 12,
+        "pct": 72.29266661890776
+      },
+      {
+        "k": 13,
+        "pct": 72.33087374931347
+      },
+      {
+        "k": 14,
+        "pct": 72.33803758626453
+      },
+      {
+        "k": 15,
+        "pct": 72.34281347756524
+      }
+    ],
+    "largest_families": [
+      {
+        "family": "T0915:половина",
+        "size": 352
+      },
+      {
+        "family": "T0094:вести",
+        "size": 332
+      },
+      {
+        "family": "T0233:два",
+        "size": 322
+      },
+      {
+        "family": "T0725:нести",
+        "size": 315
+      },
+      {
+        "family": "T1120:сам",
+        "size": 293
+      },
+      {
+        "family": "T0037:бить",
+        "size": 287
+      },
+      {
+        "family": "T1544:электричество",
+        "size": 259
+      },
+      {
+        "family": "T1466:ходить",
+        "size": 258
+      },
+      {
+        "family": "T1383:три",
+        "size": 239
+      },
+      {
+        "family": "T0054:брать",
+        "size": 238
+      },
+      {
+        "family": "T1079:резать",
+        "size": 237
+      },
+      {
+        "family": "T0606:малый",
+        "size": 236
+      },
+      {
+        "family": "T1291:строить",
+        "size": 221
+      },
+      {
+        "family": "T0634:мерить",
+        "size": 215
+      },
+      {
+        "family": "T0856:писать",
+        "size": 212
+      }
+    ],
+    "root_relations": {
+      "unknown_or_multiple_roots": 16533,
+      "before_root_end": 9091,
+      "no_prefix": 957,
+      "exact_root": 2062,
+      "after_root_end": 7285,
+      "prefix_plus_root": 5949
+    },
+    "root_annotated": 39812
+  },
+  "surface_roots": {
+    "rows": 95894,
+    "spellings": 95893,
+    "families": 27949,
+    "singletons": 16276,
+    "solved": 93473,
+    "solved_pct": 97.47533735165912,
+    "mean_letters": 10.258587607149561,
+    "mean_prefix": 5.986573662982893,
+    "median_prefix": 6,
+    "p90_prefix": 8,
+    "family_balanced_mean": 6.438094714306839,
+    "mean_suffix": 8.05762269503546,
+    "mean_saved": 4.398885239587902,
+    "eof_only": 2419,
+    "homograph_unresolved": 2,
+    "prefix_distribution": {
+      "2": 146,
+      "3": 2109,
+      "4": 13476,
+      "5": 24086,
+      "6": 23809,
+      "7": 15528,
+      "8": 7867,
+      "9": 3404,
+      "10": 1526,
+      "11": 788,
+      "12": 327,
+      "13": 226,
+      "14": 84,
+      "15": 54,
+      "16": 20,
+      "17": 12,
+      "18": 7,
+      "19": 2,
+      "22": 2
+    },
+    "within": [
+      {
+        "k": 1,
+        "pct": 0.0
+      },
+      {
+        "k": 2,
+        "pct": 0.15225144430308465
+      },
+      {
+        "k": 3,
+        "pct": 2.3515548418044925
+      },
+      {
+        "k": 4,
+        "pct": 16.404571714601538
+      },
+      {
+        "k": 5,
+        "pct": 41.52188875216385
+      },
+      {
+        "k": 6,
+        "pct": 66.35034517279496
+      },
+      {
+        "k": 7,
+        "pct": 82.54322481072852
+      },
+      {
+        "k": 8,
+        "pct": 90.74707489519677
+      },
+      {
+        "k": 9,
+        "pct": 94.29682774730432
+      },
+      {
+        "k": 10,
+        "pct": 95.88816818570506
+      },
+      {
+        "k": 11,
+        "pct": 96.70990885769704
+      },
+      {
+        "k": 12,
+        "pct": 97.05091038021148
+      },
+      {
+        "k": 13,
+        "pct": 97.28658727344776
+      },
+      {
+        "k": 14,
+        "pct": 97.37418399482762
+      },
+      {
+        "k": 15,
+        "pct": 97.43049617285753
+      }
+    ],
+    "largest_families": [
+      {
+        "family": "дел",
+        "size": 229
+      },
+      {
+        "family": "вод",
+        "size": 166
+      },
+      {
+        "family": "рез",
+        "size": 163
+      },
+      {
+        "family": "мер",
+        "size": 160
+      },
+      {
+        "family": "да",
+        "size": 159
+      },
+      {
+        "family": "вяз",
+        "size": 158
+      },
+      {
+        "family": "ли",
+        "size": 158
+      },
+      {
+        "family": "ход",
+        "size": 157
+      },
+      {
+        "family": "кат",
+        "size": 157
+      },
+      {
+        "family": "би",
+        "size": 157
+      },
+      {
+        "family": "вал",
+        "size": 156
+      },
+      {
+        "family": "пис",
+        "size": 147
+      },
+      {
+        "family": "пар",
+        "size": 145
+      },
+      {
+        "family": "мет",
+        "size": 143
+      },
+      {
+        "family": "жи",
+        "size": 141
+      }
+    ],
+    "root_relations": {
+      "no_prefix": 2268,
+      "unknown_or_multiple_roots": 18103,
+      "before_root_end": 19951,
+      "exact_root": 10744,
+      "after_root_end": 27247,
+      "prefix_plus_root": 17581
+    },
+    "root_annotated": 95894
+  },
+  "first_root": {
+    "rows": 95894,
+    "spellings": 95893,
+    "families": 14784,
+    "singletons": 5349,
+    "solved": 94418,
+    "solved_pct": 98.46080046718251,
+    "mean_letters": 10.258587607149561,
+    "mean_prefix": 5.3862716854837,
+    "median_prefix": 5.0,
+    "p90_prefix": 7,
+    "family_balanced_mean": 5.461113087911527,
+    "mean_suffix": 8.054035358289013,
+    "mean_saved": 4.957476328666144,
+    "eof_only": 1474,
+    "homograph_unresolved": 2,
+    "prefix_distribution": {
+      "2": 307,
+      "3": 4176,
+      "4": 21255,
+      "5": 29233,
+      "6": 21658,
+      "7": 11230,
+      "8": 4426,
+      "9": 1419,
+      "10": 466,
+      "11": 178,
+      "12": 43,
+      "13": 21,
+      "14": 4,
+      "16": 1,
+      "18": 1
+    },
+    "within": [
+      {
+        "k": 1,
+        "pct": 0.0
+      },
+      {
+        "k": 2,
+        "pct": 0.32014516028114376
+      },
+      {
+        "k": 3,
+        "pct": 4.674953594594031
+      },
+      {
+        "k": 4,
+        "pct": 26.840052558032827
+      },
+      {
+        "k": 5,
+        "pct": 57.324754416334706
+      },
+      {
+        "k": 6,
+        "pct": 79.91010907877448
+      },
+      {
+        "k": 7,
+        "pct": 91.62095647277202
+      },
+      {
+        "k": 8,
+        "pct": 96.23646943500114
+      },
+      {
+        "k": 9,
+        "pct": 97.71622833545374
+      },
+      {
+        "k": 10,
+        "pct": 98.2021815754896
+      },
+      {
+        "k": 11,
+        "pct": 98.38780319936596
+      },
+      {
+        "k": 12,
+        "pct": 98.43264437816757
+      },
+      {
+        "k": 13,
+        "pct": 98.45454355851253
+      },
+      {
+        "k": 14,
+        "pct": 98.45871483095918
+      },
+      {
+        "k": 15,
+        "pct": 98.45871483095918
+      }
+    ],
+    "largest_families": [
+      {
+        "family": "пол",
+        "size": 486
+      },
+      {
+        "family": "дв",
+        "size": 360
+      },
+      {
+        "family": "сам",
+        "size": 337
+      },
+      {
+        "family": "вод",
+        "size": 330
+      },
+      {
+        "family": "мал",
+        "size": 322
+      },
+      {
+        "family": "тр",
+        "size": 263
+      },
+      {
+        "family": "электр",
+        "size": 254
+      },
+      {
+        "family": "дел",
+        "size": 233
+      },
+      {
+        "family": "пар",
+        "size": 221
+      },
+      {
+        "family": "авто",
+        "size": 201
+      },
+      {
+        "family": "жи",
+        "size": 201
+      },
+      {
+        "family": "мног",
+        "size": 198
+      },
+      {
+        "family": "бел",
+        "size": 172
+      },
+      {
+        "family": "кат",
+        "size": 170
+      },
+      {
+        "family": "одн",
+        "size": 170
+      }
+    ],
+    "root_relations": {
+      "before_root_end": 21717,
+      "unknown_or_multiple_roots": 18103,
+      "no_prefix": 1465,
+      "exact_root": 14391,
+      "after_root_end": 22181,
+      "prefix_plus_root": 18037
+    },
+    "root_annotated": 95894
+  },
+  "derinet_broad": {
+    "rows": 220441,
+    "spellings": 214966,
+    "families": 111299,
+    "singletons": 70906,
+    "solved": 178957,
+    "solved_pct": 81.18135918454371,
+    "mean_letters": 9.567866231780839,
+    "mean_prefix": 8.084014595684996,
+    "median_prefix": 8,
+    "p90_prefix": 12,
+    "family_balanced_mean": 8.505881821941077,
+    "mean_suffix": 7.99191558260287,
+    "mean_saved": 1.8919740496320345,
+    "eof_only": 30720,
+    "homograph_unresolved": 10764,
+    "prefix_distribution": {
+      "2": 101,
+      "3": 2027,
+      "4": 10176,
+      "5": 21463,
+      "6": 26636,
+      "7": 26173,
+      "8": 22980,
+      "9": 19534,
+      "10": 15667,
+      "11": 11811,
+      "12": 8039,
+      "13": 5386,
+      "14": 3663,
+      "15": 2426,
+      "16": 1343,
+      "17": 750,
+      "18": 414,
+      "19": 202,
+      "20": 98,
+      "21": 43,
+      "22": 13,
+      "23": 7,
+      "24": 2,
+      "27": 3
+    },
+    "within": [
+      {
+        "k": 1,
+        "pct": 0.0
+      },
+      {
+        "k": 2,
+        "pct": 0.0458172481525669
+      },
+      {
+        "k": 3,
+        "pct": 0.9653376640461621
+      },
+      {
+        "k": 4,
+        "pct": 5.581538824447358
+      },
+      {
+        "k": 5,
+        "pct": 15.317930874927985
+      },
+      {
+        "k": 6,
+        "pct": 27.40098257583662
+      },
+      {
+        "k": 7,
+        "pct": 39.274000753035956
+      },
+      {
+        "k": 8,
+        "pct": 49.69855879804574
+      },
+      {
+        "k": 9,
+        "pct": 58.55988677242437
+      },
+      {
+        "k": 10,
+        "pct": 65.66700386951611
+      },
+      {
+        "k": 11,
+        "pct": 71.0249000866445
+      },
+      {
+        "k": 12,
+        "pct": 74.67168085791663
+      },
+      {
+        "k": 13,
+        "pct": 77.11496500197332
+      },
+      {
+        "k": 14,
+        "pct": 78.77663411071443
+      },
+      {
+        "k": 15,
+        "pct": 79.87715533861669
+      }
+    ],
+    "largest_families": [
+      {
+        "family": "D103090",
+        "size": 586
+      },
+      {
+        "family": "D82791",
+        "size": 301
+      },
+      {
+        "family": "D160794",
+        "size": 257
+      },
+      {
+        "family": "D94461",
+        "size": 253
+      },
+      {
+        "family": "D149462",
+        "size": 233
+      },
+      {
+        "family": "D70209",
+        "size": 224
+      },
+      {
+        "family": "D110514",
+        "size": 220
+      },
+      {
+        "family": "D105838",
+        "size": 177
+      },
+      {
+        "family": "D129888",
+        "size": 175
+      },
+      {
+        "family": "D140705",
+        "size": 170
+      },
+      {
+        "family": "D126732",
+        "size": 167
+      },
+      {
+        "family": "D158701",
+        "size": 161
+      },
+      {
+        "family": "D91017",
+        "size": 149
+      },
+      {
+        "family": "D145435",
+        "size": 148
+      },
+      {
+        "family": "D146130",
+        "size": 145
+      }
+    ],
+    "root_relations": {
+      "unknown_or_multiple_roots": 164831,
+      "no_prefix": 8982,
+      "after_root_end": 39489,
+      "before_root_end": 3245,
+      "exact_root": 1999,
+      "prefix_plus_root": 1895
+    },
+    "root_annotated": 62262
+  },
+  "audit": {
+    "rumorphs_input_rows": 96036,
+    "rumorphs_bad_rows": 21,
+    "morph_spellings": 95893,
+    "corrections": {
+      "красный": "красн:ROOT/ый:END",
+      "мрачность": "мрач:ROOT/н:SUFF/ость:SUFF"
+    },
+    "raw_nests": 1565,
+    "raw_nest_rows": 75283,
+    "broad_input_rows": 337632,
+    "broad_capitalized_removed": 113919,
+    "broad_malformed_removed": 0,
+    "mapped_assignment": {
+      "direct_surface_agreement": 33658,
+      "unmapped_or_homonymous_variant": 45486,
+      "unique_variant_inference": 14898,
+      "nest_disambiguation": 1852
+    }
+  },
+  "dictionary_size": [
+    {
+      "dictionary_rows": 9589,
+      "targets": 2000,
+      "mean_finite": 5.026849037487335,
+      "unresolved": 26,
+      "penalized_mean_characters": 5.0295
+    },
+    {
+      "dictionary_rows": 23973,
+      "targets": 2000,
+      "mean_finite": 5.467684478371501,
+      "unresolved": 35,
+      "penalized_mean_characters": 5.468
+    },
+    {
+      "dictionary_rows": 47947,
+      "targets": 2000,
+      "mean_finite": 5.741687979539642,
+      "unresolved": 45,
+      "penalized_mean_characters": 5.7415
+    },
+    {
+      "dictionary_rows": 95894,
+      "targets": 2000,
+      "mean_finite": 5.966580976863753,
+      "unresolved": 55,
+      "penalized_mean_characters": 5.9715
+    }
+  ]
+}
