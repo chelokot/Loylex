@@ -31,7 +31,8 @@ export function loadAgentConfig(): AgentConfig {
     codexHome: process.env.CODEX_HOME ?? "/home/loylex/.codex",
     model: process.env.CODEX_MODEL ?? "gpt-6.1-sol",
     reasoningEffort: process.env.CODEX_REASONING_EFFORT ?? "low",
-    serviceTier: process.env.CODEX_SERVICE_TIER ?? "priority",
+    // Disable Fast, including priority retained by older host Compose environments.
+    serviceTier: "default",
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",
     pollIntervalMs: Number.parseInt(process.env.LOYLEX_POLL_INTERVAL_MS ?? "1000", 10),
