@@ -22,6 +22,7 @@ jobs:
         run: |
           import json
           import os
+          import urllib.error
           import urllib.parse
           import urllib.request
           repository = os.environ['GH_REPO']
@@ -37,8 +38,16 @@ jobs:
                   data=json.dumps(body).encode() if body is not None else None,
                   headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
                            'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
-              with opener.open(request, timeout=30) as response:
-                  return json.load(response)
+              try:
+                  with opener.open(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  detail = error.read(8192).decode(errors='replace')
+                  if 'not permitted to create or approve pull requests' in detail:
+                      print('::error::Enable Settings > Actions > General > Allow GitHub Actions to create and approve pull requests.')
+                  else:
+                      print(f'::error::GitHub PR API rejected the operation (HTTP {error.code}); check workflow permissions and repository policy.')
+                  raise SystemExit(1)
           query = urllib.parse.urlencode({'state': 'open', 'base': 'main', 'head': 'chelokot:' + branch})
           existing = api('pulls?' + query)
           if not existing:
