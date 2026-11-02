@@ -6,20 +6,15 @@ import { loadGatewayConfig } from "./config.ts";
 import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
 import { editedInstructionPrompt, editedMessageForUpdate } from "./edited-message.ts";
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
+import { LeylobucksActivity } from "./leylobucks-activity.ts";
+import { LeylobucksCommands } from "./leylobucks-commands.ts";
 import { LeylobucksMode } from "./leylobucks-mode.ts";
+import { createMessageActivity } from "./message-activity.ts";
 import { responseOptions } from "./message-options.ts";
 import { MinesGame } from "./mines.ts";
-import { hasDanyaWrittenLoylexNameMistake } from "./name-reactions.ts";
 import {
   helpMessage,
   leylobucksBlockedMessage,
-  leylobucksInvalidCommandMessage,
-  leylobucksModeMessage,
-  leylobucksPurchaseMessage,
-  leylobucksQuizMessage,
-  leylobucksStatusMessage,
-  leylobucksTestBumpInvalidMessage,
-  leylobucksTestBumpMessage,
   resumeUnavailableMessage,
   stopResultMessage,
 } from "./presentation.ts";
@@ -36,10 +31,7 @@ import {
   isStopCommand,
   isTasksCommand,
   newChatPrompt,
-  parseLeylobucksCommand,
   parseQuizCallbackData,
-  parseQuizCommand,
-  parseTestBumpCommand,
   promptWithQuote,
   resumeTaskMessageId,
   steerCommandText,
@@ -53,10 +45,19 @@ const telegram = new TelegramClient(config.botToken);
 const approvals = ApprovalClient.fromEnvironment();
 const bot = await telegram.getMe();
 const mines = new MinesGame(config.databasePath, telegram);
-const leylobucksMode = new LeylobucksMode({
-  isEnabled: (userId) => database.isLeylobucksEnabled(userId),
-  setEnabled: (userId, enabled) => database.setLeylobucksEnabled(userId, enabled),
-});
+const leylobucksMode = new LeylobucksMode(
+  {
+    isEnabled: (userId) => database.isLeylobucksEnabled(userId),
+    setEnabled: (userId, enabled) => database.setLeylobucksEnabled(userId, enabled),
+  },
+  new LeylobucksActivity(database.connection),
+);
+const economyCommands = new LeylobucksCommands(
+  database,
+  leylobucksMode,
+  bot.username,
+  (message, markdown) => sendInlineResponse(telegram, message, markdown),
+);
 
 await telegram.call("deleteWebhook", { drop_pending_updates: false });
 await telegram.setCommands();
@@ -74,77 +75,12 @@ let offset = database.nextUpdateOffset();
 
 const earlyAcknowledgementTimeoutMs = 800;
 
-function acknowledgeWork(message: TelegramMessage): Promise<void> {
-  return Promise.allSettled([
-    telegram.sendTyping(message.chat.id, message.message_thread_id ?? null),
-    telegram.setThinkingReaction(message.chat.id, message.message_id),
-  ]).then((results) => {
-    const failures = results.filter((result) => result.status === "rejected");
-    if (failures.length > 0) {
-      console.log(
-        JSON.stringify({
-          level: "warn",
-          component: "poller",
-          event: "telegram_activity_unavailable",
-          messageId: message.message_id,
-          failures: failures.map((result) =>
-            result.reason instanceof Error ? result.reason.message : String(result.reason),
-          ),
-        }),
-      );
-    }
-  });
-}
-
-function earlyAcknowledgementMessage(
-  update: TelegramUpdate,
-  botUserId: number,
-): TelegramMessage | null {
-  const message = update.message;
-  if (!message || message.from?.is_bot || isSlashCommand(message)) {
-    return null;
-  }
-  return detectTrigger(message, botUserId) ? message : null;
-}
-
-function clearEarlyThinkingReaction(
-  message: TelegramMessage,
-  acknowledgement: Promise<void> | null,
-): void {
-  if (acknowledgement === null) {
-    return;
-  }
-  void acknowledgement.then(() =>
-    telegram.clearMessageReaction(message.chat.id, message.message_id).catch((error) => {
-      console.log(
-        JSON.stringify({
-          level: "warn",
-          component: "poller",
-          event: "early_thinking_reaction_clear_unavailable",
-          messageId: message.message_id,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }),
-  );
-}
-
-function acknowledgeNameMistake(message: TelegramMessage): void {
-  if (!hasDanyaWrittenLoylexNameMistake(message)) {
-    return;
-  }
-  void telegram.setMessageReaction(message.chat.id, message.message_id, "🥴").catch((error) => {
-    console.log(
-      JSON.stringify({
-        level: "warn",
-        component: "poller",
-        event: "name_mistake_reaction_unavailable",
-        messageId: message.message_id,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  });
-}
+const {
+  acknowledgeWork,
+  earlyAcknowledgementMessage,
+  clearEarlyThinkingReaction,
+  acknowledgeNameMistake,
+} = createMessageActivity(telegram);
 
 function userId(message: TelegramMessage): number | null {
   return Number.isSafeInteger(message.from?.id) ? (message.from?.id ?? null) : null;
@@ -215,17 +151,12 @@ async function handleCallbackQuery(update: TelegramUpdate): Promise<boolean> {
   const answer = parseQuizCallbackData(callback.data);
   const message = callback.message;
   const currentUserId = callbackUserId(update);
-  if (
-    answer === null ||
-    message === undefined ||
-    currentUserId === null ||
-    callback.from.is_bot ||
-    !leylobucksMode.isEnabled(currentUserId)
-  ) {
+  if (answer === null || message === undefined || currentUserId === null || callback.from.is_bot) {
     return true;
   }
 
-  const markdown = leylobucksQuizMessage(database.quizLeylobucks(currentUserId, answer));
+  const markdown = economyCommands.quizAnswer(currentUserId, answer);
+  if (markdown === null) return true;
   if ((await telegram.editRich(message.chat.id, message.message_id, markdown)) === null) {
     await sendInlineResponse(telegram, message, markdown);
   }
@@ -387,56 +318,8 @@ async function poll(): Promise<void> {
         if (await mines.command(message, bot.username)) continue;
         acknowledgeNameMistake(message);
         const currentUserId = userId(message);
+        if (await economyCommands.handle(message, currentUserId)) continue;
         const economyEnabled = leylobucksMode.isEnabled(currentUserId);
-        const testBumpCommand = parseTestBumpCommand(message, bot.username);
-        if (testBumpCommand && currentUserId !== null) {
-          await sendInlineResponse(
-            telegram,
-            message,
-            testBumpCommand.amount === null
-              ? leylobucksTestBumpInvalidMessage()
-              : leylobucksTestBumpMessage(
-                  database.testBumpLeylobucks(currentUserId, testBumpCommand.amount),
-                ),
-          );
-          continue;
-        }
-        const leylobucksCommand = parseLeylobucksCommand(message, bot.username);
-        if (leylobucksCommand && currentUserId !== null) {
-          if (leylobucksCommand.kind === "toggle") {
-            leylobucksMode.setEnabled(currentUserId, leylobucksCommand.enabled);
-            await sendInlineResponse(
-              telegram,
-              message,
-              leylobucksModeMessage(leylobucksCommand.enabled),
-            );
-            continue;
-          }
-          if (economyEnabled) {
-            const markdown =
-              leylobucksCommand.kind === "status"
-                ? leylobucksStatusMessage(database.leylobucksStatus(currentUserId))
-                : leylobucksCommand.kind === "buy"
-                  ? leylobucksPurchaseMessage(
-                      database.purchaseLeylobucks(currentUserId, leylobucksCommand.cost),
-                    )
-                  : leylobucksInvalidCommandMessage();
-            await sendInlineResponse(telegram, message, markdown);
-            continue;
-          }
-          if (isSlashCommand(message)) {
-            continue;
-          }
-        }
-        const quizCommand = parseQuizCommand(message, bot.username);
-        if (economyEnabled && quizCommand && currentUserId !== null) {
-          await sendInlineResponse(
-            telegram,
-            message,
-            leylobucksQuizMessage(database.quizLeylobucks(currentUserId, quizCommand.answer)),
-          );
-          continue;
-        }
         const cancelledMessageId = cancelTaskMessageId(message, bot.username);
         if (cancelledMessageId !== null) {
           const cancelledJobIds = database.cancelJobsForMessage(
