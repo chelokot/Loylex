@@ -67,7 +67,7 @@ class ApprovalTest(ApprovalTestCase):
 
     def test_full_diff_and_approved_push(self) -> None:
         identifier = self.submit()
-        document = self.approvals.messages[0][2]
+        document = (self.approvals.root / identifier / "package.txt").read_bytes()
         self.assertIn(b"-before", document)
         self.assertIn(b"+after", document)
         self.assertEqual(
@@ -130,7 +130,7 @@ class ApprovalTest(ApprovalTestCase):
         self.assertEqual(self.approvals.status(identifier)["state"], "cancelled")
         second = self.submit()
         self.approvals._update(second, created=int(time.time()) - 3601)
-        self.assertFalse(self.callback(second, message=104)["accepted"])
+        self.assertFalse(self.callback(second, message=self.approvals.status(second)["message_id"])["accepted"])
         self.assertEqual(self.approvals.status(second)["state"], "expired")
         self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "main"), self.old_sha)
 
@@ -180,7 +180,7 @@ class ApprovalTest(ApprovalTestCase):
         self.approvals.database.close()
         self.approvals = LocalApprovals(self.directory / "broker", self.remote)
         self.assertFalse(
-            self.approvals.telegram_allowed("deleteMessage", {"chat_id": -100, "message_id": 102})
+            self.approvals.telegram_allowed("deleteMessage", {"chat_id": -100, "message_id": 101})
         )
 
     def test_stale_fork_new_branch_reviews_contribution_not_upstream_history(self) -> None:
@@ -198,7 +198,7 @@ class ApprovalTest(ApprovalTestCase):
                      "bundle": base64.b64encode(bundle.read_bytes()).decode()}
         with mock.patch.object(self.approvals, "_fork_parent", return_value="upstream/project"):
             identifier = self.submit(operation)
-        package = self.approvals.messages[0][2]
+        package = (self.approvals.root / identifier / "package.txt").read_bytes()
         self.assertIn(b"actual contribution", package)
         self.assertNotIn(b"-before\n+after", package)
         self.assertNotIn(b"    Change\n", package)
@@ -213,15 +213,15 @@ class ApprovalTest(ApprovalTestCase):
 
     def test_existing_fork_branch_does_not_hide_changes_against_upstream(self) -> None:
         with mock.patch.object(self.approvals, "_fork_parent", side_effect=AssertionError("unexpected")):
-            self.submit()
-        self.assertIn(b"-before\n+after", self.approvals.messages[0][2])
+            identifier = self.submit()
+        self.assertIn(b"-before\n+after", (self.approvals.root / identifier / "package.txt").read_bytes())
 
     def test_new_branch_fetches_bundle_prerequisites_and_shows_only_new_changes(
         self,
     ) -> None:
         operation = {**self.operation, "ref": "refs/heads/review"}
         identifier = self.submit(operation)
-        document = self.approvals.messages[0][2]
+        document = (self.approvals.root / identifier / "package.txt").read_bytes()
         self.assertNotIn(b"    Initial", document)
         self.assertIn(b"    Change", document)
         self.assertTrue(self.callback(identifier)["accepted"])
@@ -230,17 +230,16 @@ class ApprovalTest(ApprovalTestCase):
             self.git("--git-dir", str(self.remote), "rev-parse", "review"), self.new_sha
         )
 
-    def test_approval_notice_is_concise_and_replies_to_package(self) -> None:
+    def test_approval_notice_has_summary_link_and_buttons_without_document(self) -> None:
         identifier = self.submit()
-        document = self.approvals.messages[0][1]
-        notice = self.approvals.messages[1][1]
-        self.assertIn("Проверка операции: push", document["caption"])
-        self.assertEqual(notice["text"], "@Chelokot\n\nTLDR: Изменяется тестовый файл.")
-        self.assertEqual(notice["reply_parameters"], {"message_id": 101})
-        self.assertEqual(
-            notice["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
-            f"approve:{identifier}",
-        )
+        self.assertEqual(len(self.approvals.messages), 1)
+        method, notice, document = self.approvals.messages[0]
+        self.assertEqual(method, "sendMessage")
+        self.assertIsNone(document)
+        self.assertIn("TLDR: Изменяется тестовый файл.", notice["text"])
+        self.assertIn(f"https://github.com/owner/repository/compare/{self.old_sha}...{self.new_sha}", notice["text"])
+        self.assertEqual(notice["reply_parameters"], {"message_id": 10, "allow_sending_without_reply": True})
+        self.assertEqual(notice["reply_markup"]["inline_keyboard"][0][0]["callback_data"], f"approve:{identifier}")
         self.assertEqual(self.approvals.status(identifier)["state"], "pending")
 
     def test_review_failure_is_advisory(self) -> None:

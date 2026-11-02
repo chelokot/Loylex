@@ -9,6 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from loylex_pr_merge import PullRequestMerge
+from loylex_pr_deploy import PullRequestDeployment
 from loylex_approval_execution import ApprovalExecution
 from loylex_approval_host import ApprovalError, encoded, https_request, secret
 from loylex_approval_packages import ApprovalPackages
@@ -19,7 +21,7 @@ from loylex_approval_validation import OperationValidation
 OPERATOR_ID = 426043802
 
 
-class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalExecution):
+class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalExecution, PullRequestMerge, PullRequestDeployment):
     def __init__(self, supervisor: Any, root: Path | None = None) -> None:
         self.supervisor = supervisor
         self.root = root or Path.home() / ".local/state/loylex-approvals"
@@ -53,9 +55,12 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
     def status(self, identifier: str) -> dict[str, Any]:
         with self.lock:
             row = self._row(identifier)
-            return {
-                key: row[key] for key in ("id", "state", "digest", "message_id", "review", "result")
-            }
+            result = {key: row[key] for key in ("id", "state", "digest", "message_id", "review", "result")}
+            if self.database.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pr_deployments'").fetchone():
+                deployment = self.database.execute("SELECT state,detail FROM pr_deployments WHERE approval_id=?", (identifier,)).fetchone()
+                if deployment:
+                    result["deployment"] = dict(deployment)
+            return result
 
     def _update(self, identifier: str, **values: Any) -> None:
         with self.lock:
@@ -160,40 +165,19 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                 review = "TLDR недоступен."
             with self.lock:
                 row = self._row(identifier)
-                document = self._telegram(
-                    "sendDocument",
-                    {
-                        "chat_id": row["chat_id"],
-                        "caption": (
-                            f"Проверка операции: {operation['kind']} · "
-                            f"{operation.get('repository', 'chelokot/Loylex')}\n"
-                            + "Изменения относительно указанной в пакете базы сравнения."
-                        ),
-                        "reply_parameters": {
-                            "message_id": row["reply_id"],
-                            "allow_sending_without_reply": True,
-                        },
-                        **(
-                            {"message_thread_id": row["thread_id"]}
-                            if row["thread_id"] is not None
-                            else {}
-                        ),
-                    },
-                    package,
-                )
-                self._update(identifier, document_id=document["message_id"])
-                text = f"@Chelokot\n\nTLDR: {review}"
+                saved = json.loads((self.root / identifier / "operation.json").read_bytes())
+                text = self._notice(saved, review)
                 message = self._telegram(
                     "sendMessage",
                     {
                         "chat_id": row["chat_id"],
                         "text": text,
-                        "reply_parameters": {"message_id": document["message_id"]},
+                        "reply_parameters": {"message_id": row["reply_id"], "allow_sending_without_reply": True},
                         "reply_markup": {
                             "inline_keyboard": [
                                 [
                                     {
-                                        "text": "Одобрить",
+                                        "text": "Одобрить и слить" if operation["kind"] == "merge-pr" else "Одобрить",
                                         "callback_data": f"approve:{identifier}",
                                     },
                                     {
@@ -220,6 +204,22 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
         except Exception as error:
             detail = str(error) if isinstance(error, ApprovalError) else type(error).__name__
             self._update(identifier, state="failed", result=f"Preparation failed: {detail}")
+
+    @staticmethod
+    def _notice(operation: dict, review: str) -> str:
+        repository = operation.get("repository", "chelokot/Loylex")
+        url = operation.get("url")
+        if not url:
+            head = operation.get("headSha", operation.get("newSha", operation.get("commit")))
+            base = operation.get("baseSha", operation.get("reviewBaseSha", operation.get("oldCommit")))
+            url = (f"https://github.com/{repository}/compare/{base}...{head}" if base and head
+                   else f"https://github.com/{repository}/commit/{head}" if head
+                   else f"https://github.com/{repository}")
+        return f"@Chelokot\n\nTLDR: {review}\n\n{url}"
+
+    def _saved_notice(self, row) -> str:
+        operation = json.loads((self.root / row["id"] / "operation.json").read_bytes())
+        return self._notice(operation, row["review"])
 
     def telegram_allowed(self, method: str, parameters: dict[str, Any]) -> bool:
         method = method.lower()
@@ -261,7 +261,7 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                 {
                     "chat_id": row["chat_id"],
                     "message_id": row["message_id"],
-                    "text": f"@Chelokot\n\nTLDR: {row['review']}\n\n{decision}",
+                    "text": self._saved_notice(row) + f"\n\n{decision}",
                     "reply_markup": {"inline_keyboard": []},
                 },
             )

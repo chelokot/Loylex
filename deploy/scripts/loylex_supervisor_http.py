@@ -152,4 +152,5 @@ def serve(supervisor: Any) -> None:
     with ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler) as server, GatewayHTTPServer((LISTEN_HOST, 8791), RequestHandler) as gateway:
         gateway.socket = context.wrap_socket(gateway.socket, server_side=True)
         threading.Thread(target=gateway.serve_forever, daemon=True).start()
+        APPROVALS.start_pr_deployments()
         server.serve_forever()

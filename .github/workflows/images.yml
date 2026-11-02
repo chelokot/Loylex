@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   packages: write
+  statuses: write
 
 jobs:
   build:
@@ -39,6 +40,7 @@ jobs:
             type=sha
             type=ref,event=tag
       - uses: docker/build-push-action@v6
+        id: build
         with:
           context: .
           file: ${{ matrix.file }}
@@ -47,3 +49,9 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Record exact image digest for host deployment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_COMPONENT: ${{ matrix.name }}
+        run: python3 .github/scripts/publish-image-status.py

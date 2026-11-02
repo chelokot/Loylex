@@ -16,6 +16,7 @@ class OperationValidation:
             raise ApprovalError("operation must be an object")
         kind = operation.get("kind")
         fields = {
+            "merge-pr": {"kind", "repository", "number"},
             "push": {"kind", "repository", "ref", "newSha", "bundle"},
             "pull-request": {"kind", "repository", "head", "base", "title", "body"},
             "github": {"kind", "repository", "method", "resource", "body"},
@@ -43,6 +44,9 @@ class OperationValidation:
                 or ".." in repository
             ):
                 raise ApprovalError("repository must be owner/name")
+        if kind == "merge-pr":
+            if operation["repository"] != "chelokot/Loylex" or type(operation["number"]) is not int or operation["number"] <= 0:
+                raise ApprovalError("merge-pr requires a positive Loylex PR number")
         if kind == "push":
             if not isinstance(operation["ref"], str) or not operation["ref"].startswith(
                 ("refs/heads/", "refs/tags/")

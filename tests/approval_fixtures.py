@@ -108,7 +108,7 @@ class ApprovalTestCase(unittest.TestCase):
         self,
         identifier: str,
         user: int = broker.OPERATOR_ID,
-        message: int = 102,
+        message: int = 101,
         action: str = "approve",
         chat: int = -100,
     ) -> dict:

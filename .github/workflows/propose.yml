@@ -1,0 +1,50 @@
+name: Propose
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or reuse a PR to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_BRANCH: ${{ github.ref_name }}
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          repository = os.environ['GH_REPO']
+          branch = os.environ['GH_BRANCH']
+          if repository != 'chelokot/Loylex' or not branch.startswith('feature/'):
+              raise SystemExit('Unexpected PR source')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect)
+          def api(path, body=None):
+              request = urllib.request.Request('https://api.github.com/repos/' + repository + '/' + path,
+                  data=json.dumps(body).encode() if body is not None else None,
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                           'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+              with opener.open(request, timeout=30) as response:
+                  return json.load(response)
+          query = urllib.parse.urlencode({'state': 'open', 'base': 'main', 'head': 'chelokot:' + branch})
+          existing = api('pulls?' + query)
+          if not existing:
+              pr = api('pulls', {'base': 'main', 'head': branch,
+                  'title': branch.removeprefix('feature/').replace('-', ' ')[:200],
+                  'body': 'Changes are checked on the feature branch. Telegram approval merges a pinned head SHA; deployment waits for successful main builds.'})
+              print(pr['html_url'])
+          else:
+              print(existing[0]['html_url'])

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
+from loylex_reviewed_images import ReviewedImages
 from loylex_compose import SERVICE_REPOSITORIES, replace_compose_image_line
 from loylex_supervisor_errors import BusyError, SupervisorError
 from loylex_supervisor_http import serve
@@ -95,9 +96,9 @@ def service_state(component: str) -> str:
     return "inactive"
 
 
-class Supervisor:
+class Supervisor(ReviewedImages):
     def __init__(self) -> None:
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.worker: threading.Timer | None = None
         previous_state: dict[str, Any] = {}
         try:
@@ -116,6 +117,14 @@ class Supervisor:
             "activeAgentSlot": self.active_agent_slot,
         }
         self._write_state()
+
+    @staticmethod
+    def _compose_path() -> Path:
+        return COMPOSE_FILE
+
+    @staticmethod
+    def _reviewed_command(arguments: list[str]) -> str:
+        return run_command(arguments)
 
     def status(self) -> dict[str, Any]:
         services = {"gateway": service_state("gateway")}

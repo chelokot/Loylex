@@ -14,6 +14,9 @@ ZERO_SHA = "0" * 40
 GATEWAY_BASE_IMAGE = "docker.io/oven/bun:1.4.0-debian"
 INFRASTRUCTURE_FILES = (
     "loylex-supervisor",
+    "loylex_pr_merge.py",
+    "loylex_pr_deploy.py",
+    "loylex_reviewed_images.py",
     "loylex_approval_execution.py",
     "loylex_approval_host.py",
     "loylex_approval_packages.py",
@@ -149,6 +152,8 @@ class ApprovalPackages:
                 if operation["ref"].startswith("refs/tags/"):
                     raise ApprovalError("Existing tags cannot be replaced")
                 self._git(directory, "merge-base", "--is-ancestor", base, head)
+        elif kind == "merge-pr":
+            base, head = self._snapshot_pr(directory, operation)
         elif kind == "pull-request":
             operation.setdefault("headRepository", repository)
             operation["headSha"] = self._remote_sha(

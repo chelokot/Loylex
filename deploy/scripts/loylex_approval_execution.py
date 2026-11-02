@@ -65,6 +65,8 @@ class ApprovalExecution:
                     privileged=True,
                 )
                 result = {"newSha": operation["newSha"], "ref": operation["ref"]}
+            elif kind == "merge-pr":
+                result = self._merge_pr(operation)
             elif kind == "pull-request":
                 head_repository = operation.get("headRepository", operation["repository"])
                 for key in ("head", "base"):
