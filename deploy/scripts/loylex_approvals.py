@@ -14,6 +14,7 @@ from loylex_approval_host import ApprovalError, encoded, https_request, secret
 from loylex_approval_packages import ApprovalPackages
 from loylex_approval_review import ApprovalReview
 from loylex_approval_validation import OperationValidation
+from loylex_t3_bridge import t3_status
 
 
 OPERATOR_ID = 426043802
@@ -80,6 +81,8 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
         ):
             raise ApprovalError("Invalid Telegram thread")
         operation = payload["operation"]
+        if isinstance(operation, dict) and operation.get("kind") == "t3-status":
+            return t3_status({key: value for key, value in operation.items() if key != "kind"})
         self._validate_operation(operation)
         with self.lock:
             if shutil.disk_usage(self.root).free < 2 * 1024 * 1024 * 1024:
@@ -166,8 +169,10 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                         "chat_id": row["chat_id"],
                         "caption": (
                             f"Проверка операции: {operation['kind']} · "
-                            f"{operation.get('repository', 'chelokot/Loylex')}\n"
-                            + "Изменения относительно указанной в пакете базы сравнения."
+                            f"{operation.get('machine', operation.get('repository', 'chelokot/Loylex'))}\n"
+                            + ("T3: точная операция в пакете. Задание выполняется с full-access; результат доступен агенту."
+                               if operation["kind"] == "t3" else
+                               "Изменения относительно указанной в пакете базы сравнения.")
                         ),
                         "reply_parameters": {
                             "message_id": row["reply_id"],
