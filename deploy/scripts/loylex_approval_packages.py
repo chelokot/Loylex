@@ -8,12 +8,15 @@ from typing import Any
 
 from loylex_approval_host import MAX_PACKAGE_BYTES, ApprovalError, command, encoded, https_request, secret
 from loylex_approval_validation import MAX_BUNDLE_BYTES, REPOSITORY_PATTERN, SHA_PATTERN
+from loylex_t3_bridge import snapshot_t3
 
 
 ZERO_SHA = "0" * 40
 GATEWAY_BASE_IMAGE = "docker.io/oven/bun:1.4.0-debian"
 INFRASTRUCTURE_FILES = (
     "loylex-supervisor",
+    "loylex_t3_bridge.py",
+    "loylex_t3_transport.py",
     "loylex_approval_execution.py",
     "loylex_approval_host.py",
     "loylex_approval_packages.py",
@@ -103,7 +106,10 @@ class ApprovalPackages:
         directory = self.root / identifier
         operation = dict(operation)
         repository = operation.get("repository", "chelokot/Loylex")
-        command(["git", "init", "--bare", str(directory / "repository.git")])
+        if operation["kind"] == "t3":
+            operation = snapshot_t3(operation)
+        else:
+            command(["git", "init", "--bare", str(directory / "repository.git")])
         kind = operation["kind"]
         diff = b""
         if kind == "push":

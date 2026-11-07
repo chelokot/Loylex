@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from loylex_approval_host import ApprovalError, command, encoded, https_request, secret
+from loylex_t3_bridge import execute_t3
 
 
 class ApprovalExecution:
@@ -48,7 +49,9 @@ class ApprovalExecution:
             if not package.startswith(encoded(operation) + b"\n\n"):
                 raise ApprovalError("Operation does not match package")
             kind = operation["kind"]
-            if kind == "push":
+            if kind == "t3":
+                result = execute_t3(operation)
+            elif kind == "push":
                 if (
                     hashlib.sha256((directory / "change.bundle").read_bytes()).hexdigest()
                     != operation["bundleSha256"]

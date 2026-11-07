@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from loylex_approval_host import ApprovalError, command
+from loylex_t3_bridge import validate_t3
 
 
 MAX_BUNDLE_BYTES = 20 * 1024 * 1024
@@ -15,6 +16,9 @@ class OperationValidation:
         if not isinstance(operation, dict):
             raise ApprovalError("operation must be an object")
         kind = operation.get("kind")
+        if kind == "t3":
+            validate_t3(operation)
+            return
         fields = {
             "push": {"kind", "repository", "ref", "newSha", "bundle"},
             "pull-request": {"kind", "repository", "head", "base", "title", "body"},
