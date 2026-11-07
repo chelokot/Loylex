@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "deploy/scripts"))
-import loylex_t3_bridge as bridge
+import loylex_approval_validation as bridge
 from loylex_approval_host import ApprovalError
 from approval_fixtures import ApprovalTestCase
 

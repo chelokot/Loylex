@@ -38,10 +38,11 @@ or mutable package reference is added here.
 
 ## Final artifact and trust boundaries
 
-The complete new Python transport and policy modules and all modified broker
-integration sites are reviewed as source. The infrastructure installation list
-includes both new modules, so the existing saved-commit infrastructure operation
-ships the reviewed files together. They are not copied into the agent image or
+The complete Python transport and policy code and all modified broker integration
+sites are reviewed as source. Transport lives in the already installed
+`loylex_approval_host.py`; operation policy lives in the already installed
+`loylex_approval_validation.py`. No new host installation paths are needed. The
+pre-T3 infrastructure installation list therefore ships the complete bridge. They are not copied into the agent image or
 imported into agent/gateway code. Top-level effects are only constant definitions,
 a bounded semaphore, a lock and an empty status-rate queue. There is no network,
 secret read, process execution or credential registration at import time.
@@ -79,3 +80,25 @@ approval and verify the rollout gates in `docs/t3-approval-bridge.md`. Never aut
 update T3 or replace remote protocol code based on returned metadata. Recovery
 restores prior host supervisor modules and revokes the T3 grant; retain packages,
 audit and history. This PR itself is rolled back by an ordinary revert.
+
+
+## Bootstrap correction after PR #8
+
+Before rollout, an isolated import probe with the **pre-T3 updater's exact file
+list** reproduced `ModuleNotFoundError: loylex_t3_bridge`. The old updater, not the
+candidate source, chooses which files to install. Adding new module names only to
+the candidate list cannot bootstrap their first installation. PR #8 was not
+deployed to the host.
+
+The correction relocates the unchanged transport into `loylex_approval_host.py`
+and the unchanged T3 policy into `loylex_approval_validation.py`; both are already
+installed by the old updater. Candidate imports and test patches follow those
+locations. The two standalone module paths and candidate-only list additions are
+removed. There is no change to operator checks, credentials, runtime versions or
+T3 policy. The exact previous file-set regression now imports the supervisor and
+validates a T3 operation successfully in an isolated Python subprocess. Existing
+installed-file hashes and package/commit approval semantics remain unchanged.
+
+Correction validation: all 58 Python tests passed, including 18 T3 tests and the
+previous-installer regression; `git diff --check` passed. The merged base commit
+also passed its GitHub Check workflow. No host installation was attempted.
