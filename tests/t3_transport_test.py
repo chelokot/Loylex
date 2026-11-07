@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "deploy/scripts"))
-import loylex_t3_transport as transport
+import loylex_approval_host as transport
 from loylex_approval_host import ApprovalError
 
 

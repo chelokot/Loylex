@@ -61,7 +61,8 @@ suggestion to authorize the agent container directly would bypass this approval
 boundary and should not be used for this design.
 
 Use the existing commit-specific infrastructure approval to install the reviewed
-supervisor modules. No gateway or container changes are needed. Record the installed
+supervisor modules. T3 code uses only pre-existing installation paths, so the
+previous updater can install the complete bridge in one operation. No gateway or container changes are needed. Record the installed
 previous commit and back up the host registry before activation. The registry is
 host-controlled; no agent API provisions or edits it. The endpoint/secret reference and a digest of connection configuration are
 snapshotted into each package and checked again at execution. Unrelated registered

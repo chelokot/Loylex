@@ -14,7 +14,7 @@ from loylex_approval_host import ApprovalError, encoded, https_request, secret
 from loylex_approval_packages import ApprovalPackages
 from loylex_approval_review import ApprovalReview
 from loylex_approval_validation import OperationValidation
-from loylex_t3_bridge import t3_status
+from loylex_approval_validation import t3_status
 
 
 OPERATOR_ID = 426043802
