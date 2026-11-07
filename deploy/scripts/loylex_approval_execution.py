@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from loylex_approval_host import ApprovalError, command, encoded, https_request, secret
-from loylex_t3_bridge import execute_t3
+from loylex_approval_validation import execute_t3
 
 
 class ApprovalExecution:
