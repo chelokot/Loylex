@@ -41,8 +41,17 @@ Gateway deployment snapshots the complete source diff and uses the base digest i
 by trusted host maintenance; preparing a proposal never pulls arbitrary candidate images. The host builds that saved recipe from the approved Git object,
 then verifies health with automatic rollback to the previous Compose image. Gateway
 rollouts retain the built image's content digest, so a missing local tag cannot pull substituted
-CI bytes. Host supervisor updates copy only the two named Python files and check installed file hashes before replacing
-them. Compose, service units and host packages require explicit host maintenance.
+CI bytes. Host supervisor updates copy the files in `INFRASTRUCTURE_FILES` (the broker, the supervisor, and `loylex_compose.py`)
+and check installed file hashes before replacing them. Service units and host packages still
+require explicit host maintenance.
+
+Host configuration (`host-config`) installs `deploy/scripts/loylex-backup` and
+`deploy/compose/compose.yaml` from an approved commit. The reviewed artifact is the difference
+from the installed files. Deployed image pins for the gateway and both agent slots are kept from
+the host, so this operation cannot repin the gateway or agent images; any new service or image
+line in the commit appears in the review. Any edit to either installed file after review fails
+closed. The operation creates `backups/loylex-manifests`; the Compose change
+applies to agent containers at the next agent deploy.
 No runtime dependency versions are changed: Bun 1.4.0, Codex 0.159.2 and the existing host
 Podman/Compose/PM3 installations are retained.
 

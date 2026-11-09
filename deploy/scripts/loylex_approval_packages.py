@@ -1,4 +1,5 @@
 import base64
+import difflib
 import hashlib
 import json
 import os
@@ -9,6 +10,8 @@ from typing import Any
 from loylex_approval_host import MAX_PACKAGE_BYTES, ApprovalError, command, encoded, https_request, secret
 from loylex_approval_validation import MAX_BUNDLE_BYTES, REPOSITORY_PATTERN, SHA_PATTERN
 from loylex_approval_validation import snapshot_t3
+from loylex_compose import carry_deployed_images
+from loylex_supervisor_errors import SupervisorError
 
 
 ZERO_SHA = "0" * 40
@@ -25,6 +28,51 @@ INFRASTRUCTURE_FILES = (
     "loylex_supervisor_errors.py",
     "loylex_supervisor_http.py",
 )
+# Host files that a host-config operation replaces, relative to the host user's home.
+HOST_CONFIG_SOURCES = {
+    "loylex-backup": ("deploy/scripts/loylex-backup", ".local/bin/loylex-backup"),
+    "compose.yaml": ("deploy/compose/compose.yaml", "stack/compose.yaml"),
+}
+HOST_CONFIG_MODES = {"loylex-backup": 0o755, "compose.yaml": 0o644}
+
+
+def read_host_file(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise ApprovalError(f"Installed host file is unavailable: {path.name}") from error
+
+
+def replace_host_file(path: Path, content: bytes, mode: int) -> None:
+    temporary = path.with_name(path.name + ".new")
+    temporary.write_bytes(content)
+    temporary.chmod(mode)
+    os.replace(temporary, path)
+
+
+def host_config_text(content: bytes) -> str:
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ApprovalError("Host configuration must be UTF-8 text") from error
+
+
+def carry_images(installed: bytes, approved: bytes) -> bytes:
+    # Deployed image pins belong to the host's live state; the approved commit only supplies the rest.
+    try:
+        return carry_deployed_images(host_config_text(installed), host_config_text(approved)).encode()
+    except SupervisorError as error:
+        raise ApprovalError(f"Cannot keep deployed Compose images: {error}") from error
+
+
+def host_config_normalized(name: str, content: bytes) -> bytes:
+    # Compare everything except deployed image pins, which the supervisor changes on every deploy.
+    if name != "compose.yaml":
+        return content
+    return b"".join(
+        b"    image:\n" if line.startswith(b"    image:") else line
+        for line in content.splitlines(keepends=True)
+    )
 
 
 class ApprovalPackages:
@@ -193,6 +241,11 @@ class ApprovalPackages:
                     ).hexdigest()
                     for name in operation["files"]
                 }
+        elif kind == "host-config":
+            operation["oldCommit"] = self._installed_commit(kind)
+            self._fetch(directory, repository, operation["commit"])
+            diff = self._host_config_review(directory, operation)
+            base, head = ZERO_SHA, ZERO_SHA
         else:
             base, head = ZERO_SHA, ZERO_SHA
         if head != ZERO_SHA:
@@ -232,9 +285,35 @@ class ApprovalPackages:
             (directory / name).chmod(0o400)
         return package
 
+    def _host_config_review(self, directory: Path, operation: dict[str, Any]) -> bytes:
+        # The reviewed artifact is the difference from the files installed now, not a commit range.
+        commit = operation["commit"]
+        files: dict[str, dict[str, str]] = {}
+        review: list[str] = []
+        for name, (source, destination) in HOST_CONFIG_SOURCES.items():
+            installed = read_host_file(Path.home() / destination)
+            approved = self._git(directory, "show", f"{commit}:{source}")
+            if name == "compose.yaml":
+                approved = carry_images(installed, approved)
+            files[name] = {
+                "installedSha256": hashlib.sha256(host_config_normalized(name, installed)).hexdigest(),
+                "newSha256": hashlib.sha256(host_config_normalized(name, approved)).hexdigest(),
+            }
+            review.extend(difflib.unified_diff(
+                host_config_text(installed).splitlines(keepends=True),
+                host_config_text(approved).splitlines(keepends=True),
+                fromfile=f"installed/{name}",
+                tofile=f"approved/{name}",
+            ))
+        operation["files"] = files
+        return b"\nHOST CONFIG DIFF\n" + "".join(review).encode()
+
     def _installed_commit(self, kind: str) -> str:
         if kind == "infrastructure":
             return (self.root / "infrastructure-commit").read_text().strip()
+        if kind == "host-config":
+            recorded = self.root / "host-config-commit"
+            return recorded.read_text().strip() if recorded.exists() else ""
         output = (
             command(
                 [

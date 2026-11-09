@@ -8,6 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from loylex_approval_host import ApprovalError, command, encoded, https_request, secret
+from loylex_approval_packages import (
+    HOST_CONFIG_MODES,
+    HOST_CONFIG_SOURCES,
+    carry_images,
+    host_config_normalized,
+    read_host_file,
+    replace_host_file,
+)
 from loylex_approval_validation import execute_t3
 
 
@@ -99,6 +107,10 @@ class ApprovalExecution:
                 if self._installed_commit(kind) != operation["oldCommit"]:
                     raise ApprovalError("Installed infrastructure changed; submit a new request")
                 result = self._deploy(directory, operation)
+            elif kind == "host-config":
+                if self._installed_commit(kind) != operation["oldCommit"]:
+                    raise ApprovalError("Installed host configuration changed; submit a new request")
+                result = self._host_config(directory, operation)
             else:
                 result = self._github(operation)
             self._update(
@@ -151,6 +163,43 @@ class ApprovalExecution:
         else:
             self._telegram('sendMessage', {'chat_id': row['chat_id'], 'text': 'Вход T3 не завершён. Запроси новую ссылку; команды на компьютере не запускались.',
                                            'reply_parameters': {'message_id': row['reply_id']}})
+
+    def _host_config(self, directory: Path, operation: dict[str, Any]) -> dict[str, Any]:
+        # Fail closed on any local edit since review; only the deployed image pins may differ.
+        home = Path.home()
+        installed: dict[str, bytes] = {}
+        for name, (_, destination) in HOST_CONFIG_SOURCES.items():
+            installed[name] = read_host_file(home / destination)
+            if (
+                hashlib.sha256(host_config_normalized(name, installed[name])).hexdigest()
+                != operation["files"][name]["installedSha256"]
+            ):
+                raise ApprovalError(f"Installed host file changed: {name}; submit a new request")
+        content: dict[str, bytes] = {}
+        for name, (source, _) in HOST_CONFIG_SOURCES.items():
+            content[name] = self._git(directory, "show", f"{operation['commit']}:{source}")
+            if name == "compose.yaml":
+                content[name] = carry_images(installed[name], content[name])
+            if (
+                hashlib.sha256(host_config_normalized(name, content[name])).hexdigest()
+                != operation["files"][name]["newSha256"]
+            ):
+                raise ApprovalError("Approved host configuration changed; submit a new request")
+        manifests = home / "backups/loylex-manifests"
+        manifests.mkdir(parents=True, exist_ok=True)
+        manifests.chmod(0o755)
+        replaced: list[str] = []
+        try:
+            for name, (_, destination) in HOST_CONFIG_SOURCES.items():
+                replace_host_file(home / destination, content[name], HOST_CONFIG_MODES[name])
+                replaced.append(name)
+        except OSError:
+            # Restore what this operation already replaced, so a failed install never leaves a mixed pair.
+            for name in replaced:
+                replace_host_file(home / HOST_CONFIG_SOURCES[name][1], installed[name], HOST_CONFIG_MODES[name])
+            raise
+        (self.root / "host-config-commit").write_text(operation["commit"])
+        return {"commit": operation["commit"], "files": list(HOST_CONFIG_SOURCES)}
 
     def _deploy(self, directory: Path, operation: dict[str, Any]) -> dict[str, Any]:
         commit = operation["commit"]

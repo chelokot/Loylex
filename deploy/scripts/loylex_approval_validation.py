@@ -30,13 +30,14 @@ class OperationValidation:
             "github": {"kind", "repository", "method", "resource", "body"},
             "gateway": {"kind", "commit"},
             "infrastructure": {"kind", "commit"},
+            "host-config": {"kind", "commit"},
         }
         if kind not in fields or set(operation) not in (
             fields[kind],
             fields[kind] | ({"headRepository"} if kind == "pull-request" else set()),
         ):
             raise ApprovalError("Invalid operation fields")
-        if kind in {"gateway", "infrastructure"}:
+        if kind in {"gateway", "infrastructure", "host-config"}:
             if not isinstance(operation["commit"], str) or not SHA_PATTERN.fullmatch(
                 operation["commit"]
             ):
