@@ -26,7 +26,7 @@ def rpc(identifier, value):
 
 
 class T3TransportTests(unittest.TestCase):
-    @mock.patch.object(transport.http.client, "HTTPSConnection")
+    @mock.patch.object(transport, "t3_https")
     def test_initialize_notification_call_and_session_binding(self, factory):
         connections = [mock.Mock() for _ in range(4)]
         factory.side_effect = connections
@@ -42,7 +42,7 @@ class T3TransportTests(unittest.TestCase):
         self.assertTrue(all(c.close.called for c in connections))
         self.assertEqual(connections[3].request.call_args.args[:2], ("DELETE", "/mcp"))
 
-    @mock.patch.object(transport.http.client, "HTTPSConnection")
+    @mock.patch.object(transport, "t3_https")
     def test_sse_ignores_notifications_and_returns_matching_result(self, factory):
         connection = factory.return_value
         payload = (b'data: {"jsonrpc":"2.0","method":"notifications/progress"}\n\n' +
@@ -51,7 +51,7 @@ class T3TransportTests(unittest.TestCase):
         result = transport.T3Transport("https://home.example/mcp", "secret")._rpc("initialize", {})
         self.assertEqual(result, {"ok": True})
 
-    @mock.patch.object(transport.http.client, "HTTPSConnection")
+    @mock.patch.object(transport, "t3_https")
     def test_no_redirect_retry_or_remote_error_disclosure(self, factory):
         for status in (302, 401, 403, 500):
             factory.reset_mock()
@@ -62,7 +62,7 @@ class T3TransportTests(unittest.TestCase):
             self.assertNotIn("hostile", str(raised.exception))
             self.assertEqual(factory.call_count, 1)
 
-    @mock.patch.object(transport.http.client, "HTTPSConnection")
+    @mock.patch.object(transport, "t3_https")
     def test_oversize_wrong_id_and_stream_eof_fail_closed(self, factory):
         responses = [Response(b"x" * (transport.MAX_RESPONSE + 1)),
                      Response(rpc(99, {})),

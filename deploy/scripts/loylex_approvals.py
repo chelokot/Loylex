@@ -14,7 +14,7 @@ from loylex_approval_host import ApprovalError, encoded, https_request, secret
 from loylex_approval_packages import ApprovalPackages
 from loylex_approval_review import ApprovalReview
 from loylex_approval_validation import OperationValidation
-from loylex_approval_validation import t3_status
+from loylex_approval_validation import t3_status, t3_connection_status
 
 
 OPERATOR_ID = 426043802
@@ -83,6 +83,8 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
         operation = payload["operation"]
         if isinstance(operation, dict) and operation.get("kind") == "t3-status":
             return t3_status({key: value for key, value in operation.items() if key != "kind"})
+        if isinstance(operation, dict) and operation.get("kind") == "t3-connection":
+            return t3_connection_status({key: value for key, value in operation.items() if key != "kind"})
         self._validate_operation(operation)
         with self.lock:
             if shutil.disk_usage(self.root).free < 2 * 1024 * 1024 * 1024:

@@ -1,137 +1,172 @@
-# T3 operations through the host approval broker
+# T3 through Loylex
 
-This PR prepares a disabled-by-default bridge. It does not connect a computer,
-install T3, merge the PR, update the gateway, or roll out the supervisor.
-The authenticated callback and operator checks are unchanged.
+The bridge runs exclusively in the host supervisor. The agent proposes operations;
+the existing live Telegram operator button approves each one. It never receives a
+T3 bearer token, pairing code, OAuth authorization code or PKCE verifier.
+This implementation can be installed by the pre-T3 host updater: all host code
+uses its existing installed module paths. No T3 executable or SDK is installed.
 
-## Policy
+## User flow
 
-| Operation | Approval | Returned to the requesting agent |
-| --- | --- | --- |
-| `t3-status` | None | Machine alias, thread/run IDs, fixed run-state enum |
-| `t3` / `launch` | One live operator button | Receipt only |
-| `t3` / `send` | One live operator button per message | Receipt only |
-| `t3` / `read` | One live operator button per bounded page | Session messages and pagination |
-| `t3` / `list`, `projects`, `capabilities` | One live operator button per request | Requested metadata, potentially private |
-| `t3` / `interrupt` | One live operator button | Stop receipt only |
+1. In T3, enable T3 Connect so the computer is reachable. Copy **Settings →
+   Environments → environment menu → Copy MCP URL**. Send that URL to Loylex
+   with a name such as `home`. Never send pairing codes or tokens to chat.
+2. Loylex proposes `connect`. Approve its Telegram button. The host posts a
+   **Подключить T3** link valid for ten minutes. Open it and choose **Full access**
+   on the T3 consent screen. An already authorized T3 browser can approve;
+   otherwise enter the pairing code **on T3's page**, not in Telegram.
+3. The browser confirms completion. Ask Loylex to show projects, approve that
+   read, then select a project and approve registering its exact folder once.
+4. Say “на домашнем компьютере в проекте X запусти тесты”. Approve the task;
+   it requests full-access/default. No inner Loylex command-by-command approvals.
+   Configure a default model for the project in T3 first.
+   A provider or organization policy that cannot honor this mode must refuse.
+5. Status needs no approval. Reading the result needs a separate approval,
+   including each additional page or truncated-text continuation. Ask Loylex for
+   the result after approval; the broker does not post private transcripts itself.
 
-`launch` explicitly requests `full-access` and `default`, in the registered
-project root. This authorizes an autonomous task, including the local agent's
-choice of commands, rather than a fixed shell-command allowlist. There is no
-second Loylex approval layer inside that task. A provider that cannot honor the
-explicit mode must refuse it; it must not silently downgrade to supervised mode.
-Ordinary model questions and environmental failures remain possible.
+T3 currently issues MCP client access for **30 days**, with **no refresh grant**.
+Loylex detects local expiry; HTTP 401/403 reports reconnect required. Reconnect
+uses the same flow. Local credential status does not probe remote revocation or
+prove the computer is online. Reconnecting invalidates previous pending task
+approvals. Project registrations survive only when the endpoint is unchanged.
 
-`send` queues one follow-up. The bridge checks the project folder and the session's
-shell metadata first and refuses supervised/plan sessions. It does not change
-an existing session's mode or automatically answer a local permission prompt.
-There is an upstream race if a human changes the session mode/folder between
-verification and dispatch; T3's API has no conditional send lease for those fields.
+## One-time host prerequisite
 
-A creation/send receipt and a status poll do not grant transcript access. Reading
-the result needs a separate approval. Approved content becomes available to the
-requesting agent through the existing approval-status endpoint; it is not posted
-as a transcript into the group by the broker. This is disclosure to the agent,
-not an enforced destination-limited file export. Direct file downloads, attachments,
-schedules, arbitrary tool names, arbitrary URLs, mode changes, and approval answers
-are intentionally absent.
+A browser on a phone cannot reach the VPS loopback address. A trusted host
+administrator must provision one public HTTPS callback. This cannot be completed
+inside the agent container. Do not expose either supervisor port (8790/8791).
 
-## Host provisioning (not performed by the PR)
-
-The VPS host, outside the agent container, needs a regular mode-0600 registry:
-`~/.config/loylex/t3-machines.json`:
+On the host, create `~/.config/loylex/t3-oauth.json` owned by the supervisor user,
+mode **0600**, containing only:
 
 ```json
-{
-  "home": {
-    "endpoint": "https://YOUR-T3-CONNECT-ENVIRONMENT/mcp",
-    "tokenSecret": "loylex-t3-home",
-    "projects": { "PROJECT_ID": "C:\\Users\\you\\project" }
-  }
+{"callbackUrl":"https://YOUR-LOYLEX-HTTPS-DOMAIN/t3/callback"}
+```
+
+Use an existing authenticated-admin-managed TLS reverse proxy on that domain.
+Only the exact callback path is public; there is no public administrative API.
+For an existing Nginx TLS server, the location is:
+
+```nginx
+location = /t3/callback {
+    access_log off;
+    error_log /dev/null crit;
+    proxy_pass http://127.0.0.1:8792;
+    proxy_set_header Host $host;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 120s;
+    add_header Cache-Control no-store always;
+    add_header Referrer-Policy no-referrer always;
 }
 ```
 
-The matching OAuth access credential must be provisioned into that **host-owned**
-Podman secret through trusted host maintenance. Never put a token into an operation,
-chat, repository, environment URL or agent volume. The bridge is not a replacement
-OAuth authorization server. It does not yet implement OAuth onboarding or refresh;
-a missing/expired credential fails closed. Before live use, finish host-side OAuth
-login/refresh with the operator's environment URL and test revocation. The earlier
-suggestion to authorize the agent container directly would bypass this approval
-boundary and should not be used for this design.
+Disable request/query logging for this path in **every** proxy, WAF, tracing and
+error-reporting layer: the URL contains a single-use code. Use no analytics.
+TLS/DNS provisioning is host maintenance, not an agent-executable installer.
+Restart the supervisor after provisioning. Its callback listener binds only
+`127.0.0.1:8792`, with four request slots and socket timeouts. Missing/invalid
+callback configuration never prevents normal supervisor startup; connect fails
+with setup instructions. OAuth callbacks check state, issuer, exact callback,
+PKCE S256, expiry, a configuration lease and single use before saving access.
 
-Use the existing commit-specific infrastructure approval to install the reviewed
-supervisor modules. T3 code uses only pre-existing installation paths, so the
-previous updater can install the complete bridge in one operation. No gateway or container changes are needed. Record the installed
-previous commit and back up the host registry before activation. The registry is
-host-controlled; no agent API provisions or edits it. The endpoint/secret reference and a digest of connection configuration are
-snapshotted into each package and checked again at execution. Unrelated registered
-project paths are not copied into the package. Project root paths
-are included in the package and rechecked against T3 before dispatch.
+Install this reviewed commit with the existing commit-specific **infrastructure**
+approval. It uses only pre-existing installed files, including the bootstrap fix.
+Gateway code/authentication need no update. Publish/deploy the agent image for
+`loylex t3` convenience commands. No automatic T3/package updater is added.
 
-## Request examples
+## Commands for the agent
 
-Submit each JSON file with `loylex approve submit REQUEST.json`. `jobId` is the
-current Telegram job; replace the example value and all IDs. This uses existing
-job-to-chat resolution. The free status request responds immediately without
-creating a queue item, review or Telegram button:
+Use the current job ID; the gateway resolves its original chat/reply address.
+The user talks naturally; these commands save the agent from writing JSON files.
 
-```json
-{"jobId":1805,"operation":{"kind":"t3-status","machine":"home","threadId":"mcp:THREAD_ID"}}
+```text
+loylex t3 help
+loylex t3 connect JOB home https://ENVIRONMENT/mcp
+loylex t3 connection JOB home
+loylex t3 capabilities JOB home
+loylex t3 projects JOB home [CURSOR]
+loylex t3 use JOB home PROJECT_ID EXACT_FOLDER
+loylex t3 run JOB home PROJECT_ID 'Run tests and report'
+loylex t3 send JOB home PROJECT_ID THREAD_ID 'Follow-up'
+loylex t3 sessions JOB home PROJECT_ID [CURSOR]
+loylex t3 status JOB home THREAD_ID
+loylex t3 read JOB home THREAD_ID [AFTER_POSITION]
+loylex t3 continue JOB home THREAD_ID ITEM_ID TEXT_OFFSET
+loylex t3 stop JOB home THREAD_ID
+loylex t3 disconnect JOB home
+loylex t3 result APPROVAL_ID
 ```
 
-Create an autonomous task:
+Except `connection`, `status`, `result` (retrieving an already approved result)
+and local export saving, every remote operation needs a fresh operator button.
+No generic tool, URL override, permission answer, mode change or schedule exists.
+`disconnect` disables local access and cancels pending login; it preserves host
+credential/audit files. Revoke the grant in T3 **Sharing & access** too when removing
+access remotely. It does not interrupt existing remote tasks automatically.
 
-```json
-{"jobId":1805,"operation":{"kind":"t3","machine":"home","action":"launch","arguments":{"projectId":"PROJECT_ID","title":"Test build","message":"Run the project's test suite and report the result."}}}
+## File export
+
+MCP client tokens are restricted to `/mcp` upstream; they cannot be reused to
+call filesystem HTTP APIs. The bridge therefore supports **task-based export of
+one non-secret project file up to 32 KiB**, not a generic filesystem download.
+
+```text
+loylex t3 export JOB home PROJECT_ID relative/report.txt
+# Approve the full-access export task, poll status, approve a separate read:
+loylex t3 read JOB home THREAD_ID
+loylex t3 save-export READ_APPROVAL_ID /tmp/report.txt relative/report.txt
+# If the original request asks for the file in Telegram:
+loylex upload CHAT_ID /tmp/report.txt
 ```
 
-Read the result after approving a separate package:
+The full export prompt is in the immutable approval package. The remote agent is
+instructed to resolve the real path, refuse escapes/non-regular files/secrets and
+return a bounded JSON/base64 manifest. **These are instructions to an autonomous
+full-access agent, not an OS filesystem sandbox.** Projects are organizational
+boundaries in T3. The approved task already grants the remote agent broad local
+command access; exporting a file does not narrow that grant.
 
-```json
-{"jobId":1805,"operation":{"kind":"t3","machine":"home","action":"read","arguments":{"threadId":"mcp:THREAD_ID","limit":20,"maxCharsPerItem":10000}}}
-```
+Saving requires a successful approved read, exact requested relative path, a
+complete manifest, canonical base64, byte count and SHA-256. Conflicting content
+is refused. It creates the caller-selected local path exclusively, mode 0600,
+without overwriting files or following a destination symlink. The digest verifies
+transport consistency, not authenticity against a malicious remote computer.
+Large files and direct attachments are not supported by this version.
 
-`loylex approve status APPROVAL_ID` returns the saved outcome. Each subsequent read
-page is a new approval, using `afterPosition`/`nextPosition` and checking `hasMore`.
-For truncated individual text, this version does not expose item/text-offset reads.
-Sending requires `projectId`, `threadId` and `message`; listing requires `projectId`.
-`projects` and `capabilities` accept an empty argument object. `list` and `projects`
-accept bounded `cursor` and `limit`. `interrupt` requires only `threadId`.
+## Storage, failure and recovery
 
-## Failure and resource boundaries
+Host files `t3-machines.json`, `t3-credentials.json`, `t3-pending.json` use owner-only
+regular files, no symlink reads, bounded JSON, atomic replacement and fsync. Tokens
+exist only in the credentials file; registry/packages/results contain references
+and grant identities. Up to 20 computers/pending logins are supported. No OAuth
+secrets are in agent/gateway mounts. Existing Podman token-secret registrations
+remain supported until migrated by an approved reconnect.
 
-The existing immutable-package hash, one-hour expiry, live button binding,
-queue/disk limits, durable executing transition and restart interruption apply.
-No failed or unknown-outcome mutation is retried automatically. Inspect T3 before
-resubmitting after a connection loss. Launch/send use a saved client request key
-where upstream supports it; a new approval is a new operation, not a retry.
+All T3 HTTP traffic uses verified HTTPS port 443 and a validated public address
+pinned per connection with TLS hostname verification. Mixed private/public DNS,
+loopback, metadata, reserved and multicast addresses fail closed. OAuth discovery
+must name the reviewed paths on the exact approved origin; no redirects or
+server-provided alternate endpoints are followed. Network responses are inert
+JSON, never shell commands, dynamic imports or executable downloads.
 
-The stdlib-only client uses verified HTTPS on port 443, a host-registered `/mcp`
-endpoint, no redirects, bounded JSON/SSE responses (2 MiB), response deadlines,
-two simultaneous tool connections and a global 120-per-minute status limit.
-Free polling calls only `t3_thread_wait(timeoutMs=1)` and returns a positive
-allowlist of fields, dropping even hypothetical added transcript/summary fields.
-MCP transport sessions are closed after use. Errors do not include remote text,
-credentials or protocol-session IDs. Revocation/401 requires host intervention;
-there is no shell/network installer or dynamic code loading.
+Mutations and code exchange are never retried automatically. A callback spends
+its pending login durably before exchange; a lost exchange needs a new sign-in.
+A crash between credentials/registry replacement fails closed until reconnect.
+Other approval queue limits, one-hour expiry, saved-package integrity, live button
+checks, audit ordering and unknown-outcome handling remain unchanged.
+Status calls only `t3_thread_wait(timeoutMs=1)` and returns a fixed allowlist;
+no title/summary/transcript is included. Two T3 tool slots and 120 status polls per
+minute remain. Send checks mode/folder before dispatch; upstream has no atomic
+mode/folder lease, so a simultaneous human change remains a documented race.
 
-## Validation and rollout gate
+Before live acceptance: record the home T3 version/artifact provenance, verify
+HTTPS callback delivery without logs, approve a harmless task, poll status,
+approve a read/export, and exercise deny, replay, expiry, revoked grant, offline
+computer and supervisor restart. Local tests cannot establish these live facts.
 
-Automated tests cover the real local broker's pending/button/executing flow,
-wrong sender, replay, unknown outcome, target changes, status without a button,
-status content filtering, mode refusal, pagination and the HTTP/SSE transport.
-They use inert mock T3 responses, not a live computer. Existing broker authentication,
-message guards, audit and deployment tests remain required.
-
-Before activation: authenticate to the actual environment; run a harmless task,
-verify one click starts full-access execution without local permission prompts;
-confirm status does not reveal messages; approve one result read; test deny,
-expiry, disconnect, revoked OAuth and restart. Verify secret isolation on the host
-and in agent/gateway containers. Until those pass, this is a draft integration.
-
-Rollback: stop issuing T3 requests, revoke its OAuth grant on the T3 computer,
-restore the prior supervisor commit/modules through host maintenance, and keep the
-approval database/packages for audit. Other Loylex services and authentication
-remain unchanged. Do not roll back while an approved remote task is still running
-without first stopping it on the computer or with an approved interrupt.
+Rollback: stop/interrupt remote tasks first, revoke the grant in T3, restore the
+previous reviewed supervisor modules/commit through host maintenance, and restore
+its backed-up registry if needed. Remove the exact callback proxy location when
+retiring it. Keep credentials, approval packages, audit and Git history; do not
+roll back while a remote task is still running without arranging its shutdown.

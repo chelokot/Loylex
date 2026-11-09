@@ -32,7 +32,7 @@ class T3PolicyTests(unittest.TestCase):
                 bridge.validate_t3(item)
 
     def test_host_registry_permissions_and_endpoint_validation(self):
-        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(bridge.Path, "home", return_value=Path(temporary)):
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(Path, "home", return_value=Path(temporary)):
             path = Path(temporary) / ".config/loylex/t3-machines.json"
             path.parent.mkdir(parents=True)
             path.write_text(json.dumps({"home": ENTRY}))

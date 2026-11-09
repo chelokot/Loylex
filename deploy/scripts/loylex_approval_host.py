@@ -104,6 +104,7 @@ class T3Transport:
     def __init__(self, endpoint: str, token: str) -> None:
         if not isinstance(endpoint, str):
             raise ApprovalError("Invalid T3 endpoint")
+        t3_endpoint(endpoint)
         url = urlsplit(endpoint)
         if (url.scheme != "https" or not url.hostname or url.username or url.password
                 or url.query or url.fragment or url.path != "/mcp" or url.port not in (None, 443)):
@@ -117,7 +118,7 @@ class T3Transport:
         self.sequence = 0
 
     def _post(self, message: dict) -> dict | None:
-        connection = http.client.HTTPSConnection(self.host, timeout=30)
+        connection = t3_https(self.host, timeout=30)
         deadline = time.monotonic() + 30
         try:
             headers = {
@@ -132,7 +133,7 @@ class T3Transport:
             response = connection.getresponse()
             if response.status not in (200, 202, 204):
                 # Do not leak a remote error, credential, location or session ID.
-                raise ApprovalError(f"T3 MCP request failed (HTTP {response.status}); not retried")
+                raise ApprovalError("T3 access expired or was revoked; reconnect this computer" if response.status in (401, 403) else f"T3 MCP request failed (HTTP {response.status}); not retried")
             session = response.getheader("Mcp-Session-Id")
             if session:
                 if len(session) > 512 or any(c in session for c in "\r\n"):
@@ -196,7 +197,7 @@ class T3Transport:
             return self._call(tool, arguments)
         finally:
             if self.session:
-                connection = http.client.HTTPSConnection(self.host, timeout=5)
+                connection = t3_https(self.host, timeout=5)
                 try:
                     connection.request("DELETE", "/mcp", headers={
                         "Authorization": f"Bearer {self.token}",
@@ -233,3 +234,109 @@ class T3Transport:
         if not isinstance(value, dict) or value.get("_tag") == "OrchestratorMcpFailure":
             raise ApprovalError("Unexpected T3 tool result; not retried")
         return value
+
+
+# Private host storage and HTTPS for T3. These paths never enter agent mounts.
+def t3_read(name: str, missing: Any = None) -> Any:
+    import os
+    import stat
+    path = Path.home() / '.config/loylex' / name
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return missing
+    except OSError:
+        raise ApprovalError('Cannot open T3 host configuration safely') from None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.getuid() or info.st_size > 131072:
+            raise ApprovalError('T3 host file must be owned by the host user, regular and mode 0600')
+        with os.fdopen(descriptor, 'r') as stream:
+            descriptor = -1
+            return json.load(stream)
+    except (ValueError, OSError):
+        raise ApprovalError('Cannot read T3 host configuration') from None
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+
+
+def t3_write(name: str, value: Any) -> None:
+    import os
+    directory = Path.home() / '.config/loylex'
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    data = encoded(value)
+    if len(data) > 131072:
+        raise ApprovalError('T3 host storage limit reached')
+    descriptor, temporary = tempfile.mkstemp(prefix='.t3-', dir=directory)
+    try:
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, directory / name)
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def t3_endpoint(endpoint: str) -> str:
+    import re
+    try:
+        url = urlsplit(endpoint)
+        if (url.scheme != 'https' or not url.hostname or url.username or url.password
+                or any(ord(c) <= 32 or ord(c) >= 127 for c in endpoint) or '?' in endpoint or '#' in endpoint or url.path != '/mcp'
+                or url.port not in (None, 443) or len(endpoint) > 512
+                or not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', url.hostname)):
+            raise ValueError()
+        return 'https://' + url.hostname
+    except (ValueError, TypeError, AttributeError):
+        raise ApprovalError('Use the public HTTPS MCP URL from T3 Settings → Environments') from None
+
+
+def t3_https(host: str, timeout: int = 30) -> http.client.HTTPSConnection:
+    # Resolve once, reject the entire mixed answer, connect to the validated IP;
+    # TLS still verifies the original hostname. No DNS rebinding or proxy envs.
+    import ipaddress
+    import socket
+    import ssl
+    class PublicHTTPS(http.client.HTTPSConnection):
+        def connect(self) -> None:
+            answers = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+            if not answers or len(answers) > 32 or any(not (ipaddress.ip_address(row[4][0]).is_global and not ipaddress.ip_address(row[4][0]).is_multicast and not ipaddress.ip_address(row[4][0]).is_reserved) for row in answers):
+                raise ApprovalError('T3 address must resolve only to public internet addresses')
+            raw = socket.create_connection((answers[0][4][0], 443), timeout=timeout)
+            try:
+                self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+            except BaseException:
+                raw.close()
+                raise
+    return PublicHTTPS(host, timeout=timeout)
+
+
+def t3_json(origin: str, path: str, payload: dict | None = None, form: bool = False) -> dict:
+    from urllib.parse import urlencode
+    connection = t3_https(urlsplit(origin).hostname)
+    try:
+        data = None if payload is None else (urlencode(payload).encode() if form else encoded(payload))
+        connection.request('GET' if payload is None else 'POST', path, data,
+                           {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' if form else 'application/json'})
+        response = connection.getresponse()
+        data = response.read(65537)
+        if response.status not in (200, 201) or len(data) > 65536:
+            raise ApprovalError(f'T3 OAuth request failed (HTTP {response.status}); start a new sign-in')
+        value = json.loads(data)
+        if not isinstance(value, dict):
+            raise ValueError()
+        return value
+    except ApprovalError:
+        raise
+    except Exception:
+        raise ApprovalError('T3 OAuth connection failed; start a new sign-in') from None
+    finally:
+        connection.close()

@@ -110,6 +110,16 @@ class ApprovalExecution:
             self._update(identifier, state="failed", result=detail)
         row = self._row(identifier)
         if row["state"] == "succeeded":
+            if operation['kind'] == 't3' and operation['action'] == 'connect':
+                try:
+                    self._telegram('sendMessage', {
+                        'chat_id': row['chat_id'],
+                        'text': 'Подключение T3: открой ссылку и выбери Full access. Ссылка действует 10 минут. Коды и токены в чат не отправляй.',
+                        'reply_parameters': {'message_id': row['reply_id']},
+                        **({'message_thread_id': row['thread_id']} if row['thread_id'] is not None else {}),
+                        'reply_markup': {'inline_keyboard': [[{'text': 'Подключить T3', 'url': result['authorizationUrl']}]]}})
+                except Exception:
+                    pass  # URL remains available through the approved result, never rerun login automatically.
             return
         try:
             self._telegram(

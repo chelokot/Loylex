@@ -2,14 +2,12 @@ from collections import deque
 import hashlib
 import json
 import re
-import stat
 import threading
 import time
 import uuid
-from pathlib import Path
 from typing import Any
 
-from loylex_approval_host import ApprovalError, T3Transport, command, encoded, secret
+from loylex_approval_host import ApprovalError, T3Transport, command, encoded, secret, t3_read, t3_write, t3_endpoint
 
 
 MAX_BUNDLE_BYTES = 20 * 1024 * 1024
@@ -111,13 +109,17 @@ IDENTIFIER = re.compile(r"[a-zA-Z0-9_.:-]{1,256}\Z")
 NAME = re.compile(r"[a-zA-Z0-9_-]{1,80}\Z")
 STATUSES = {"idle", "queued", "preparing", "starting", "running", "waiting", "completed",
             "failed", "cancelled", "interrupted", "rolled_back"}
-TOOLS = {"launch": "t3_thread_launch", "send": "t3_thread_send", "read": "t3_thread_read",
+TOOLS = {"launch": "t3_thread_launch", "export": "t3_thread_launch", "send": "t3_thread_send", "read": "t3_thread_read",
          "list": "t3_thread_list", "interrupt": "t3_thread_interrupt",
          "projects": "t3_project_list", "capabilities": "orchestrator_capabilities"}
 FIELDS = {
     "launch": ({"projectId", "title", "message"}, set()),
     "send": ({"projectId", "threadId", "message"}, set()),
-    "read": ({"threadId"}, {"afterPosition", "limit", "maxCharsPerItem"}),
+    "read": ({"threadId"}, {"afterPosition", "itemId", "textOffset", "limit", "maxCharsPerItem"}),
+    "export": ({"projectId", "path"}, set()),
+    "connect": ({"endpoint"}, set()),
+    "register": ({"projectId", "workspaceRoot"}, set()),
+    "disconnect": (set(), set()),
     "list": ({"projectId"}, {"cursor", "limit"}),
     "interrupt": ({"threadId"}, set()),
     "projects": (set(), {"cursor", "limit"}),
@@ -140,31 +142,37 @@ def validate_t3(operation: dict) -> None:
     if not required <= set(args) <= required | optional:
         raise ApprovalError("Invalid T3 arguments")
     for key, value in args.items():
-        if key in {"afterPosition", "cursor", "limit", "maxCharsPerItem"}:
+        if key in {"afterPosition", "textOffset", "cursor", "limit", "maxCharsPerItem"}:
             maximum = 50000 if key == "maxCharsPerItem" else 100 if key == "limit" else 1000000000
             minimum = 1 if key in {"limit", "maxCharsPerItem"} else 0
             if type(value) is not int or not minimum <= value <= maximum:
                 raise ApprovalError("Invalid T3 pagination")
         elif not isinstance(value, str) or not value.strip() or len(value) > (
-            120000 if key == "message" else 512 if key == "title" else 256
+            120000 if key == "message" else 4096 if key == "workspaceRoot" else 512 if key in {"title", "endpoint"} else 256
         ) or any(ord(c) < 32 for c in value if key not in {"message", "title"}):
             raise ApprovalError("Invalid T3 text argument")
+    if action == 'export':
+        path = args['path']
+        if len(path) > 240 or path.startswith(('/', '\\')) or '\\' in path or ':' in path or any(part in {'', '.', '..'} for part in path.split('/')):
+            raise ApprovalError('Export requires a relative project file path without traversal')
+    if action == "connect":
+        t3_endpoint(args["endpoint"])
+    if "textOffset" in args and "itemId" not in args:
+        raise ApprovalError("Text continuation requires itemId")
 
 
 def connection(machine: str) -> dict:
-    path = Path.home() / ".config/loylex/t3-machines.json"
-    if not path.is_file() or path.is_symlink() or stat.S_IMODE(path.stat().st_mode) != 0o600:
-        raise ApprovalError("Host T3 registry must be a regular mode-0600 file")
-    if path.stat().st_size > 65536:
-        raise ApprovalError("Host T3 registry exceeds limit")
-    registry = json.loads(path.read_text())
+    registry = t3_read('t3-machines.json', {})
     if not isinstance(registry, dict) or len(registry) > 20:
         raise ApprovalError("Invalid host T3 registry")
     entry = registry.get(machine)
-    if not isinstance(entry, dict) or set(entry) != {"endpoint", "tokenSecret", "projects"}:
-        raise ApprovalError("T3 machine is not configured on the host")
-    if not isinstance(entry["tokenSecret"], str) or not re.fullmatch(r"loylex-t3-[a-z0-9-]+", entry["tokenSecret"]):
-        raise ApprovalError("Invalid T3 secret reference")
+    if not isinstance(entry, dict) or entry.get('disabled'):
+        raise ApprovalError("T3 computer disconnected; use loylex t3 connect")
+    fields = set(entry)
+    if fields not in ({'endpoint', 'tokenSecret', 'projects'}, {'endpoint', 'grantId', 'projects'}):
+        raise ApprovalError("Invalid T3 computer registration")
+    if 'tokenSecret' in entry and (not isinstance(entry['tokenSecret'], str) or not re.fullmatch(r'loylex-t3-[a-z0-9-]+', entry['tokenSecret'])):
+        raise ApprovalError('Invalid T3 secret reference')
     projects = entry["projects"]
     if not isinstance(projects, dict) or any(
         not isinstance(key, str) or not IDENTIFIER.fullmatch(key) or
@@ -179,12 +187,19 @@ def connection(machine: str) -> dict:
 
 def snapshot_t3(operation: dict) -> dict:
     validate_t3(operation)
+    if operation['action'] == 'connect':
+        from loylex_supervisor_http import T3_OAUTH
+        callback = T3_OAUTH.configuration()
+        if not T3_OAUTH.ready:
+            raise ApprovalError('T3 callback is not active; finish host setup first')
+        old = t3_read('t3-machines.json', {}).get(operation['machine'])
+        return {**operation, 'oldDigest': hashlib.sha256(encoded(old)).hexdigest(), 'callback': callback}
     entry = connection(operation["machine"])
     project = operation["arguments"].get("projectId")
-    if operation["action"] in {"launch", "send"} and project not in entry["projects"]:
+    if operation["action"] in {"launch", "send", "export"} and project not in entry["projects"]:
         raise ApprovalError("T3 project folder must be registered on the host")
-    target = {key: entry[key] for key in ("endpoint", "tokenSecret")}
-    return {**operation, "connection": target, "requestKey": uuid.uuid4().hex,
+    target = {key: entry[key] for key in ("endpoint", "tokenSecret", "grantId") if key in entry}
+    return {**({"exportPrompt": export_prompt(operation["arguments"]["path"])} if operation["action"] == "export" else {}), **operation, "connection": target, "requestKey": uuid.uuid4().hex,
             "workspaceRoot": entry["projects"].get(project),
             "connectionSha256": hashlib.sha256(encoded(entry)).hexdigest(),
             "executionMode": "full-access", "resultAccess": "requesting-agent"}
@@ -194,7 +209,14 @@ def call_t3(entry: dict, tool: str, arguments: dict) -> dict:
     if not SLOTS.acquire(blocking=False):
         raise ApprovalError("T3 bridge is busy")
     try:
-        return T3Transport(entry["endpoint"], secret(entry["tokenSecret"])).call(tool, arguments)
+        if 'tokenSecret' in entry:
+            token = secret(entry['tokenSecret'])
+        else:
+            credential = t3_read('t3-credentials.json', {}).get(next((name for name, item in t3_read('t3-machines.json', {}).items() if item == entry), ''), {})
+            if credential.get('grantId') != entry['grantId'] or credential.get('expiresAt', 0) <= time.time() + 30:
+                raise ApprovalError('T3 access expired or changed; reconnect this computer')
+            token = credential['accessToken']
+        return T3Transport(entry["endpoint"], token).call(tool, arguments)
     finally:
         SLOTS.release()
 
@@ -221,19 +243,50 @@ def receipt(value: dict) -> dict:
 def execute_t3(saved: dict) -> dict:
     operation = {key: saved[key] for key in ("kind", "machine", "action", "arguments")}
     validate_t3(operation)
+    if operation['action'] == 'connect':
+        from loylex_supervisor_http import T3_OAUTH
+        with T3_OAUTH.lock:
+            old = t3_read('t3-machines.json', {}).get(operation['machine'])
+            if hashlib.sha256(encoded(old)).hexdigest() != saved['oldDigest'] or T3_OAUTH.configuration() != saved['callback']:
+                raise ApprovalError('T3 connection target changed; submit a new request')
+            return T3_OAUTH.begin(operation['machine'], operation['arguments']['endpoint'])
     entry = connection(operation["machine"])
-    target = {key: entry[key] for key in ("endpoint", "tokenSecret")}
+    target = {key: entry[key] for key in ("endpoint", "tokenSecret", "grantId") if key in entry}
     if target != saved["connection"] or hashlib.sha256(encoded(entry)).hexdigest() != saved["connectionSha256"]:
         raise ApprovalError("T3 connection changed; submit a new request")
     action = operation["action"]
     args = dict(operation["arguments"])
-    if action in {"launch", "send"}:
+    if action in {'register', 'disconnect'}:
+        from loylex_supervisor_http import T3_OAUTH
+        with T3_OAUTH.lock:
+            registry = t3_read('t3-machines.json', {})
+            if registry.get(operation['machine']) != entry:
+                raise ApprovalError('T3 connection changed; submit a new request')
+            if action == 'register':
+                project = call_t3(entry, 't3_project_read', {'projectId': args['projectId']})
+                if project.get('workspaceRoot') != args['workspaceRoot']:
+                    raise ApprovalError('T3 project folder does not match the approved folder')
+                entry['projects'][args['projectId']] = args['workspaceRoot']
+            else:
+                entry['disabled'] = True
+                pending = t3_read('t3-pending.json', {})
+                pending.pop(operation['machine'], None)
+                t3_write('t3-pending.json', pending)
+            registry[operation['machine']] = entry
+            t3_write('t3-machines.json', registry)
+            return {'machine': operation['machine'], 'state': 'project_registered' if action == 'register' else 'disconnected'}
+    if action in {"launch", "send", "export"}:
         project_id = args["projectId"]
         actual = call_t3(entry, "t3_project_read", {"projectId": project_id})
         if actual.get("workspaceRoot") != saved["workspaceRoot"]:
             raise ApprovalError("T3 project folder changed; submit a new request")
         args["clientRequestId"] = saved["requestKey"]
-    if action == "launch":
+    if action == 'export':
+        path = args.pop('path')
+        if saved.get('exportPrompt') != export_prompt(path):
+            raise ApprovalError('Export instructions changed; submit a new request')
+        args.update(title='Export ' + path, message=export_prompt(path))
+    if action in {'launch', 'export'}:
         args.update(runtimeMode="full-access", interactionMode="default", workspaceStrategy={"type": "root"})
     elif action == "send":
         project_id = args.pop("projectId")
@@ -258,7 +311,7 @@ def execute_t3(saved: dict) -> dict:
     elif action == "interrupt":
         args["stop"] = True
     value = call_t3(entry, TOOLS[action], args)
-    return receipt(value) if action in {"launch", "send", "interrupt"} else value
+    return receipt(value) if action in {"launch", "send", "interrupt", "export"} else value
 
 
 def t3_status(payload: dict) -> dict:
@@ -282,3 +335,32 @@ def t3_status(payload: dict) -> dict:
         raise ApprovalError("Invalid T3 status response")
     checked = receipt(value)
     return {"machine": payload["machine"], **{key: checked.get(key) for key in ("threadId", "runId", "status")}}
+
+
+def t3_connection_status(payload: dict) -> dict:
+    if set(payload) != {'machine'} or not isinstance(payload['machine'], str) or not NAME.fullmatch(payload['machine']):
+        raise ApprovalError('Expected a T3 machine alias')
+    machine = payload['machine']
+    from loylex_supervisor_http import T3_OAUTH
+    with T3_OAUTH.lock:
+        entry = t3_read('t3-machines.json', {}).get(machine)
+        pending = t3_read('t3-pending.json', {}).get(machine)
+        if pending and pending['expiresAt'] > time.time():
+            return {'machine': machine, 'state': 'awaiting_login', 'expiresAt': pending['expiresAt']}
+        if not entry or entry.get('disabled'):
+            return {'machine': machine, 'state': 'disconnected'}
+        if 'tokenSecret' in entry:
+            return {'machine': machine, 'state': 'legacy_credential'}
+        credential = t3_read('t3-credentials.json', {}).get(machine, {})
+        expires = credential.get('expiresAt', 0)
+        state = 'connected' if credential.get('grantId') == entry.get('grantId') and expires > time.time() + 30 else 'reconnect_required'
+        return {'machine': machine, 'state': state, 'expiresAt': expires}
+
+
+def export_prompt(path: str) -> str:
+    return ('Export exactly this project-relative file: ' + json.dumps(path) +
+            '. Resolve its real path first; refuse symlinks escaping the project root, non-regular files, '
+            'credentials/secrets and files larger than 32768 bytes. Do not modify anything. '
+            'Return only a JSON object (no markdown): {"loylexExport":1,"path":<the exact requested relative path>,'
+            '"size":<byte count>,"sha256":<SHA-256 hex of original bytes>,"base64":<base64 of original bytes>}. '
+            'If you cannot safely export it, explain the refusal instead; never fake file content.')

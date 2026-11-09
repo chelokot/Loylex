@@ -1,5 +1,5 @@
-import { rename, rm, stat } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { stat } from "node:fs/promises";
+import { basename } from "node:path";
 import {
   defaultReadQueryRows,
   isReadQueryParameters,
@@ -14,10 +14,11 @@ import {
   telegramApiMaxTotalFileBytes,
 } from "../shared/telegram-api.ts";
 import { type TelegramExport, telegramExportMessages } from "../shared/telegram-export.ts";
-import { prepareAnimationFile } from "./animation.ts";
+import { runMediaCommand } from "./cli-media.ts";
 import { loadAgentConfig } from "./config.ts";
 import { retryTransient } from "./retry.ts";
 import { scheduleSupervisorOperation, supervisorStatus } from "./supervisor.ts";
+import { runT3 } from "./t3.ts";
 
 const config = loadAgentConfig();
 const [command, ...arguments_] = process.argv.slice(2);
@@ -49,41 +50,11 @@ async function requestJson<T>(path: string, init: RequestInit = {}, retry = fals
   return retry ? retryTransient(operation) : operation();
 }
 
-async function downloadMedia(fileId: string, output: string): Promise<void> {
-  const temporary = `${output}.loylex-part`;
-  try {
-    await retryTransient(async () => {
-      await rm(temporary, { force: true });
-      const response = await request(`/v1/media?file_id=${encodeURIComponent(fileId)}`);
-      await Bun.write(temporary, response);
-      await rename(temporary, output);
-    });
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
-async function uploadLocalFile(
-  chatId: string,
-  path: string,
-  caption: string[],
-  endpoint: string,
-): Promise<unknown> {
-  const prepared = await prepareAnimationFile(path);
-  try {
-    const form = new FormData();
-    form.set("chat_id", chatId);
-    form.set("file", Bun.file(prepared.path), prepared.filename);
-    if (caption.length > 0) {
-      form.set("caption", caption.join(" "));
-    }
-    return await requestJson(endpoint, { method: "POST", body: form }, false);
-  } finally {
-    await prepared.cleanup();
-  }
-}
-
 async function run(): Promise<void> {
+  if (command === "t3") {
+    await runT3(arguments_, requestJson);
+    return;
+  }
   if (command === "approve") {
     const [operation, value] = arguments_;
     if (operation === "status" && value && /^[a-f0-9]{32}$/.test(value)) {
@@ -577,105 +548,9 @@ async function run(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  if (command === "media") {
-    const [fileId, output] = arguments_;
-    if (!fileId || !output) {
-      throw new Error("Usage: loylex media FILE_ID OUTPUT_PATH");
-    }
-    await downloadMedia(fileId, output);
-    console.log(output);
-    return;
-  }
-  if (command === "upload") {
-    const [chatId, path, ...caption] = arguments_;
-    if (!chatId || !path) {
-      throw new Error("Usage: loylex upload CHAT_ID FILE [CAPTION]");
-    }
-    const endpoint =
-      extname(path).toLowerCase() === ".gif"
-        ? "/v1/telegram/upload-animation"
-        : "/v1/telegram/upload";
-    const result = await uploadLocalFile(chatId, path, caption, endpoint);
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  if (command === "upload-animation") {
-    const [chatId, path, ...caption] = arguments_;
-    if (!chatId || !path) {
-      throw new Error("Usage: loylex upload-animation CHAT_ID FILE [CAPTION]");
-    }
-    const result = await uploadLocalFile(chatId, path, caption, "/v1/telegram/upload-animation");
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  if (command === "upload-voice") {
-    const [chatId, path, ...caption] = arguments_;
-    if (!chatId || !path) {
-      throw new Error("Usage: loylex upload-voice CHAT_ID FILE [CAPTION]");
-    }
-    const form = new FormData();
-    form.set("chat_id", chatId);
-    form.set("file", Bun.file(path), basename(path));
-    if (caption.length > 0) {
-      form.set("caption", caption.join(" "));
-    }
-    const result = await requestJson(
-      "/v1/telegram/upload-voice",
-      { method: "POST", body: form },
-      false,
-    );
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  if (command === "upload-album") {
-    let paths = arguments_;
-    let caption: string | undefined;
-    const captionIndex = arguments_.findIndex(
-      (argument) => argument === "--caption" || argument.startsWith("--caption="),
-    );
-    if (captionIndex >= 0) {
-      const argument = arguments_[captionIndex];
-      if (argument === undefined) {
-        throw new Error("Usage: loylex upload-album CHAT_ID FILE... [--caption CAPTION]");
-      }
-      if (argument === "--caption") {
-        if (captionIndex !== arguments_.length - 2) {
-          throw new Error("Usage: loylex upload-album CHAT_ID FILE... [--caption CAPTION]");
-        }
-        caption = arguments_[captionIndex + 1];
-      } else {
-        caption = argument.slice("--caption=".length);
-        if (captionIndex !== arguments_.length - 1) {
-          throw new Error("Usage: loylex upload-album CHAT_ID FILE... [--caption CAPTION]");
-        }
-      }
-      paths = arguments_.slice(0, captionIndex);
-    }
-    const [chatId, ...files] = paths;
-    if (!chatId || files.length < 2 || files.length > 10) {
-      throw new Error("Usage: loylex upload-album CHAT_ID FILE... [--caption CAPTION]");
-    }
-    const form = new FormData();
-    form.set("chat_id", chatId);
-    for (const path of files) {
-      form.append("file", Bun.file(path), basename(path));
-    }
-    if (caption !== undefined) {
-      form.set("caption", caption);
-    }
-    const result = await requestJson(
-      "/v1/telegram/upload-album",
-      {
-        method: "POST",
-        body: form,
-      },
-      false,
-    );
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
+  if (await runMediaCommand(command, arguments_, request, requestJson)) return;
   throw new Error(
-    "Usage: loylex <status|usage|stats|search|query|recent|media-list|message|messages|import|send|telegram|send-thread|delete|forward|copy|edit-caption|media|upload|upload-animation|upload-voice|upload-album|system>",
+    "Usage: loylex <t3|approve|status|usage|stats|search|query|recent|media-list|message|messages|import|send|telegram|send-thread|delete|forward|copy|edit-caption|media|upload|upload-animation|upload-voice|upload-album|system>",
   );
 }
 
