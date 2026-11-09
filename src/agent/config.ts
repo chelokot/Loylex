@@ -50,8 +50,8 @@ export function loadAgentConfig(): AgentConfig {
     // Disable Fast, including priority retained by older host Compose environments.
     serviceTier: "default",
     claudeBinary: process.env.CLAUDE_BINARY ?? "claude",
-    claudeModel: process.env.CLAUDE_MODEL ?? "claude-opus-5-5",
-    claudeEffort: process.env.CLAUDE_EFFORT ?? "medium",
+    claudeModel: process.env.CLAUDE_MODEL ?? "claude-haiku-5-5",
+    claudeEffort: process.env.CLAUDE_EFFORT ?? "max",
     claudeProxy: process.env.CLAUDE_HTTPS_PROXY ?? null,
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",
