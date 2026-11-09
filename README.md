@@ -86,7 +86,7 @@ Five named volumes survive image replacement:
 
 The repository contains public skills and personality/instructions. Private memory is never
 mounted into the gateway and is never committed. Daily compressed volume backups are kept
-for 14 days.
+for 7 days.
 
 The image-pinned worker runtime and `loylex` control CLI run from the root-owned image layer.
 The mounted workspace remains available for projects, experiments, and reviewed source changes,
