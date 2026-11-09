@@ -88,7 +88,7 @@ services:
       LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       OPENAI_API_KEY_FILE: /run/secrets/loylex-openai-api-key
       LOYLEX_WORKER_SLOT: blue
-      LOYLEX_AGENT_PROVIDER: codex
+      LOYLEX_AGENT_PROVIDER: claude
       CODEX_MODEL: gpt-6.1-sol
       CODEX_REASONING_EFFORT: low
       CODEX_SERVICE_TIER: priority
@@ -141,7 +141,7 @@ services:
       LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       OPENAI_API_KEY_FILE: /run/secrets/loylex-openai-api-key
       LOYLEX_WORKER_SLOT: green
-      LOYLEX_AGENT_PROVIDER: codex
+      LOYLEX_AGENT_PROVIDER: claude
       CODEX_MODEL: gpt-6.1-sol
       CODEX_REASONING_EFFORT: low
       CODEX_SERVICE_TIER: priority
