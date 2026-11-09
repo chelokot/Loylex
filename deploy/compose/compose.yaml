@@ -76,6 +76,10 @@ services:
         uid: "1000"
         gid: "1000"
         mode: "0400"
+      - source: loylex-claude-oauth-token
+        uid: "1000"
+        gid: "1000"
+        mode: "0400"
     read_only: true
     tmpfs:
       - /tmp:rw,nodev,nosuid,size=256m
@@ -88,10 +92,12 @@ services:
       LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       OPENAI_API_KEY_FILE: /run/secrets/loylex-openai-api-key
       LOYLEX_WORKER_SLOT: blue
+      LOYLEX_AGENT_PROVIDER: codex
       CODEX_MODEL: gpt-6.1-sol
       CODEX_REASONING_EFFORT: low
       CODEX_SERVICE_TIER: priority
-      LOYLEX_MAX_CONCURRENT_JOBS: "50"
+      CLAUDE_HTTPS_PROXY: http://host.containers.internal:3128
+      LOYLEX_MAX_CONCURRENT_JOBS: "12"
     cpus: 5.5
     mem_limit: 9g
     pids_limit: 4096
@@ -127,6 +133,10 @@ services:
         uid: "1000"
         gid: "1000"
         mode: "0400"
+      - source: loylex-claude-oauth-token
+        uid: "1000"
+        gid: "1000"
+        mode: "0400"
     read_only: true
     tmpfs:
       - /tmp:rw,nodev,nosuid,size=256m
@@ -139,10 +149,12 @@ services:
       LOYLEX_SUPERVISOR_TOKEN_FILE: /run/secrets/loylex-supervisor-token
       OPENAI_API_KEY_FILE: /run/secrets/loylex-openai-api-key
       LOYLEX_WORKER_SLOT: green
+      LOYLEX_AGENT_PROVIDER: codex
       CODEX_MODEL: gpt-6.1-sol
       CODEX_REASONING_EFFORT: low
       CODEX_SERVICE_TIER: priority
-      LOYLEX_MAX_CONCURRENT_JOBS: "50"
+      CLAUDE_HTTPS_PROXY: http://host.containers.internal:3128
+      LOYLEX_MAX_CONCURRENT_JOBS: "12"
     cpus: 5.5
     mem_limit: 9g
     pids_limit: 4096
@@ -199,4 +211,6 @@ secrets:
   loylex-gateway-supervisor-ca:
     external: true
   loylex-openai-api-key:
+    external: true
+  loylex-claude-oauth-token:
     external: true
