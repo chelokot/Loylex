@@ -3,7 +3,6 @@ import type { AgentProvider } from "./agent-run.ts";
 
 export type AgentConfig = {
   provider: AgentProvider;
-  claudeChatIds: ReadonlySet<number>;
   bridgeUrl: string;
   bridgeToken: string;
   codexBinary: string;
@@ -14,7 +13,6 @@ export type AgentConfig = {
   claudeBinary: string;
   claudeModel: string;
   claudeEffort: string;
-  claudeOauthTokenFile: string;
   claudeProxy: string | null;
   repositoryPath: string;
   memoryPath: string;
@@ -40,21 +38,9 @@ function provider(): AgentProvider {
   return value;
 }
 
-function chatIds(value: string): ReadonlySet<number> {
-  const ids = value
-    .split(",")
-    .filter(Boolean)
-    .map((id) => Number(id.trim()));
-  if (!ids.every(Number.isSafeInteger)) {
-    throw new Error("LOYLEX_CLAUDE_CHAT_IDS must list integer Telegram chat IDs");
-  }
-  return new Set(ids);
-}
-
 export function loadAgentConfig(): AgentConfig {
   return {
     provider: provider(),
-    claudeChatIds: chatIds(process.env.LOYLEX_CLAUDE_CHAT_IDS ?? ""),
     bridgeUrl: process.env.LOYLEX_BRIDGE_URL ?? "http://loylex-gateway:8787",
     bridgeToken: secret(),
     codexBinary: process.env.CODEX_BINARY ?? "codex",
@@ -66,8 +52,6 @@ export function loadAgentConfig(): AgentConfig {
     claudeBinary: process.env.CLAUDE_BINARY ?? "claude",
     claudeModel: process.env.CLAUDE_MODEL ?? "claude-opus-5-5",
     claudeEffort: process.env.CLAUDE_EFFORT ?? "medium",
-    claudeOauthTokenFile:
-      process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE ?? "/run/secrets/loylex-claude-oauth-token",
     claudeProxy: process.env.CLAUDE_HTTPS_PROXY ?? null,
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",

@@ -51,16 +51,18 @@ Self-update cannot run. `DISABLE_AUTOUPDATER=1` and
 in a read-only image filesystem. Updates arrive only as reviewed image pins.
 
 Only the Claude child gets `HTTPS_PROXY=http://host.containers.internal:3128`
-(with `NO_PROXY` for internal hosts) and `CLAUDE_CODE_OAUTH_TOKEN`, read from the
-`loylex-claude-oauth-token` Podman secret. Codex, the gateway and other agent
-processes are unchanged. Commands Claude runs inherit both values, the same
-exposure the agent already has to Codex's `auth.json`. The host proxy is
+(with `NO_PROXY` for internal hosts). Codex, the gateway and other agent processes
+are unchanged, and commands Claude runs inherit the proxy. The host proxy is
 versioned in [`squid.conf`](squid.conf) and installed by `install-host.sh`.
 
-Authentication is the operator's own subscription token. Anthropic's published
-terms reserve subscription OAuth for ordinary individual use and direct products
-that serve other users to API keys. The operator accepted that risk; switching to
-an API key needs only a different secret and variable.
+Claude Code keeps its login in `~/.claude/.credentials.json` on the persistent
+agent home volume, created once with `claude auth login`, exactly like Codex's
+`auth.json`. The agent can read it, the same exposure Codex credentials already
+have.
+
+The login is the operator's own subscription. Anthropic's published terms reserve
+subscription OAuth for ordinary individual use and direct products that serve other
+users to API keys. The operator accepted that risk.
 
 ## Validation
 
@@ -79,16 +81,16 @@ session plus about 75 MB of shared executable pages (20 sessions about 2.0 GB).
 Codex app-server is about 45 MB. Over the last 30 days production peaked at 5
 concurrent jobs, so `LOYLEX_MAX_CONCURRENT_JOBS` drops from an unused 50 to 12.
 
-`bun run check` passed. Live verification with the real token (steer, resume,
+`bun run check` passed. Live verification with the real login (steer, resume,
 interrupt, peak memory under load) is pending the operator's approval of host
 installation and deployment.
 
 ## Rollout and rollback
 
-1. Install the host with the token file: squid, secret, Compose variables.
-2. Deploy the agent image. `LOYLEX_AGENT_PROVIDER` stays `codex`.
-3. Canary chats through `LOYLEX_CLAUDE_CHAT_IDS`.
-4. Switch to `claude`.
+1. Run `install-host.sh` for squid and the Compose variables.
+2. Deploy the agent image with `LOYLEX_AGENT_PROVIDER` still `codex`.
+3. Log in once with `claude auth login` inside the agent container.
+4. Switch `LOYLEX_AGENT_PROVIDER` to `claude`.
 
 A thread always resumes on the provider that created it; only new threads follow
 the setting. Rollback sets `codex` again; Claude threads keep resuming on Claude.

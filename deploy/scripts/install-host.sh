@@ -117,6 +117,7 @@ fi
   shadow-utils \
   slirp4netns \
   sqlite \
+  squid \
   zstd
 if [[ -f /etc/fedora-release ]]; then
   fedora_release="$(awk -F= '$1 == "VERSION_ID" { gsub(/"/, "", $2); print $2 }' /etc/os-release)"
@@ -194,6 +195,11 @@ chown -R loylex:loylex /home/loylex
 systemctl enable --now firewalld
 firewall-cmd --permanent --add-service=ssh
 firewall-cmd --reload
+
+squid -k parse -f "$deploy_root"/host/squid.conf
+install -m 0640 -o root -g squid "$deploy_root"/host/squid.conf /etc/squid/squid.conf
+systemctl enable squid
+systemctl restart squid
 
 if [[ -z "$(swapon --show --noheadings)" && ! -e /swapfile ]]; then
   fallocate -l 4G /swapfile

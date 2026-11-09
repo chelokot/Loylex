@@ -76,10 +76,6 @@ services:
         uid: "1000"
         gid: "1000"
         mode: "0400"
-      - source: loylex-claude-oauth-token
-        uid: "1000"
-        gid: "1000"
-        mode: "0400"
     read_only: true
     tmpfs:
       - /tmp:rw,nodev,nosuid,size=256m
@@ -130,10 +126,6 @@ services:
       - loylex-bridge-token
       - loylex-supervisor-token
       - source: loylex-openai-api-key
-        uid: "1000"
-        gid: "1000"
-        mode: "0400"
-      - source: loylex-claude-oauth-token
         uid: "1000"
         gid: "1000"
         mode: "0400"
@@ -211,6 +203,4 @@ secrets:
   loylex-gateway-supervisor-ca:
     external: true
   loylex-openai-api-key:
-    external: true
-  loylex-claude-oauth-token:
     external: true

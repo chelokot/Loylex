@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentCancelledError, type AgentRun } from "../src/agent/agent-run.ts";
@@ -15,7 +15,6 @@ async function withConfig(
 ): Promise<void> {
   const home = await mkdtemp(join(tmpdir(), "loylex-claude-test-"));
   try {
-    await writeFile(join(home, "claude-oauth-token"), "test-token\n");
     await body(
       testAgentConfig(home, {
         claudeBinary: resolve("tests/fixtures/claude-code.py"),
