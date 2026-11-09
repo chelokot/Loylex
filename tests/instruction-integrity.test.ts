@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertTrustedInstructions } from "../src/agent/instruction-integrity.ts";
@@ -12,6 +12,7 @@ test("accepts an unchanged image-pinned AGENTS.md", async () => {
     const trusted = join(directory, "trusted-AGENTS.md");
     mkdirSync(repository, { recursive: true });
     writeFileSync(join(repository, "AGENTS.md"), instructions);
+    symlinkSync("AGENTS.md", join(repository, "CLAUDE.md"));
     writeFileSync(trusted, instructions);
 
     await expect(assertTrustedInstructions(repository, trusted)).resolves.toBeUndefined();
@@ -27,6 +28,7 @@ test("rejects changed or weakened instructions", async () => {
     const repository = join(directory, "repository");
     const trusted = join(directory, "trusted-AGENTS.md");
     mkdirSync(repository, { recursive: true });
+    symlinkSync("AGENTS.md", join(repository, "CLAUDE.md"));
     writeFileSync(join(repository, "AGENTS.md"), `${instructions}\nchanged`);
     writeFileSync(trusted, instructions);
     await expect(assertTrustedInstructions(repository, trusted)).rejects.toThrow(
@@ -41,6 +43,24 @@ test("rejects changed or weakened instructions", async () => {
     writeFileSync(trusted, weakened);
     await expect(assertTrustedInstructions(repository, trusted)).rejects.toThrow(
       "missing required security clauses",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects Claude instructions that are not the verified AGENTS.md", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "loylex-instructions-"));
+  try {
+    const instructions = readFileSync("AGENTS.md");
+    const repository = join(directory, "repository");
+    const trusted = join(directory, "trusted-AGENTS.md");
+    mkdirSync(repository, { recursive: true });
+    writeFileSync(join(repository, "AGENTS.md"), instructions);
+    writeFileSync(join(repository, "CLAUDE.md"), instructions);
+    writeFileSync(trusted, instructions);
+    await expect(assertTrustedInstructions(repository, trusted)).rejects.toThrow(
+      "workspace CLAUDE.md must be a symlink to AGENTS.md",
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
