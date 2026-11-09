@@ -112,6 +112,13 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(compose.count("memory:/memory:z,U"), 2)
         self.assertEqual(compose.count("workspace:/workspace:z,U"), 2)
 
+    def test_agents_see_only_read_only_backup_manifests(self) -> None:
+        compose = (SCRIPT_PATH.parents[1] / "compose/compose.yaml").read_text()
+        installer = (SCRIPT_PATH.parents[1] / "scripts/install-host.sh").read_text()
+        self.assertEqual(compose.count("- /home/loylex/backups/loylex-manifests:/backup-manifests:ro,z\n"), 2)
+        self.assertNotIn("backups/loylex:", compose)
+        self.assertIn("install -d -m 0755 -o loylex -g loylex /home/loylex/backups/loylex-manifests", installer)
+
     def test_failed_agent_start_releases_the_target_slot(self) -> None:
         supervisor = object.__new__(SUPERVISOR.Supervisor)
         supervisor.active_agent_slot = "green"

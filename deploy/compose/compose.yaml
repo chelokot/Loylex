@@ -68,6 +68,7 @@ services:
       - agent-home:/home/loylex:z,U
       - memory:/memory:z,U
       - workspace:/workspace:z,U
+      - /home/loylex/backups/loylex-manifests:/backup-manifests:ro,z
       - warp-state-blue:/var/lib/cloudflare-warp:z,U
     secrets:
       - loylex-bridge-token
@@ -121,6 +122,7 @@ services:
       - agent-home:/home/loylex:z,U
       - memory:/memory:z,U
       - workspace:/workspace:z,U
+      - /home/loylex/backups/loylex-manifests:/backup-manifests:ro,z
       - warp-state-green:/var/lib/cloudflare-warp:z,U
     secrets:
       - loylex-bridge-token

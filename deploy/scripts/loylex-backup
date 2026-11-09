@@ -3,15 +3,34 @@ set -euo pipefail
 
 umask 077
 backup_root="$HOME/backups/loylex"
+manifest_root="$HOME/backups/loylex-manifests"
 timestamp="$(date --utc +%Y%m%dT%H%M%SZ)"
 destination="$backup_root/$timestamp"
+volumes=(loylex-gateway-data loylex-audit loylex-agent-home loylex-memory loylex-workspace)
 mkdir -p "$backup_root"
 find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf -- {} +
+mkdir -p -m 0755 "$manifest_root"
+find "$manifest_root" -mindepth 1 -maxdepth 1 -type f -name '*.tsv' -mtime +30 -exec rm -f -- {} +
 mkdir "$destination"
 trap 'rm -rf -- "$destination"' ERR
 
-for volume in loylex-gateway-data loylex-audit loylex-agent-home loylex-memory loylex-workspace; do
+for volume in "${volumes[@]}"; do
   podman volume export "$volume" | zstd -T0 -q -o "$destination/$volume.tar.zst"
 done
 
 trap - ERR
+
+# The agents mount this manifest read-only, so it records sizes only, never archive contents.
+manifest="$manifest_root/$timestamp.tsv"
+{
+  printf 'volume\tbytes\n'
+  total=0
+  for volume in "${volumes[@]}"; do
+    bytes="$(stat -c %s -- "$destination/$volume.tar.zst")"
+    printf '%s\t%s\n' "$volume" "$bytes"
+    total=$((total + bytes))
+  done
+  printf 'total\t%s\n' "$total"
+} >"$manifest.tmp"
+chmod 0644 -- "$manifest.tmp"
+mv -- "$manifest.tmp" "$manifest"

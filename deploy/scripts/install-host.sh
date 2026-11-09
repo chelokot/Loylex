@@ -217,6 +217,7 @@ install -d -m 0700 -o loylex -g loylex /home/loylex/.local/bin
 install -d -m 0700 -o loylex -g loylex /home/loylex/.local/share/pm3
 install -d -m 0700 -o loylex -g loylex /home/loylex/.local/state/loylex-supervisor
 install -d -m 0700 -o loylex -g loylex /home/loylex/backups/loylex
+install -d -m 0755 -o loylex -g loylex /home/loylex/backups/loylex-manifests
 install -d -m 0700 -o loylex -g loylex /home/loylex/stack
 
 state_file=/home/loylex/.local/state/loylex-supervisor/state.json

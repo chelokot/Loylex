@@ -86,7 +86,9 @@ Five named volumes survive image replacement:
 
 The repository contains public skills and personality/instructions. Private memory is never
 mounted into the gateway and is never committed. Daily compressed volume backups are kept
-for 7 days.
+for 7 days. Each run also writes a sizes-only manifest to `~/backups/loylex-manifests` (kept 30
+days); the agents mount that directory read-only at `/backup-manifests`, and the archives never
+leave the host.
 
 The image-pinned worker runtime and `loylex` control CLI run from the root-owned image layer.
 The mounted workspace remains available for projects, experiments, and reviewed source changes,
