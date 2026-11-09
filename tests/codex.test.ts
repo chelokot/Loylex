@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  parseCodexUsage,
-  toolActivityFromCodexItem,
-  toolNameFromCodexItem,
-} from "../src/agent/codex.ts";
+import { parseCodexUsage } from "../src/agent/codex.ts";
 import { visibleTerminalCommand } from "../src/shared/terminal-command.ts";
 
 test("parses the usage payload from a completed Codex turn", () => {
@@ -43,41 +39,6 @@ test("fills missing optional Codex usage counters from zero", () => {
 test("ignores malformed or unrelated Codex events", () => {
   expect(parseCodexUsage({ type: "item.completed", item: { type: "agent_message" } })).toBeNull();
   expect(parseCodexUsage({ type: "turn.completed", usage: { input_tokens: -1 } })).toBeNull();
-});
-
-test("normalizes tool names from Codex item variants", () => {
-  expect(toolNameFromCodexItem({ type: "command_execution" })).toBe("exec");
-  expect(
-    toolNameFromCodexItem({
-      type: "McpToolCall",
-      server: "codex_apps",
-      tool: "github.fetch_file",
-    }),
-  ).toBe("github.fetch_file");
-  expect(toolNameFromCodexItem({ type: "Extension", kind: "image_gen.generation" })).toBe(
-    "image_gen",
-  );
-  expect(toolNameFromCodexItem({ type: "ImageView" })).toBe("view_image");
-  expect(toolNameFromCodexItem({ type: "FileChange" })).toBe("apply_patch");
-});
-
-test("renders a web search query and falls back for unfamiliar tools", () => {
-  expect(
-    toolActivityFromCodexItem({
-      type: "web_search_call",
-      action: { type: "search", query: "latest Codex release" },
-    }),
-  ).toBe("Searched for 'latest Codex release'");
-  expect(
-    toolActivityFromCodexItem({
-      type: "McpToolCall",
-      tool: "web.run",
-      arguments: JSON.stringify({ search_query: [{ q: "Loylex progress UI" }] }),
-    }),
-  ).toBe("Searched for 'Loylex progress UI'");
-  expect(toolActivityFromCodexItem({ type: "new_tool_call", name: "future.tool" })).toBe(
-    "Used 'future.tool'",
-  );
 });
 
 test("shows the command body instead of Codex's shell launcher", () => {

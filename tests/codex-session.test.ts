@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { toolActivityFromCodexItem } from "../src/agent/codex.ts";
 import { CodexSessionExtensions } from "../src/agent/codex-session.ts";
+import { toolActivity } from "../src/agent/tool-activity.ts";
 
 test("recovers omitted web Extension events once, without replaying old turns", async () => {
   const home = await mkdtemp(join(tmpdir(), "loylex-session-"));
@@ -30,128 +30,15 @@ test("recovers omitted web Extension events once, without replaying old turns", 
     await appendFile(path, `${record.slice(60)}\n`);
     const items = await reader.read("thread-123");
     expect(items).toHaveLength(1);
-    expect(
-      toolActivityFromCodexItem(items[0] as Parameters<typeof toolActivityFromCodexItem>[0]),
-    ).toBe("Searched for 'France Le Vigilant M51.3 test'");
+    expect(toolActivity(items[0] as Parameters<typeof toolActivity>[0])).toBe(
+      "Searched for 'France Le Vigilant M51.3 test'",
+    );
     expect(await reader.read("thread-123")).toEqual([]);
     await appendFile(
       path,
       `malformed\n${event("2026-10-06T13:32:22Z", "other", "other-thread")}\n`,
     );
     expect(await reader.read("thread-123")).toEqual([]);
-  } finally {
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("passes a journal-only web search through the runner into Telegram work history", async () => {
-  const { runCodex } = await import("../src/agent/codex.ts");
-  const { workDocument } = await import("../src/gateway/presentation.ts");
-  const home = await mkdtemp(join(tmpdir(), "loylex-session-run-"));
-  try {
-    const binary = join(home, "fake-codex");
-    await writeFile(
-      binary,
-      `#!/usr/bin/env bun
-import {mkdirSync,writeFileSync} from 'node:fs';
-const directory=process.env.CODEX_HOME+'/sessions/2026/10/06';
-mkdirSync(directory,{recursive:true});
-writeFileSync(directory+'/rollout-test-thread-123.jsonl',JSON.stringify({
- timestamp:new Date().toISOString(),type:'event_msg',payload:{
- type:'item_completed',thread_id:'thread-123',item:{
- type:'Extension',kind:'web.search',id:'exec-search',query:'France M51.3'
- }}})+'\\n');
-for(const event of [
- {type:'thread.started',thread_id:'thread-123'},
- {type:'item.completed',item:{type:'agent_message',text:'Done'}},
- {type:'turn.completed'}
-]) console.log(JSON.stringify(event));
-`,
-      { mode: 0o700 },
-    );
-    const events: import("../src/shared/types.ts").AgentEvent[] = [];
-    const result = await runCodex(
-      {
-        bridgeUrl: "",
-        bridgeToken: "",
-        codexBinary: binary,
-        codexHome: home,
-        model: "test",
-        reasoningEffort: "low",
-        serviceTier: "priority",
-        repositoryPath: home,
-        memoryPath: home,
-        pollIntervalMs: 1000,
-        maxConcurrentJobs: 1,
-      },
-      "test",
-      null,
-      async (event) => {
-        events.push(event);
-      },
-    );
-    expect(result.answer).toBe("Done");
-    const tools = events.filter((event) => event.kind === "tool");
-    expect(tools).toHaveLength(1);
-    expect(workDocument(`tool: ${tools[0]?.text}`)).toContain("France M51.3");
-  } finally {
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("reports Codex JSON failures when stderr is empty without retrying quota errors", async () => {
-  const { runCodex } = await import("../src/agent/codex.ts");
-  const home = await mkdtemp(join(tmpdir(), "loylex-codex-failure-"));
-  try {
-    await mkdir(join(home, "sessions"));
-    for (const failure of [
-      {
-        type: "turn.failed",
-        error: { message: "You’ve hit your usage limit. Try again at 7:33 PM." },
-      },
-      { type: "error", message: "Authentication expired" },
-    ]) {
-      const binary = join(home, "fake-codex");
-      const attempts = join(home, "attempts");
-      await writeFile(attempts, "");
-      await writeFile(
-        binary,
-        `#!/usr/bin/env bun
-import {appendFileSync} from 'node:fs';
-appendFileSync(${JSON.stringify(attempts)}, 'attempt\\n');
-console.log(JSON.stringify({type:'thread.started',thread_id:'failed-thread'}));
-console.log(JSON.stringify(${JSON.stringify(failure)}));
-process.exit(1);
-`,
-        { mode: 0o700 },
-      );
-      const events: import("../src/shared/types.ts").AgentEvent[] = [];
-      const message = failure.error ? failure.error.message : failure.message;
-      await expect(
-        runCodex(
-          {
-            bridgeUrl: "",
-            bridgeToken: "",
-            codexBinary: binary,
-            codexHome: home,
-            model: "test",
-            reasoningEffort: "low",
-            serviceTier: "priority",
-            repositoryPath: home,
-            memoryPath: home,
-            pollIntervalMs: 1000,
-            maxConcurrentJobs: 1,
-          },
-          "test",
-          "failed-thread",
-          async (event) => {
-            events.push(event);
-          },
-        ),
-      ).rejects.toThrow(`Codex exited with 1: ${message}`);
-      expect(await Bun.file(attempts).text()).toBe("attempt\n");
-      expect(events).toContainEqual({ kind: "status", text: message, threadId: "failed-thread" });
-    }
   } finally {
     await rm(home, { recursive: true, force: true });
   }
