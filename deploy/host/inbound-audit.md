@@ -63,7 +63,7 @@ reports a regular file with one hard link, and the mode is `0244`. The installer
 unexpected mountpoint, symlink, hard-linked file, unsupported filesystem flag, or failed setup.
 
 The daily host backup exports `loylex-audit` together with the other named volumes. Those
-compressed snapshots follow the existing 14-day backup retention policy; the live primary audit
+compressed snapshots follow the existing 7-day backup retention policy; the live primary audit
 file is not rotated or deleted by the container or backup job.
 
 ## Rotation and recovery

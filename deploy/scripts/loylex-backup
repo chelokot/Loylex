@@ -6,7 +6,7 @@ backup_root="$HOME/backups/loylex"
 timestamp="$(date --utc +%Y%m%dT%H%M%SZ)"
 destination="$backup_root/$timestamp"
 mkdir -p "$backup_root"
-find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf -- {} +
+find "$backup_root" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf -- {} +
 mkdir "$destination"
 trap 'rm -rf -- "$destination"' ERR
 
