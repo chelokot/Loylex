@@ -27,8 +27,7 @@ let stopping = false;
 const leaseHeartbeatIntervalMs = 20_000;
 const workerHeartbeatIntervalMs = 5_000;
 const workerReadyPath = process.env.LOYLEX_WORKER_READY_PATH ?? "/tmp/loylex-worker-ready";
-const trustedInstructionsPath =
-  process.env.LOYLEX_TRUSTED_AGENTS_PATH ?? "/opt/loylex/seed/AGENTS.md";
+const trustedInstructionsRoot = process.env.LOYLEX_TRUSTED_INSTRUCTIONS_PATH ?? "/opt/loylex/seed";
 
 process.once("SIGINT", () => {
   stopping = true;
@@ -154,10 +153,7 @@ async function processJob(job: AgentJob): Promise<void> {
     // A thread stays with the provider that created it; only new threads follow the switch.
     const thread: ThreadState =
       job.resumeThreadId === null
-        ? {
-            provider: config.claudeChatIds.has(job.chatId) ? "claude" : config.provider,
-            injectedBuckets: [],
-          }
+        ? { provider: config.provider, injectedBuckets: [] }
         : await readThreadState(config.statePath, job.resumeThreadId);
     const injected = new Set(thread.injectedBuckets);
     let rememberedThreadId: string | null = null;
@@ -289,7 +285,7 @@ function startJob(job: AgentJob): void {
   activeJobs.add(task);
 }
 
-await assertTrustedInstructions(config.repositoryPath, trustedInstructionsPath);
+await assertTrustedInstructions(config.repositoryPath, trustedInstructionsRoot);
 await unlink(workerReadyPath).catch(() => {});
 const registration = await gateway.registerWorker();
 await writeFile(workerReadyPath, `${process.pid}\n`);

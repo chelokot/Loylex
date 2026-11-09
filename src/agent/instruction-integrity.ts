@@ -15,23 +15,27 @@ function sha256(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+// AGENTS.md imports the other files with `@path`, so each one is part of the instructions.
+const instructionFiles = ["AGENTS.md", "instructions/critical-architecture.md"] as const;
+
 export async function assertTrustedInstructions(
   repositoryPath: string,
-  trustedInstructionsPath: string,
+  trustedRoot: string,
 ): Promise<void> {
-  const [workspaceInstructions, trustedInstructions, claudeInstructions] = await Promise.all([
-    readFile(join(repositoryPath, "AGENTS.md")),
-    readFile(trustedInstructionsPath),
-    readlink(join(repositoryPath, "CLAUDE.md")).catch(() => null),
-  ]);
   // Claude Code reads CLAUDE.md, so it must be the same verified file, not a copy that can drift.
-  if (claudeInstructions !== "AGENTS.md") {
+  if ((await readlink(join(repositoryPath, "CLAUDE.md")).catch(() => null)) !== "AGENTS.md") {
     throw new Error("workspace CLAUDE.md must be a symlink to AGENTS.md");
   }
-  if (sha256(workspaceInstructions) !== sha256(trustedInstructions)) {
-    throw new Error("workspace AGENTS.md does not match the image-pinned trusted instructions");
+  for (const file of instructionFiles) {
+    const [workspace, trusted] = await Promise.all([
+      readFile(join(repositoryPath, file)),
+      readFile(join(trustedRoot, file)),
+    ]);
+    if (sha256(workspace) !== sha256(trusted)) {
+      throw new Error(`workspace ${file} does not match the image-pinned trusted instructions`);
+    }
   }
-  const trustedText = trustedInstructions.toString("utf8");
+  const trustedText = await readFile(join(trustedRoot, "AGENTS.md"), "utf8");
   const missing = requiredInstructionSnippets.filter((snippet) => !trustedText.includes(snippet));
   if (missing.length > 0) {
     throw new Error(
