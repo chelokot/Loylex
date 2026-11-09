@@ -393,16 +393,24 @@ prepare_audit_volume() {
   # UID 1000 is the bun user in the gateway image. The directory is owned by
   # container root and has no write bit, so the gateway can append the file
   # but cannot create, rename, or remove paths in the audit volume.
-  as_loylex podman unshare chown 1000:1000 "$file"
-  as_loylex podman unshare chmod 0244 "$file"
+  attributes="$(lsattr -d -- "$file")"
+  flags="${attributes%% *}"
+  if [[ "$flags" != *a* ]]; then
+    as_loylex podman unshare chown 1000:1000 "$file"
+    as_loylex podman unshare chmod 0244 "$file"
+    chattr +a "$file"
+  fi
   as_loylex podman unshare chown 0:0 "$mountpoint"
   as_loylex podman unshare chmod 0555 "$mountpoint"
 
-  chattr +a "$file"
   attributes="$(lsattr -d -- "$file")"
   flags="${attributes%% *}"
   if [[ "$flags" != *a* ]]; then
     echo "The inbound audit file is not append-only: $file" >&2
+    exit 1
+  fi
+  if [[ "$(as_loylex podman unshare stat -c '%u:%g %a' -- "$file")" != "1000:1000 244" ]]; then
+    echo "The inbound audit file must be owned by UID 1000 with mode 0244: $file" >&2
     exit 1
   fi
 }
