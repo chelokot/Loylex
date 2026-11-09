@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -50,7 +51,7 @@ class ApprovalExecution:
                 raise ApprovalError("Operation does not match package")
             kind = operation["kind"]
             if kind == "t3":
-                result = execute_t3(operation)
+                result = execute_t3(operation, lambda machine, state, attempt: self._t3_connection_notice(identifier, machine, state, attempt))
             elif kind == "push":
                 if (
                     hashlib.sha256((directory / "change.bundle").read_bytes()).hexdigest()
@@ -110,11 +111,16 @@ class ApprovalExecution:
             self._update(identifier, state="failed", result=detail)
         row = self._row(identifier)
         if row["state"] == "succeeded":
+            if operation['kind'] == 't3' and operation['action'] == 'confirm-connect':
+                try:
+                    self._telegram('sendMessage', {'chat_id': row['chat_id'], 'text': 'T3 подключён. Можно выбирать проект и запускать задачи.', 'reply_parameters': {'message_id': row['reply_id']}})
+                except Exception:
+                    pass
             if operation['kind'] == 't3' and operation['action'] == 'connect':
                 try:
                     self._telegram('sendMessage', {
                         'chat_id': row['chat_id'],
-                        'text': 'Подключение T3: открой ссылку и выбери Full access. Ссылка действует 10 минут. Коды и токены в чат не отправляй.',
+                        'text': 'Открой ссылку T3 Connect и подтверди код: ' + str(result.get('userCode', '')) + '. Затем здесь появится кнопка подтверждения конкретного компьютера.',
                         'reply_parameters': {'message_id': row['reply_id']},
                         **({'message_thread_id': row['thread_id']} if row['thread_id'] is not None else {}),
                         'reply_markup': {'inline_keyboard': [[{'text': 'Подключить T3', 'url': result['authorizationUrl']}]]}})
@@ -132,6 +138,19 @@ class ApprovalExecution:
             )
         except ApprovalError:
             pass
+
+    def _t3_connection_notice(self, identifier: str, machine: str, state: str, attempt: str) -> None:
+        from loylex_approval_host import t3_read
+        pending = t3_read('t3-pending.json', {}).get(machine, {})
+        if pending.get('attemptId') != attempt:
+            return
+        row = self._row(identifier)
+        if state == 'confirmation_required':
+            self.submit({'chatId': row['chat_id'], 'replyId': row['reply_id'], 'threadId': row['thread_id'],
+                         'operation': {'kind': 't3', 'machine': machine, 'action': 'confirm-connect', 'arguments': {'attemptId': attempt}}})
+        else:
+            self._telegram('sendMessage', {'chat_id': row['chat_id'], 'text': 'Вход T3 не завершён. Запроси новую ссылку; команды на компьютере не запускались.',
+                                           'reply_parameters': {'message_id': row['reply_id']}})
 
     def _deploy(self, directory: Path, operation: dict[str, Any]) -> dict[str, Any]:
         commit = operation["commit"]
@@ -216,3 +235,91 @@ class ApprovalExecution:
         image = f"ghcr.io/chelokot/loylex-gateway@{digest}"
         self.supervisor.deploy_gateway(image, operation["oldCommit"])
         return {"commit": commit, "image": image}
+
+
+def complete_t3_enrollment(self: Any, machine: str, record: dict, account: str) -> None:
+    import base64
+    import hashlib
+    import re
+    import secrets
+    import time
+    from urllib.parse import parse_qs, quote, urlsplit
+    from loylex_approval_host import T3ProofKey, t3_endpoint, t3_read, t3_write
+    # Account login is temporary: it is never persisted. Find exactly the
+    # approved computer; duplicate labels or changed endpoints fail closed.
+    environments = self.request(self.RELAY, '/v1/environments', token=account).get('environments')
+    if not isinstance(environments, list) or len(environments) > 100:
+        raise ApprovalError('Invalid T3 environment list')
+    matches = []
+    for item in environments:
+        origin = t3_endpoint(item['endpoint']['httpBaseUrl'].rstrip('/') + '/mcp')
+        if (record['environmentName'] is not None and item.get('label') == record['environmentName']) or (record['endpoint'] is not None and origin == t3_endpoint(record['endpoint'])):
+            matches.append((item, origin))
+    if len(matches) != 1:
+        raise ApprovalError('Expected exactly one matching T3 computer')
+    item, origin = matches[0]
+    environment_id = item.get('environmentId')
+    if environment_id != record['environmentId']:
+        raise ApprovalError('T3 computer identity changed after confirmation')
+    if not isinstance(environment_id, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,256}', environment_id):
+        raise ApprovalError('Invalid T3 environment identity')
+    with self.lock:
+        self.lease(machine, record)
+    key = T3ProofKey()
+    relay = self.request(self.RELAY, '/v1/client/dpop-token', {
+        'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange', 'subject_token': account,
+        'subject_token_type': 'urn:ietf:params:oauth:token-type:jwt',
+        'requested_token_type': 'urn:ietf:params:oauth:token-type:access_token',
+        'resource': self.RELAY, 'scope': 'environment:connect', 'client_id': 't3-web'}, key=key, form=True)
+    if relay.get('token_type') != 'DPoP':
+        raise ApprovalError('Relay did not issue a proof-bound grant')
+    connected = self.request(self.RELAY, '/v1/environments/' + quote(environment_id, safe='') + '/connect',
+                             {'clientProofKeyThumbprint': key.thumbprint}, token=relay['access_token'], key=key)
+    if connected.get('environmentId') != environment_id or t3_endpoint(connected['endpoint']['httpBaseUrl'].rstrip('/') + '/mcp') != origin:
+        raise ApprovalError('T3 connection target changed')
+    session = self.request(origin, '/oauth/token', {
+        'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange',
+        'subject_token': connected['credential'], 'subject_token_type': 'urn:t3:params:oauth:token-type:environment-bootstrap',
+        'requested_token_type': 'urn:ietf:params:oauth:token-type:access_token',
+        'scope': ' '.join(self.SCOPES + ['access:write']), 'client_label': 'Loylex enrollment'}, key=key, form=True)
+    if session.get('token_type') != 'DPoP':
+        raise ApprovalError('Environment did not issue a proof-bound grant')
+    # Use the ordinary authorized delegation endpoint. No proof-bound
+    # credential is downgraded/reinterpreted or passed to the MCP endpoint.
+    pairing = self.request(origin, '/api/auth/pairing-token', {'label': 'Loylex MCP', 'scopes': self.SCOPES},
+                           token=session['access_token'], key=key)
+    client = self.request(origin, '/oauth/mcp/register', {
+        'client_name': 'Loylex · approved Telegram tasks', 'redirect_uris': [self.CALLBACK],
+        'grant_types': ['authorization_code'], 'response_types': ['code'], 'token_endpoint_auth_method': 'none'})
+    verifier, state = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
+    authorization = {'client_id': client['client_id'], 'redirect_uri': self.CALLBACK, 'response_type': 'code',
+                     'code_challenge_method': 'S256', 'code_challenge': challenge, 'state': state, 'resource': origin + '/mcp'}
+    decision = self.request(origin, '/oauth/mcp/decision', {
+        'authorization': authorization, 'decision': {'_tag': 'pairing-code', 'access': 'full-access', 'code': pairing['credential']}})
+    redirect = urlsplit(decision['redirectTo'])
+    query = parse_qs(redirect.query, keep_blank_values=True, max_num_fields=8)
+    if (redirect._replace(query='').geturl() != self.CALLBACK or set(query) != {'iss', 'state', 'code'}
+            or any(len(v) != 1 for v in query.values()) or query['iss'][0] != origin or not hmac.compare_digest(query['state'][0], state)):
+        raise ApprovalError('Invalid T3 enrollment response')
+    result = self.request(origin, '/oauth/mcp/token', {
+        'grant_type': 'authorization_code', 'code': query['code'][0], 'client_id': client['client_id'],
+        'redirect_uri': self.CALLBACK, 'code_verifier': verifier, 'resource': origin + '/mcp'}, form=True)
+    token, expires = result.get('access_token'), result.get('expires_in')
+    if (result.get('token_type', '').lower() != 'bearer' or not isinstance(token, str) or not 1 <= len(token) <= 8192
+            or any(ord(c) <= 32 or ord(c) >= 127 for c in token) or type(expires) is not int or not 60 <= expires <= 31 * 86400
+            or set(result.get('scope', '').split()) != set(self.SCOPES)):
+        raise ApprovalError('T3 did not grant the requested full-access MCP session')
+    with self.lock:
+        self.lease(machine, record)
+        registry = t3_read('t3-machines.json', {})
+        if len(registry) >= 20 and machine not in registry:
+            raise ApprovalError('T3 computer limit reached')
+        old = registry.get(machine)
+        grant = secrets.token_hex(16)
+        credentials = t3_read('t3-credentials.json', {})
+        credentials[machine] = {'accessToken': token, 'expiresAt': int(time.time()) + expires, 'grantId': grant}
+        t3_write('t3-credentials.json', credentials)
+        registry[machine] = {'endpoint': origin + '/mcp', 'grantId': grant,
+                             'projects': old['projects'] if old and old['endpoint'] == origin + '/mcp' else {}}
+        t3_write('t3-machines.json', registry)

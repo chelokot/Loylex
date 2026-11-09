@@ -41,16 +41,10 @@ class T3HostSecurityTests(unittest.TestCase):
             with self.assertRaises((host.ApprovalError, OSError)):
                 host.t3_read('t3-pending.json')
 
-    def test_callback_config_is_fixed_https_path_without_query_or_credentials(self):
-        for url in ['http://example.com/t3/callback', 'https://user:pw@example.com/t3/callback', 'https://example.com/t3/callback?x=y', 'https://example.com/other', 'https://example.com/t3/callback#']:
-            with self.subTest(url=url), mock.patch.object(host, 't3_read', return_value={'callbackUrl': url}):
-                with self.assertRaises(host.ApprovalError):
-                    http.T3OAuth().configuration()
-
-    def test_missing_callback_configuration_leaves_supervisor_available(self):
-        with mock.patch.object(host, 't3_read', return_value=None), mock.patch.object(http, 'T3CallbackServer') as listener:
-            http.start_t3_callback()
-            listener.assert_not_called()
+    def test_native_login_needs_no_public_callback_listener_or_host_config(self):
+        with mock.patch.object(host, 't3_read', side_effect=AssertionError('must not read callback config')):
+            self.assertEqual(http.T3OAuth().configuration(), 't3-connect-device-v1')
+        self.assertFalse(hasattr(http, 'T3CallbackServer'))
 
     def test_export_path_and_text_continuation_validation(self):
         for path in ['/etc/passwd', '../secret', 'a/../b', 'C:/file', 'a\\b', 'a//b']:
@@ -120,3 +114,37 @@ class OAuthNetworkTests(unittest.TestCase):
                 self.assertEqual(factory.call_count, 1)
                 self.assertEqual(connection.request.call_count, 1)
                 self.assertTrue(connection.close.called)
+
+
+class NativeNetworkTests(unittest.TestCase):
+    def response(self, status, data, nonce=None):
+        import io
+        value = io.BytesIO(json.dumps(data).encode())
+        value.status = status
+        value.getheader = lambda name: nonce if name == 'DPoP-Nonce' else None
+        return value
+
+    def test_only_a_definitive_nonce_challenge_retries_with_fresh_proof(self):
+        connections = [mock.Mock(), mock.Mock()]
+        connections[0].getresponse.return_value = self.response(401, {}, 'server-nonce')
+        connections[1].getresponse.return_value = self.response(200, {'ok': True})
+        key = mock.Mock()
+        with mock.patch.object(host, 't3_https', side_effect=connections):
+            self.assertEqual(host.t3_native_request('https://home.example', '/api/auth/pairing-token', {}, token='private-token', key=key), (200, {'ok': True}))
+        self.assertEqual(key.proof.call_count, 2)
+        self.assertEqual(key.proof.call_args.args[-1], 'server-nonce')
+        self.assertTrue(all(c.close.called for c in connections))
+
+    def test_no_generic_redirect_or_http_failure_retry_and_no_remote_error_disclosure(self):
+        for status in [302, 401, 403, 500]:
+            connection = mock.Mock()
+            connection.getresponse.return_value = self.response(status, {'error': 'private-token remote text'})
+            with mock.patch.object(host, 't3_https', return_value=connection) as factory:
+                code, _ = host.t3_native_request('https://home.example', '/oauth/token', {})
+                self.assertEqual(code, status)
+                self.assertEqual(factory.call_count, 1)
+        oauth = http.T3OAuth()
+        with mock.patch.object(host, 't3_native_request', return_value=(403, {'error': 'private-token'})):
+            with self.assertRaises(host.ApprovalError) as raised:
+                oauth.request('https://home.example', '/oauth/token', {})
+            self.assertNotIn('private', str(raised.exception))

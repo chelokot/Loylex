@@ -147,7 +147,6 @@ def serve(supervisor: Any) -> None:
     if not GATEWAY_TOKEN:
         raise SupervisorError("Gateway supervisor token is empty")
     APPROVALS = Approvals(SUPERVISOR)
-    start_t3_callback()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(GATEWAY_CERTIFICATE_PATH, GATEWAY_KEY_PATH)
     with ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler) as server, GatewayHTTPServer((LISTEN_HOST, 8791), RequestHandler) as gateway:
@@ -156,184 +155,231 @@ def serve(supervisor: Any) -> None:
         server.serve_forever()
 
 
-# OAuth belongs to the host HTTP boundary, never to the requesting agent.
-# Kept in an existing installed module so the pre-T3 updater can bootstrap it.
+# Native T3 Connect device sign-in. Enrollment is a host-owned worker, with no
+# browser callback/listening port and no credential returned to the agent.
 class T3OAuth:
+    CLERK = 'https://clerk.t3.codes'
+    RELAY = 'https://relay.t3.codes'
+    CLIENT = 'hzxSgY2cH10sDU2r'  # Public CLI client ID, not a credential.
+    CALLBACK = 'http://127.0.0.1/t3-native-enrollment'
+    SCOPES = ['orchestration:read', 'orchestration:operate', 'settings:write', 'source-control:write']
+
     def __init__(self) -> None:
         self.lock = threading.RLock()
-        self.ready = False
+        self.ready = True
+        self.slots = threading.BoundedSemaphore(2)
+        self.accounts: dict[str, str] = {}
+        self.notifications: dict[str, Any] = {}
+        self.active: set[str] = set()
 
     def configuration(self) -> str:
-        from urllib.parse import urlsplit
-        from loylex_approval_host import t3_read, t3_endpoint
-        config = t3_read('t3-oauth.json')
-        if not isinstance(config, dict) or set(config) != {'callbackUrl'}:
-            raise ApprovalError('Host setup needed: configure the HTTPS T3 OAuth callback; see docs/t3-approval-bridge.md')
-        callback = config['callbackUrl']
-        if not isinstance(callback, str) or urlsplit(callback).path != '/t3/callback':
-            raise ApprovalError('T3 callback must use HTTPS /t3/callback')
-        t3_endpoint(callback.removesuffix('/t3/callback') + '/mcp')
-        return callback
+        return 't3-connect-device-v1'
 
-    def begin(self, machine: str, endpoint: str) -> dict:
-        import base64
+    def request(self, origin: str, path: str, payload: dict | None = None, **kwargs: Any) -> dict:
+        from loylex_approval_host import t3_native_request
+        status, value = t3_native_request(origin, path, payload, **kwargs)
+        if status not in (200, 201):
+            raise ApprovalError(f'T3 {path.rsplit("/", 1)[-1]} failed (HTTP {status}); not retried')
+        return value
+
+    def begin(self, machine: str, endpoint: str | None = None, environmentName: str | None = None, notify: Any = None) -> dict:
         import hashlib
         import secrets
         import time
-        from urllib.parse import urlencode
-        from loylex_approval_host import t3_endpoint, t3_json, t3_read, t3_write
-        with self.lock:
-            callback = self.configuration()
-            if not self.ready:
-                raise ApprovalError('T3 callback listener is not active; finish host setup and restart supervisor')
-            origin = t3_endpoint(endpoint)
-            metadata = t3_json(origin, '/.well-known/oauth-authorization-server')
-            expected = {'issuer': origin, 'authorization_endpoint': origin + '/oauth/mcp/authorize',
-                        'token_endpoint': origin + '/oauth/mcp/token', 'registration_endpoint': origin + '/oauth/mcp/register'}
-            if any(metadata.get(k) != v for k, v in expected.items()) or 'S256' not in metadata.get('code_challenge_methods_supported', []):
-                raise ApprovalError('T3 OAuth metadata does not match the reviewed protocol')
-            client = t3_json(origin, '/oauth/mcp/register', {
-                'client_name': 'Loylex · Telegram approvals', 'redirect_uris': [callback],
-                'grant_types': ['authorization_code'], 'response_types': ['code'], 'token_endpoint_auth_method': 'none'})
-            client_id = client.get('client_id')
-            if not isinstance(client_id, str) or not 1 <= len(client_id) <= 8192:
-                raise ApprovalError('Invalid T3 OAuth client registration')
-            pending = t3_read('t3-pending.json', {})
-            now = int(time.time())
-            pending = {k: v for k, v in pending.items() if v['expiresAt'] > now}
-            if len(pending) >= 20 and machine not in pending:
-                raise ApprovalError('Too many pending T3 connections')
-            verifier, state = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
-            registry = t3_read('t3-machines.json', {})
-            old = registry.get(machine)
-            pending[machine] = {'origin': origin, 'clientId': client_id, 'callback': callback,
-                                'verifier': verifier, 'state': state, 'expiresAt': now + 600,
-                                'oldDigest': hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest()}
-            t3_write('t3-pending.json', pending)
-            challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-            url = origin + '/oauth/mcp/authorize?' + urlencode({
-                'client_id': client_id, 'redirect_uri': callback, 'response_type': 'code',
-                'code_challenge_method': 'S256', 'code_challenge': challenge,
-                'state': state, 'resource': origin + '/mcp', 'scope': 'orchestration:read orchestration:operate'})
-            return {'machine': machine, 'state': 'awaiting_login', 'authorizationUrl': url,
-                    'expiresAt': now + 600, 'instructions': 'Open the link, approve Full access in T3. Never paste codes or tokens into Telegram.'}
-
-    def finish(self, query: str) -> None:
-        import hashlib
-        import secrets
-        import time
-        from urllib.parse import parse_qs
-        from loylex_approval_host import t3_json, t3_read, t3_write
-        params = parse_qs(query, keep_blank_values=True, max_num_fields=8)
-        if any(len(v) != 1 for v in params.values()) or not {'state', 'iss'} <= set(params) or not set(params) <= {'state', 'iss', 'code', 'error', 'error_description'}:
-            raise ApprovalError('Invalid sign-in response')
-        with self.lock:
-            pending = t3_read('t3-pending.json', {})
-            match = [(k, v) for k, v in pending.items() if hmac.compare_digest(v['state'], params['state'][0])]
-            if len(match) != 1:
-                raise ApprovalError('Sign-in expired or already used; request a new link')
-            machine, saved = match[0]
-            if saved['expiresAt'] <= time.time() or params['iss'][0] != saved['origin'] or saved['callback'] != self.configuration():
-                raise ApprovalError('Sign-in expired or issuer changed; request a new link')
-            registry = t3_read('t3-machines.json', {})
-            old = registry.get(machine)
-            if hashlib.sha256(json.dumps(old, sort_keys=True).encode()).hexdigest() != saved['oldDigest']:
-                raise ApprovalError('Computer configuration changed; request a new link')
-            # Durable single-use transition BEFORE exchanging a code, including unknown outcomes.
-            del pending[machine]
-            t3_write('t3-pending.json', pending)
-            if 'error' in params or not params.get('code', [''])[0]:
-                raise ApprovalError('Sign-in cancelled; no access saved')
-            value = t3_json(saved['origin'], '/oauth/mcp/token', {
-                'grant_type': 'authorization_code', 'code': params['code'][0],
-                'client_id': saved['clientId'], 'redirect_uri': saved['callback'],
-                'code_verifier': saved['verifier'], 'resource': saved['origin'] + '/mcp'}, form=True)
-            token, expires = value.get('access_token'), value.get('expires_in')
-            scope = value.get('scope')
-            if (value.get('token_type', '').lower() != 'bearer' or not isinstance(token, str)
-                    or not 1 <= len(token) <= 8192 or any(ord(c) <= 32 or ord(c) >= 127 for c in token)
-                    or type(expires) is not int or not 60 <= expires <= 31 * 86400
-                    or not isinstance(scope, str) or set(scope.split()) != {'orchestration:read', 'orchestration:operate', 'settings:write', 'source-control:write'}):
-                raise ApprovalError('T3 did not grant the required access; reconnect and choose Full access')
-            grant = secrets.token_hex(16)
-            credentials = t3_read('t3-credentials.json', {})
-            if machine not in registry and len(registry) >= 20:
-                raise ApprovalError('T3 computer limit reached')
-            credentials[machine] = {'accessToken': token, 'expiresAt': int(time.time()) + expires, 'grantId': grant}
-            t3_write('t3-credentials.json', credentials)
-            registry[machine] = {'endpoint': saved['origin'] + '/mcp', 'grantId': grant, 'projects':
-                                old['projects'] if old and old['endpoint'] == saved['origin'] + '/mcp' else {}}
-            t3_write('t3-machines.json', registry)
-
-
-T3_OAUTH = T3OAuth()
-
-
-class T3CallbackHandler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
         from urllib.parse import urlsplit
-        self.connection.settimeout(10)
-        status, text = 200, 'Готово. T3 подключён к Loylex. Можно закрыть страницу и вернуться в Telegram.'
-        try:
-            if len(self.path) > 16384 or urlsplit(self.path).path != '/t3/callback':
-                raise ApprovalError('Unknown callback')
-            T3_OAUTH.finish(urlsplit(self.path).query)
-        except (ApprovalError, ValueError, TypeError, KeyError):
-            status, text = 400, 'Вход не завершён. Запросите новую ссылку у Loylex. Коды и токены в чат отправлять не нужно.'
-        except Exception:
-            status, text = 503, 'Подключение не удалось. Запросите новую ссылку у Loylex.'
-        body = text.encode()
-        self.send_response(status)
-        for key, value in {'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': str(len(body)),
-                           'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
-                           'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-                           'X-Content-Type-Options': 'nosniff'}.items():
-            self.send_header(key, value)
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *_: Any) -> None:
-        pass  # The callback URL contains a single-use code. Never log it.
-
-
-class T3CallbackServer(ThreadingHTTPServer):
-    daemon_threads = True
-
-    def __init__(self) -> None:
-        self.slots = threading.BoundedSemaphore(4)
-        super().__init__(('127.0.0.1', 8792), T3CallbackHandler)
-
-    def get_request(self) -> Any:
-        connection, address = super().get_request()
-        connection.settimeout(10)
-        return connection, address
-
-    def process_request(self, request: Any, client_address: Any) -> None:
+        from loylex_approval_host import t3_read, t3_write, encoded
         if not self.slots.acquire(blocking=False):
-            self.shutdown_request(request)
-            return
+            raise ApprovalError('Two T3 sign-ins are already active; wait for expiry')
         try:
-            super().process_request(request, client_address)
+            value = self.request(self.CLERK, '/oauth/device_authorization', {
+                'client_id': self.CLIENT, 'scope': 'openid profile email'}, form=True)
+            code, interval, lifetime = value.get('device_code'), value.get('interval', 5), value.get('expires_in')
+            link = value.get('verification_uri_complete') or value.get('verification_uri')
+            if (not isinstance(code, str) or not 1 <= len(code) <= 8192 or type(interval) is not int or not 1 <= interval <= 30
+                    or type(lifetime) is not int or not 60 <= lifetime <= 1800 or not isinstance(link, str) or len(link) > 2048):
+                raise ApprovalError('Invalid T3 device authorization response')
+            import re
+            user_code = value.get('user_code')
+            if not isinstance(user_code, str) or not re.fullmatch(r'[A-Za-z0-9-]{4,40}', user_code) or code in link:
+                raise ApprovalError('Invalid T3 public verification code')
+            url = urlsplit(link)
+            if url.scheme != 'https' or url.hostname not in {'clerk.t3.codes', 't3.codes', 'app.t3.codes', 'accounts.t3.codes'} or url.port not in (None, 443) or url.username or url.password or url.fragment:
+                raise ApprovalError('T3 returned an untrusted verification link')
+            record = {'attemptId': secrets.token_hex(16), 'expiresAt': int(time.time()) + min(lifetime, 600),
+                      'state': 'awaiting_login', 'endpoint': endpoint, 'environmentName': environmentName}
+            with self.lock:
+                old = t3_read('t3-machines.json', {}).get(machine)
+                record['oldDigest'] = hashlib.sha256(encoded(old)).hexdigest()
+                pending = t3_read('t3-pending.json', {})
+                if len(pending) >= 20 and machine not in pending:
+                    raise ApprovalError('T3 computer limit reached')
+                previous = pending.get(machine, {}).get('attemptId')
+                pending[machine] = record
+                t3_write('t3-pending.json', pending)
+                self.expire(previous)
+            self.active.add('login:' + record['attemptId'])
+            if notify:
+                self.notifications[record['attemptId']] = notify
+            threading.Thread(target=self.worker, args=(machine, record, code, interval), daemon=True).start()
+            return {'machine': machine, 'state': 'awaiting_login', 'authorizationUrl': link,
+                    'userCode': value.get('user_code', ''), 'expiresAt': record['expiresAt'],
+                    'instructions': 'Open the T3 Connect link and confirm the code. No domain, SSH or local command needed.'}
         except BaseException:
+            if 'record' in locals():
+                self.active.discard('login:' + record['attemptId'])
+                self.notifications.pop(record['attemptId'], None)
             self.slots.release()
             raise
 
-    def process_request_thread(self, request: Any, client_address: Any) -> None:
+    def lease(self, machine: str, record: dict) -> None:
+        import hashlib
+        import time
+        from loylex_approval_host import t3_read, encoded
+        pending = t3_read('t3-pending.json', {}).get(machine, {})
+        if pending.get('attemptId') != record['attemptId'] or record['expiresAt'] <= time.time():
+            raise ApprovalError('T3 sign-in expired or was replaced')
+        old = t3_read('t3-machines.json', {}).get(machine)
+        if hashlib.sha256(encoded(old)).hexdigest() != record['oldDigest']:
+            raise ApprovalError('Computer configuration changed; start a new sign-in')
+
+    def worker(self, machine: str, record: dict, code: str, interval: int) -> None:
+        import time
+        from loylex_approval_host import t3_native_request, t3_read, t3_write
+        state = 'failed'
         try:
-            super().process_request_thread(request, client_address)
+            while True:
+                # Only authorization_pending/slow_down are polled. Transport errors,
+                # denial, expiry and unknown outcomes stop without replaying enrollment.
+                time.sleep(interval)
+                with self.lock:
+                    self.lease(machine, record)
+                status, value = t3_native_request(self.CLERK, '/oauth/token', {
+                    'client_id': self.CLIENT, 'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+                    'device_code': code}, form=True)
+                if status == 400 and value.get('error') in {'authorization_pending', 'slow_down'}:
+                    if value['error'] == 'slow_down':
+                        interval = min(interval + 5, 60)
+                    continue
+                if status != 200 or not isinstance(value.get('access_token'), str):
+                    raise ApprovalError('T3 Connect login was denied or expired')
+                account = value['access_token']
+                self.stage(machine, record, account)
+                state = 'confirmation_required'
+                break
+        except Exception as error:
+            record['failureReason'] = str(error) if type(error) is ApprovalError else 'Internal T3 enrollment failure'
+            # ApprovalError text is fixed local text, never a provider response body.
         finally:
-            self.slots.release()
+            try:
+                with self.lock:
+                    pending = t3_read('t3-pending.json', {})
+                    if pending.get(machine, {}).get('attemptId') == record['attemptId']:
+                        pending[machine] = {**record, 'state': state}
+                        t3_write('t3-pending.json', pending)
+                self.notify(record['attemptId'], machine, state)
+            finally:
+                self.active.discard('login:' + record['attemptId'])
+                self.slots.release()
+
+    def stage(self, machine: str, record: dict, account: str) -> None:
+        from loylex_approval_host import t3_endpoint, t3_read, t3_write
+        # Userinfo is obtained from the authenticated fixed issuer, never from an
+        # unverified JWT payload or a claimed Telegram identity.
+        identity = self.request(self.CLERK, '/oauth/userinfo', token=account)
+        environments = self.request(self.RELAY, '/v1/environments', token=account).get('environments')
+        if not isinstance(environments, list) or len(environments) > 100:
+            raise ApprovalError('Invalid environment list')
+        matches = [item for item in environments if
+                   (record['environmentName'] is not None and item.get('label') == record['environmentName']) or
+                   (record['endpoint'] is not None and t3_endpoint(item['endpoint']['httpBaseUrl'].rstrip('/') + '/mcp') == t3_endpoint(record['endpoint']))]
+        if len(matches) != 1 or not isinstance(identity.get('sub'), str) or not isinstance(identity.get('email'), str):
+            raise ApprovalError('Computer or account could not be identified uniquely')
+        selected = matches[0]
+        origin = t3_endpoint(selected['endpoint']['httpBaseUrl'].rstrip('/') + '/mcp')
+        with self.lock:
+            self.lease(machine, record)
+            record.update(endpoint=origin + '/mcp', environmentName=None,
+                          environmentId=selected['environmentId'], computerLabel=selected.get('label', ''), accountSubject=identity['sub'], accountEmail=identity['email'])
+            if len(self.accounts) >= 20:
+                raise ApprovalError('T3 enrollment limit reached')
+            pending = t3_read('t3-pending.json', {})
+            pending[machine] = record
+            t3_write('t3-pending.json', pending)
+            self.accounts[record['attemptId']] = account
+        import time
+        timer = threading.Timer(max(0, record['expiresAt'] - time.time()), self.expire, args=(record['attemptId'],))
+        timer.daemon = True
+        timer.start()
+
+    def expire(self, attempt: str) -> None:
+        with self.lock:
+            self.accounts.pop(attempt, None)
+
+    def confirmation(self, machine: str, attempt: str) -> dict:
+        from loylex_approval_host import t3_read
+        with self.lock:
+            record = t3_read('t3-pending.json', {}).get(machine, {})
+            if record.get('state') != 'confirmation_required' or record.get('attemptId') != attempt or attempt not in self.accounts:
+                raise ApprovalError('T3 sign-in expired, interrupted or already used; sign in again')
+            self.lease(machine, record)
+            return record
+
+    def complete(self, machine: str, expected: dict) -> dict:
+        from loylex_approval_host import t3_read, t3_write
+        from loylex_approval_execution import complete_t3_enrollment
+        with self.lock:
+            record = self.confirmation(machine, expected['attemptId'])
+            if record != expected:
+                raise ApprovalError('T3 enrollment target changed; submit a new approval')
+            account = self.accounts.pop(record['attemptId'])
+            pending = t3_read('t3-pending.json', {})
+            pending[machine] = {**record, 'state': 'enrolling'}
+            t3_write('t3-pending.json', pending)
+            self.active.add('enroll:' + record['attemptId'])
+        try:
+            complete_t3_enrollment(self, machine, record, account)
+            state = 'connected'
+            return {'machine': machine, 'state': state}
+        except Exception as error:
+            record['failureReason'] = str(error) if type(error) is ApprovalError else 'Internal T3 enrollment failure'
+            raise
+        finally:
+            self.active.discard('enroll:' + record['attemptId'])
+            with self.lock:
+                pending = t3_read('t3-pending.json', {})
+                if pending.get(machine, {}).get('attemptId') == record['attemptId']:
+                    pending[machine] = {**record, 'state': locals().get('state', 'failed')}
+                    t3_write('t3-pending.json', pending)
+
+    def status(self, payload: dict) -> dict:
+        import re
+        if set(payload) != {'machine'} or not isinstance(payload['machine'], str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', payload['machine']):
+            raise ApprovalError('Expected a T3 machine alias')
+        import time
+        from loylex_approval_host import t3_read
+        machine = payload['machine']
+        with self.lock:
+            entry = t3_read('t3-machines.json', {}).get(machine)
+            pending = t3_read('t3-pending.json', {}).get(machine)
+            if pending and pending.get('state') in {'awaiting_login', 'enrolling', 'confirmation_required'} and not any(prefix + str(pending.get('attemptId')) in self.active for prefix in ('login:', 'enroll:')) and pending.get('attemptId') not in self.accounts:
+                return {'machine': machine, 'state': 'reconnect_required'}
+            if pending and pending.get('state', 'awaiting_login') in {'awaiting_login', 'confirmation_required', 'enrolling', 'failed'} and pending['expiresAt'] > time.time():
+                return {'machine': machine, 'state': pending.get('state', 'awaiting_login'), 'expiresAt': pending['expiresAt'], **({'error': pending['failureReason']} if pending.get('state') == 'failed' and 'failureReason' in pending else {})}
+            if not entry or entry.get('disabled'):
+                return {'machine': machine, 'state': 'disconnected'}
+            if 'tokenSecret' in entry:
+                return {'machine': machine, 'state': 'legacy_credential'}
+            credential = t3_read('t3-credentials.json', {}).get(machine, {})
+            expires = credential.get('expiresAt', 0)
+            state = 'connected' if credential.get('grantId') == entry.get('grantId') and expires > time.time() + 30 else 'reconnect_required'
+            return {'machine': machine, 'state': state, 'expiresAt': expires}
+
+    def notify(self, attempt: str, machine: str, state: str) -> None:
+        # Status remains queryable. Telegram notification is attached by the
+        # already approved connect operation; no transcript is sent here.
+        callback = self.notifications.pop(attempt, None)
+        if callback:
+            callback(machine, state, attempt)
 
 
-def start_t3_callback() -> None:
-    from loylex_approval_host import t3_read
-    # Missing configuration does not affect normal supervisor availability.
-    try:
-        if t3_read('t3-oauth.json') is None:
-            return
-        T3_OAUTH.configuration()
-        server = T3CallbackServer()
-    except Exception:
-        return  # Connect reports the actionable failure; other services stay up.
-    T3_OAUTH.ready = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+T3_OAUTH = T3OAuth()

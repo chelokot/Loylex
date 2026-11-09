@@ -29,6 +29,10 @@ describe("T3 CLI approval routing", () => {
         arguments: { endpoint: "https://home.example/mcp" },
       },
     });
+    expect(t3Request(["device-connect", "1819", "home", "laptop-fedora"]).operation).toMatchObject({
+      action: "connect",
+      arguments: { environmentName: "laptop-fedora" },
+    });
     expect(t3Request(["status", "1811", "home", "mcp:t"]).operation).toEqual({
       kind: "t3-status",
       machine: "home",

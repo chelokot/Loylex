@@ -340,3 +340,97 @@ def t3_json(origin: str, path: str, payload: dict | None = None, form: bool = Fa
         raise ApprovalError('T3 OAuth connection failed; start a new sign-in') from None
     finally:
         connection.close()
+
+
+# Crypto executes fixed code in a disposable, networkless copy of the already
+# installed Bun gateway image. No account token or host secret is passed to it.
+T3_CRYPTO_SCRIPT = r'''
+const input = JSON.parse(await Bun.stdin.text());
+const enc = new TextEncoder();
+const b64 = value => Buffer.from(value).toString('base64url');
+const algorithm = {name:'ECDSA', namedCurve:'P-256'};
+if (input.operation === 'key') {
+  const key = await crypto.subtle.generateKey(algorithm, true, ['sign','verify']);
+  console.log(JSON.stringify(await crypto.subtle.exportKey('jwk', key.privateKey)));
+} else if (input.operation === 'sign') {
+  const key = await crypto.subtle.importKey('jwk', input.key, algorithm, false, ['sign']);
+  console.log(JSON.stringify(b64(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,enc.encode(input.message)))));
+} else { throw new Error('Unknown crypto operation'); }
+'''
+
+
+def t3_crypto(payload: dict) -> Any:
+    import re
+    image = command(['podman', 'inspect', '--format', '{{.Image}}', 'loylex-gateway']).decode().strip()
+    if not re.fullmatch(r'(?:sha256:)?[a-f0-9]{64}', image):
+        raise ApprovalError('Invalid installed Bun image identity')
+    return json.loads(command([
+        'podman', 'run', '--rm', '--timeout=20', '--network=none', '--read-only',
+        '--user=65534:65534', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+        '--log-driver=none', '--memory=128m', '--cpus=0.5', '--pids-limit=32',
+        '--tmpfs=/tmp:rw,nodev,nosuid,size=8m', '-i', '--entrypoint=bun', image,
+        '-e', T3_CRYPTO_SCRIPT], input_bytes=encoded(payload), timeout=30))
+
+
+class T3ProofKey:
+    def __init__(self) -> None:
+        import base64
+        import hashlib
+        self.key = t3_crypto({'operation': 'key'})
+        self.jwk = {k: self.key[k] for k in ('kty', 'crv', 'x', 'y')}
+        canonical = json.dumps(self.jwk, sort_keys=True, separators=(',', ':')).encode()
+        self.thumbprint = base64.urlsafe_b64encode(hashlib.sha256(canonical).digest()).decode().rstrip('=')
+
+    def proof(self, url: str, method: str, token: str | None = None, nonce: str | None = None) -> str:
+        import base64
+        import hashlib
+        import uuid
+        def part(value: Any) -> str:
+            return base64.urlsafe_b64encode(json.dumps(value, separators=(',', ':')).encode()).decode().rstrip('=')
+        claims = {'htu': url, 'htm': method, 'iat': int(time.time()), 'jti': uuid.uuid4().hex}
+        if token:
+            claims['ath'] = base64.urlsafe_b64encode(hashlib.sha256(token.encode()).digest()).decode().rstrip('=')
+        if nonce:
+            claims['nonce'] = nonce
+        message = part({'typ': 'dpop+jwt', 'alg': 'ES256', 'jwk': self.jwk}) + '.' + part(claims)
+        signature = t3_crypto({'operation': 'sign', 'key': self.key, 'message': message})
+        if not isinstance(signature, str) or len(signature) != 86:
+            raise ApprovalError('Invalid DPoP signature')
+        return message + '.' + signature
+
+
+def t3_native_request(origin: str, path: str, payload: dict | None = None,
+                      token: str | None = None, key: T3ProofKey | None = None,
+                      form: bool = False) -> tuple[int, dict]:
+    from urllib.parse import urlencode
+    nonce = None
+    for challenge in range(2):
+        connection = t3_https(urlsplit(origin).hostname)
+        try:
+            method = 'GET' if payload is None else 'POST'
+            headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' if form else 'application/json'}
+            if token:
+                headers['Authorization'] = ('DPoP ' if key else 'Bearer ') + token
+            if key:
+                headers['DPoP'] = key.proof(origin + path, method, token, nonce)
+            body = None if payload is None else urlencode(payload).encode() if form else encoded(payload)
+            connection.request(method, path, body, headers)
+            response = connection.getresponse()
+            data = response.read(262145)
+            if len(data) > 262144:
+                raise ApprovalError('T3 Connect response exceeds limit')
+            supplied_nonce = response.getheader('DPoP-Nonce')
+            if response.status == 401 and key and challenge == 0 and isinstance(supplied_nonce, str) and 1 <= len(supplied_nonce) <= 512 and supplied_nonce.isascii() and not any(ord(c) <= 32 for c in supplied_nonce):
+                nonce = supplied_nonce
+                continue  # Definitive authentication challenge, never an unknown-outcome retry.
+            value = json.loads(data)
+            if not isinstance(value, dict):
+                raise ValueError()
+            return response.status, value
+        except ApprovalError:
+            raise
+        except Exception:
+            raise ApprovalError('T3 Connect request failed; outcome unknown, not retried') from None
+        finally:
+            connection.close()
+    raise ApprovalError('T3 Connect authentication failed')

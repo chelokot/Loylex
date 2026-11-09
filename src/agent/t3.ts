@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { open, unlink } from "node:fs/promises";
 
 export const t3Usage = `Usage: loylex t3 COMMAND JOB_ID MACHINE ...
+  device-connect JOB_ID MACHINE EXACT_T3_COMPUTER_NAME
   connect JOB_ID MACHINE HTTPS_MCP_URL
   connection JOB_ID MACHINE
   capabilities JOB_ID MACHINE
@@ -19,7 +20,8 @@ export const t3Usage = `Usage: loylex t3 COMMAND JOB_ID MACHINE ...
   result APPROVAL_ID
   save-export APPROVAL_ID OUTPUT_FILE EXPECTED_RELATIVE_PATH
 Every operation except connection/status needs its own live operator approval.
-Connect: approve → open login button → choose Full access in T3 → done.
+Connect: approve → open T3 Connect login link → confirm device code → done.
+No domain, callback setup, SSH or local command is needed.
 T3 access lasts up to 30 days. Reconnect after expiry/revocation.
 Export starts a task for one non-secret project file up to 32 KiB. Approve read
 separately (including each continuation), then save-export and upload the file.`;
@@ -38,6 +40,7 @@ export function t3Request(args: string[]): { jobId: number; operation: object } 
   if (jobId < 1 || !machine || !/^[a-zA-Z0-9_-]{1,80}$/.test(machine)) throw new Error(t3Usage);
   const arity: Record<string, [number, number]> = {
     connect: [1, 1],
+    "device-connect": [1, 1],
     connection: [0, 0],
     capabilities: [0, 0],
     projects: [0, 1],
@@ -61,6 +64,10 @@ export function t3Request(args: string[]): { jobId: number; operation: object } 
   let action = command;
   let arguments_: object;
   switch (command) {
+    case "device-connect":
+      action = "connect";
+      arguments_ = { environmentName: first };
+      break;
     case "connect":
       arguments_ = { endpoint: first };
       break;

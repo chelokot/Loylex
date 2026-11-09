@@ -190,6 +190,12 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                 )
                 self._update(identifier, document_id=document["message_id"])
                 text = f"@Chelokot\n\nTLDR: {review}"
+                if operation.get('kind') == 't3' and operation.get('action') == 'confirm-connect':
+                    target = json.loads((self.root / identifier / 'operation.json').read_bytes())['confirmation']
+                    text = ('Подключить T3: ' + str(target.get('computerLabel', ''))[:80] +
+                            '\nАккаунт: ' + str(target['accountEmail'])[:160] +
+                            '\nАдрес: ' + str(target['endpoint'])[:512] +
+                            '\nПроверь, что это твой аккаунт и нужный компьютер.\n\n' + text)
                 message = self._telegram(
                     "sendMessage",
                     {

@@ -117,7 +117,8 @@ FIELDS = {
     "send": ({"projectId", "threadId", "message"}, set()),
     "read": ({"threadId"}, {"afterPosition", "itemId", "textOffset", "limit", "maxCharsPerItem"}),
     "export": ({"projectId", "path"}, set()),
-    "connect": ({"endpoint"}, set()),
+    "connect": (set(), {"endpoint", "environmentName"}),
+    "confirm-connect": ({"attemptId"}, set()),
     "register": ({"projectId", "workspaceRoot"}, set()),
     "disconnect": (set(), set()),
     "list": ({"projectId"}, {"cursor", "limit"}),
@@ -156,7 +157,10 @@ def validate_t3(operation: dict) -> None:
         if len(path) > 240 or path.startswith(('/', '\\')) or '\\' in path or ':' in path or any(part in {'', '.', '..'} for part in path.split('/')):
             raise ApprovalError('Export requires a relative project file path without traversal')
     if action == "connect":
-        t3_endpoint(args["endpoint"])
+        if len(args) != 1:
+            raise ApprovalError("Choose exactly one T3 endpoint or environment name")
+        if "endpoint" in args:
+            t3_endpoint(args["endpoint"])
     if "textOffset" in args and "itemId" not in args:
         raise ApprovalError("Text continuation requires itemId")
 
@@ -187,13 +191,14 @@ def connection(machine: str) -> dict:
 
 def snapshot_t3(operation: dict) -> dict:
     validate_t3(operation)
+    if operation['action'] == 'confirm-connect':
+        from loylex_supervisor_http import T3_OAUTH
+        return {**operation, 'confirmation': T3_OAUTH.confirmation(operation['machine'], operation['arguments']['attemptId'])}
     if operation['action'] == 'connect':
         from loylex_supervisor_http import T3_OAUTH
-        callback = T3_OAUTH.configuration()
-        if not T3_OAUTH.ready:
-            raise ApprovalError('T3 callback is not active; finish host setup first')
+        flow = T3_OAUTH.configuration()
         old = t3_read('t3-machines.json', {}).get(operation['machine'])
-        return {**operation, 'oldDigest': hashlib.sha256(encoded(old)).hexdigest(), 'callback': callback}
+        return {**operation, 'oldDigest': hashlib.sha256(encoded(old)).hexdigest(), 'loginFlow': flow, 'enrollment': 'Temporary T3 account login to identify a computer; a separate operator confirmation is required before a full-access MCP grant is created.'}
     entry = connection(operation["machine"])
     project = operation["arguments"].get("projectId")
     if operation["action"] in {"launch", "send", "export"} and project not in entry["projects"]:
@@ -240,16 +245,19 @@ def receipt(value: dict) -> dict:
     return result
 
 
-def execute_t3(saved: dict) -> dict:
+def execute_t3(saved: dict, notify: Any = None) -> dict:
     operation = {key: saved[key] for key in ("kind", "machine", "action", "arguments")}
     validate_t3(operation)
+    if operation['action'] == 'confirm-connect':
+        from loylex_supervisor_http import T3_OAUTH
+        return T3_OAUTH.complete(operation['machine'], saved['confirmation'])
     if operation['action'] == 'connect':
         from loylex_supervisor_http import T3_OAUTH
         with T3_OAUTH.lock:
             old = t3_read('t3-machines.json', {}).get(operation['machine'])
-            if hashlib.sha256(encoded(old)).hexdigest() != saved['oldDigest'] or T3_OAUTH.configuration() != saved['callback']:
+            if hashlib.sha256(encoded(old)).hexdigest() != saved['oldDigest'] or T3_OAUTH.configuration() != saved.get('loginFlow'):
                 raise ApprovalError('T3 connection target changed; submit a new request')
-            return T3_OAUTH.begin(operation['machine'], operation['arguments']['endpoint'])
+            return T3_OAUTH.begin(operation['machine'], **operation['arguments'], notify=notify)
     entry = connection(operation["machine"])
     target = {key: entry[key] for key in ("endpoint", "tokenSecret", "grantId") if key in entry}
     if target != saved["connection"] or hashlib.sha256(encoded(entry)).hexdigest() != saved["connectionSha256"]:
@@ -270,7 +278,8 @@ def execute_t3(saved: dict) -> dict:
             else:
                 entry['disabled'] = True
                 pending = t3_read('t3-pending.json', {})
-                pending.pop(operation['machine'], None)
+                cancelled = pending.pop(operation['machine'], {})
+                T3_OAUTH.expire(cancelled.get('attemptId'))
                 t3_write('t3-pending.json', pending)
             registry[operation['machine']] = entry
             t3_write('t3-machines.json', registry)
@@ -338,23 +347,8 @@ def t3_status(payload: dict) -> dict:
 
 
 def t3_connection_status(payload: dict) -> dict:
-    if set(payload) != {'machine'} or not isinstance(payload['machine'], str) or not NAME.fullmatch(payload['machine']):
-        raise ApprovalError('Expected a T3 machine alias')
-    machine = payload['machine']
     from loylex_supervisor_http import T3_OAUTH
-    with T3_OAUTH.lock:
-        entry = t3_read('t3-machines.json', {}).get(machine)
-        pending = t3_read('t3-pending.json', {}).get(machine)
-        if pending and pending['expiresAt'] > time.time():
-            return {'machine': machine, 'state': 'awaiting_login', 'expiresAt': pending['expiresAt']}
-        if not entry or entry.get('disabled'):
-            return {'machine': machine, 'state': 'disconnected'}
-        if 'tokenSecret' in entry:
-            return {'machine': machine, 'state': 'legacy_credential'}
-        credential = t3_read('t3-credentials.json', {}).get(machine, {})
-        expires = credential.get('expiresAt', 0)
-        state = 'connected' if credential.get('grantId') == entry.get('grantId') and expires > time.time() + 30 else 'reconnect_required'
-        return {'machine': machine, 'state': state, 'expiresAt': expires}
+    return T3_OAUTH.status(payload)
 
 
 def export_prompt(path: str) -> str:
