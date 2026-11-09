@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 
 const requiredInstructionSnippets = [
@@ -19,10 +19,15 @@ export async function assertTrustedInstructions(
   repositoryPath: string,
   trustedInstructionsPath: string,
 ): Promise<void> {
-  const [workspaceInstructions, trustedInstructions] = await Promise.all([
+  const [workspaceInstructions, trustedInstructions, claudeInstructions] = await Promise.all([
     readFile(join(repositoryPath, "AGENTS.md")),
     readFile(trustedInstructionsPath),
+    readlink(join(repositoryPath, "CLAUDE.md")).catch(() => null),
   ]);
+  // Claude Code reads CLAUDE.md, so it must be the same verified file, not a copy that can drift.
+  if (claudeInstructions !== "AGENTS.md") {
+    throw new Error("workspace CLAUDE.md must be a symlink to AGENTS.md");
+  }
   if (sha256(workspaceInstructions) !== sha256(trustedInstructions)) {
     throw new Error("workspace AGENTS.md does not match the image-pinned trusted instructions");
   }
