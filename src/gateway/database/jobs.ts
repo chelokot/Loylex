@@ -323,7 +323,7 @@ export abstract class DatabaseJobs extends DatabaseLeylobucks {
       replyContext:
         context.mode === "none" && row.resume_thread_id === null
           ? null
-          : this.replyContext(row.chat_id, row.message_id),
+          : this.replyContext(row.chat_id, row.message_id, row.resume_thread_id),
       attachments: JSON.parse(row.attachments_json) as JsonValue[],
       ...(!leylobucksEnabled || row.economy_balance_after === null
         ? {}

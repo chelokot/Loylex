@@ -299,7 +299,7 @@ describe("LoylexDatabase", () => {
     database.close();
   });
 
-  test("preserves the explicit reply target when resuming a Codex thread", () => {
+  test("references an in-thread reply target by ID instead of repeating its text", () => {
     const database = setup();
     const first = message(1, "первая задача");
     database.archiveMessage(first, "bot_api");
@@ -318,7 +318,31 @@ describe("LoylexDatabase", () => {
     const job = database.claimNext(10);
     expect(job?.resumeThreadId).toBe("thread-one");
     expect(job?.replyToMessageId).toBe(2);
-    expect(job?.replyContext).toContain("Telegram reply target: #2 Loylex: предыдущий ответ");
+    expect(job?.replyContext).toBe(
+      "Telegram reply target: #2, an earlier message of this conversation shown above.",
+    );
+    expect(database.complete(job?.id ?? 0, 4, "thread-one")).toBe(true);
+
+    const ownRequest = message(5, "вернись к этому");
+    ownRequest.reply_to_message = first;
+    database.archiveMessage(ownRequest, "bot_api");
+    database.enqueue(57, ownRequest, "вернись к этому", "thread-one");
+    expect(database.claimNext(10)?.replyContext).toBe(
+      "Telegram reply target: #1, an earlier message of this conversation shown above.",
+    );
+    database.close();
+  });
+
+  test("keeps the full reply target for a new thread or a message outside the thread", () => {
+    const database = setup();
+    const unrelated = botMessage(2, "чужой ответ");
+    const fresh = message(3, "что это?");
+    fresh.reply_to_message = unrelated;
+    database.archiveMessage(fresh, "bot_api");
+    database.enqueue(55, fresh, "что это?", null);
+    expect(database.claimNext(10)?.replyContext).toContain(
+      "Telegram reply target: #2 Loylex: чужой ответ",
+    );
     database.close();
   });
 });

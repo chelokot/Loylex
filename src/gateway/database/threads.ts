@@ -339,7 +339,7 @@ export abstract class DatabaseThreads extends DatabaseWorkers {
   }
 
   protected scoringReplyContext(chatId: number, messageId: number): string | null {
-    const reference = this.replyContext(chatId, messageId);
+    const reference = this.replyContext(chatId, messageId, null);
     // Telegram native Rich replies can omit text. Recover only the exact outbound
     // reply target in this chat, never a nearby job or a claimed author identity.
     const stored = this.connection
@@ -357,7 +357,13 @@ export abstract class DatabaseThreads extends DatabaseWorkers {
       : reference;
   }
 
-  protected replyContext(chatId: number, messageId: number): string | null {
+  // A reply to a message that the resumed thread already contains is referenced by ID only:
+  // repeating its text would duplicate the transcript in every follow-up turn.
+  protected replyContext(
+    chatId: number,
+    messageId: number,
+    threadId: string | null,
+  ): string | null {
     const rawJson = this.connection
       .query<{ raw_json: string }, [number, number]>(
         "SELECT raw_json FROM messages WHERE chat_id = ? AND message_id = ?",
@@ -367,7 +373,8 @@ export abstract class DatabaseThreads extends DatabaseWorkers {
       return null;
     }
     const raw = parseObject(rawJson);
-    const target = object(raw.reply_to_message) ?? object(raw.external_reply);
+    const sameChatTarget = object(raw.reply_to_message);
+    const target = sameChatTarget ?? object(raw.external_reply);
     if (!target) {
       return null;
     }
@@ -375,6 +382,24 @@ export abstract class DatabaseThreads extends DatabaseWorkers {
     if (targetId === null) {
       return null;
     }
+    if (sameChatTarget && threadId !== null && this.threadContains(chatId, targetId, threadId)) {
+      return `Telegram reply target: #${targetId}, an earlier message of this conversation shown above.`;
+    }
     return messageReference(target, "Telegram reply target:");
+  }
+
+  private threadContains(chatId: number, messageId: number, threadId: string): boolean {
+    return (
+      this.connection
+        .query<{ found: number }, [number, number, string, number, number, string]>(`
+          SELECT 1 AS found FROM outbound_messages
+          WHERE chat_id = ? AND message_id = ? AND codex_thread_id = ?
+          UNION ALL
+          SELECT 1 AS found FROM jobs
+          WHERE chat_id = ? AND message_id = ? AND COALESCE(codex_thread_id, resume_thread_id) = ?
+          LIMIT 1
+        `)
+        .get(chatId, messageId, threadId, chatId, messageId, threadId) !== null
+    );
   }
 }
