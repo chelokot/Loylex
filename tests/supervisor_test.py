@@ -83,6 +83,13 @@ class SupervisorTest(unittest.TestCase):
         self.assertNotIn("chown -R loylex:loylex /home/loylex", installer)
         self.assertIn("-path /home/loylex/.local/share/containers -prune", installer)
 
+    def test_reinstall_verifies_an_existing_append_only_audit_without_changing_it(self) -> None:
+        installer = (SCRIPT_PATH.parents[1] / "scripts/install-host.sh").read_text()
+        guarded = installer.index('if [[ "$flags" != *a* ]]; then\n    as_loylex podman unshare chown 1000:1000 "$file"')
+        self.assertEqual(installer.count('chown 1000:1000 "$file"'), 1)
+        self.assertGreater(installer.index('chattr +a "$file"'), guarded)
+        self.assertIn("stat -c '%u:%g %a' -- \"$file\")\" != \"1000:1000 244\"", installer)
+
     def test_agent_runtime_and_cli_use_image_pinned_sources(self) -> None:
         root = SCRIPT_PATH.parents[1].parent
         entrypoint = (root / "containers/agent-entrypoint.sh").read_text()
