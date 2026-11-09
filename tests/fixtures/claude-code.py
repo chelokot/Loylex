@@ -18,7 +18,6 @@ assert option("--permission-mode") == "bypassPermissions"
 assert option("--setting-sources") == "project"
 assert option("--append-system-prompt") == "standing instructions"
 assert "AskUserQuestion" in option("--disallowedTools").split(",")
-assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "test-token"
 session = option("--resume") or option("--session-id")
 assert session
 

@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type { AgentEvent } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
@@ -84,7 +83,6 @@ export async function runClaudeCode(
 ): Promise<AgentRunResult> {
   if (signal.aborted) throw new AgentCancelledError();
   const threadId = resumeThreadId ?? crypto.randomUUID();
-  const oauthToken = (await readFile(config.claudeOauthTokenFile, "utf8")).trim();
   const child = Bun.spawn(
     [
       config.claudeBinary,
@@ -113,7 +111,6 @@ export async function runClaudeCode(
       cwd: config.repositoryPath,
       env: {
         ...process.env,
-        CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
         DISABLE_AUTOUPDATER: "1",
         LOYLEX_MEMORY_PATH: config.memoryPath,
