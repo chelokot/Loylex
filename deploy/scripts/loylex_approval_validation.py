@@ -91,6 +91,20 @@ class OperationValidation:
                 "DELETE",
             } or not isinstance(operation["body"], dict):
                 raise ApprovalError("Invalid GitHub method or body")
+            if resource == "forks":
+                body = operation["body"]
+                if (operation["method"] != "POST"
+                        or set(body) not in ({"default_branch_only"}, {"default_branch_only", "name"})
+                        or body.get("default_branch_only") is not True):
+                    raise ApprovalError("Forks require POST and default_branch_only=true")
+                if "name" in body and (
+                    not isinstance(body["name"], str)
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", body["name"])
+                    or ".." in body["name"]
+                    or body["name"] == "."
+                ):
+                    raise ApprovalError("Invalid fork name")
+                return
             if not isinstance(resource, str) or not re.fullmatch(
                 r"(?:issues|pulls|releases|dispatches|actions/workflows)(?:/[A-Za-z0-9_.-]+)*",
                 resource,

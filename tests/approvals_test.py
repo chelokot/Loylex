@@ -8,6 +8,48 @@ from approval_fixtures import ApprovalTestCase, LocalApprovals, broker
 
 
 class ApprovalTest(ApprovalTestCase):
+    def test_fork_creation_waits_for_approval_and_saves_exact_request(self) -> None:
+        operation = {
+            "kind": "github", "repository": "upstream/project", "method": "POST",
+            "resource": "forks", "body": {"default_branch_only": True, "name": "project-fork"},
+        }
+        with mock.patch.object(self.approvals, "_github", return_value={"status": 202}) as api:
+            identifier = self.submit(operation)
+            saved = json.loads((self.approvals.root / identifier / "operation.json").read_bytes())
+            self.assertEqual(saved, operation)
+            self.assertIn(b'"resource": "forks"', self.approvals.messages[0][2])
+            api.assert_not_called()
+            self.assertFalse(self.callback(identifier, user=849670500)["accepted"])
+            api.assert_not_called()
+            self.assertTrue(self.callback(identifier)["accepted"])
+            self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+            api.assert_called_once_with(operation)
+            self.assertFalse(self.callback(identifier)["accepted"])
+            api.assert_called_once()
+
+    def test_fork_validation_only_allows_personal_default_branch_forks(self) -> None:
+        operation = {
+            "kind": "github", "repository": "upstream/project", "method": "POST",
+            "resource": "forks", "body": {"default_branch_only": True},
+        }
+        self.approvals._validate_operation(operation)
+        for method in ("GET", "PATCH", "PUT", "DELETE"):
+            with self.subTest(method=method), self.assertRaises(broker.ApprovalError):
+                self.approvals._validate_operation({**operation, "method": method})
+        for body in ({}, {"default_branch_only": False}, {"default_branch_only": 1},
+                     {"default_branch_only": "true"},
+                     {"default_branch_only": True, "organization": "other-owner"}):
+            with self.subTest(body=body), self.assertRaises(broker.ApprovalError):
+                self.approvals._validate_operation({**operation, "body": body})
+        for name in (None, True, "", ".", "..", "../fork", "a/b", "a b", "a\n", "a" * 101):
+            with self.subTest(name=name), self.assertRaises(broker.ApprovalError):
+                self.approvals._validate_operation({
+                    **operation, "body": {"default_branch_only": True, "name": name},
+                })
+        for resource in ("forks/1", "forks/../issues", "forks/", "forks?organization=other"):
+            with self.subTest(resource=resource), self.assertRaises(broker.ApprovalError):
+                self.approvals._validate_operation({**operation, "resource": resource})
+
     def test_fork_pr_snapshots_both_repositories_and_rechecks_both_branches(self) -> None:
         fork = self.directory / "fork.git"
         self.git("clone", "--bare", str(self.remote), str(fork))
