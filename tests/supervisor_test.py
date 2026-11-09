@@ -78,6 +78,11 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn('scripts/loylex_compose.py \\\n    /home/loylex/stack/compose.yaml', installer)
         self.assertIn('"$deploy_root"/scripts/loylex_*.py \\\n  /home/loylex/.local/bin/', installer)
 
+    def test_reinstall_keeps_rootless_container_ownership(self) -> None:
+        installer = (SCRIPT_PATH.parents[1] / "scripts/install-host.sh").read_text()
+        self.assertNotIn("chown -R loylex:loylex /home/loylex", installer)
+        self.assertIn("-path /home/loylex/.local/share/containers -prune", installer)
+
     def test_agent_runtime_and_cli_use_image_pinned_sources(self) -> None:
         root = SCRIPT_PATH.parents[1].parent
         entrypoint = (root / "containers/agent-entrypoint.sh").read_text()

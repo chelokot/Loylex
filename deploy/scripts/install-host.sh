@@ -191,7 +191,7 @@ if ! id loylex >/dev/null 2>&1; then
 fi
 
 loginctl enable-linger loylex
-chown -R loylex:loylex /home/loylex
+find /home/loylex -path /home/loylex/.local/share/containers -prune -o -exec chown -h loylex:loylex {} +
 systemctl enable --now firewalld
 firewall-cmd --permanent --add-service=ssh
 firewall-cmd --reload
