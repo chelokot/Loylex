@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Local deterministic stdio fixture; no model calls or external services."""
 import json
+import os
 import sys
+from datetime import datetime, timezone
 
 
 def emit(value):
@@ -27,6 +29,7 @@ for line in sys.stdin:
     if method in ("thread/start", "thread/resume"):
         assert params["approvalPolicy"] == "never"
         assert params["sandbox"] == "danger-full-access"
+        assert params["developerInstructions"] == "standing instructions"
         result = dict(thread=dict(id="thread-test"))
     elif method == "turn/start":
         result = dict(turn=dict(id="turn-test"))
@@ -40,7 +43,19 @@ for line in sys.stdin:
     emit(dict(id=request["id"], result=result))
     if method == "thread/resume":
         usage(90, 50, "previous-turn")
-    if method == "turn/start":
+    if method == "turn/start" and params["input"][0]["text"] == "journal":
+        sessions = os.path.join(os.environ["CODEX_HOME"], "sessions", "2026", "10", "06")
+        os.makedirs(sessions, exist_ok=True)
+        with open(os.path.join(sessions, "rollout-test-thread-test.jsonl"), "a") as journal:
+            journal.write(json.dumps(dict(
+                timestamp=datetime.now(timezone.utc).isoformat(), type="event_msg",
+                payload=dict(type="item_completed", thread_id="thread-test", item=dict(
+                    type="Extension", kind="web.search", id="exec-search", query="France M51.3")))) + "\n")
+        emit(dict(method="item/completed", params=dict(threadId="thread-test",
+            item=dict(type="agentMessage", id="final", phase="final_answer", text="Done"))))
+        emit(dict(method="turn/completed", params=dict(threadId="thread-test",
+            turn=dict(id="turn-test", status="completed"))))
+    elif method == "turn/start":
         usage(100, 10)
         emit(dict(method="item/completed", params=dict(threadId="thread-test",
             item=dict(type="agentMessage", id="comment", phase="commentary", text="working"))))

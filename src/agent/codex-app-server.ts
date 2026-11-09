@@ -1,16 +1,11 @@
 import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type { AgentEvent } from "../shared/types.ts";
 import { type AgentTokenUsage, isAgentTokenUsage } from "../shared/usage.ts";
-import {
-  CodexCancelledError,
-  type CodexItem,
-  type CodexRunResult,
-  isThreadStoreConflict,
-  toolActivityFromCodexItem,
-  waitForThreadWriter,
-} from "./codex.ts";
+import { AgentCancelledError, type AgentRun, type AgentRunResult } from "./agent-run.ts";
+import { isThreadStoreConflict, waitForThreadWriter } from "./codex.ts";
 import { CodexSessionExtensions } from "./codex-session.ts";
 import type { AgentConfig } from "./config.ts";
+import { type ToolItem, toolActivity } from "./tool-activity.ts";
 
 type RpcMessage = {
   id?: number | string;
@@ -20,22 +15,12 @@ type RpcMessage = {
   error?: { message: string };
 };
 type Turn = { id: string; status: string; error?: { message: string } | null };
-export type SteerControl = {
-  threadId: string;
-  send(text: string, clientId: string): Promise<void>;
-};
-
 // A private stdio server per job: no daemon, listening socket, or cross-job turn selection.
 async function runCodexAppServerAttempt(
   config: AgentConfig,
-  prompt: string,
-  resumeThreadId: string | null,
-  onEvent: (event: AgentEvent) => Promise<void>,
-  signal: AbortSignal,
-  onUsage: (usage: AgentTokenUsage, threadId: string) => Promise<void>,
-  onReady: (control: SteerControl | null) => void,
-): Promise<CodexRunResult> {
-  if (signal.aborted) throw new CodexCancelledError();
+  { instructions, prompt, resumeThreadId, signal, onEvent, onUsage, onReady }: AgentRun,
+): Promise<AgentRunResult> {
+  if (signal.aborted) throw new AgentCancelledError();
   const child = Bun.spawn(
     [
       config.codexBinary,
@@ -117,7 +102,7 @@ async function runCodexAppServerAttempt(
   let abortTimer: ReturnType<typeof setTimeout> | undefined;
   const terminate = (): void => {
     onReady(null);
-    const error = new CodexCancelledError();
+    const error = new AgentCancelledError();
     if (threadId && turnId) {
       abortTimer = setTimeout(() => {
         rejectDone(error);
@@ -145,7 +130,7 @@ async function runCodexAppServerAttempt(
     if (pendingMessage.trim()) await emit("commentary", pendingMessage);
     pendingMessage = "";
   }
-  async function reportTool(item: CodexItem): Promise<void> {
+  async function reportTool(item: ToolItem): Promise<void> {
     if (item.id && tools.has(item.id)) return;
     const types: Record<string, string> = {
       webSearch: "web_search_call",
@@ -153,7 +138,7 @@ async function runCodexAppServerAttempt(
       imageView: "image_view",
       imageGeneration: "image_generation_call",
     };
-    const text = toolActivityFromCodexItem({
+    const text = toolActivity({
       ...item,
       type: types[item.type ?? ""] ?? item.type ?? "",
     });
@@ -188,7 +173,7 @@ async function runCodexAppServerAttempt(
       }
     }
     const item = params.item as
-      | (CodexItem & { phase?: string; summary?: string[]; content?: string[] })
+      | (ToolItem & { phase?: string; summary?: string[]; content?: string[] })
       | undefined;
     if (item && message.method === "item/started") {
       if (item.type === "commandExecution") {
@@ -222,14 +207,14 @@ async function runCodexAppServerAttempt(
       } else
         rejectDone(
           turn.status === "interrupted"
-            ? new CodexCancelledError()
+            ? new AgentCancelledError()
             : new Error(turn.error?.message ?? "Codex turn failed"),
         );
     }
     if (threadId && message.method?.startsWith("item/")) {
       try {
         for (const extension of await extensions.read(threadId))
-          await reportTool(extension as CodexItem);
+          await reportTool(extension as ToolItem);
       } catch {
         // Optional journal extensions must not stop the active turn.
       }
@@ -272,7 +257,7 @@ async function runCodexAppServerAttempt(
   void reader.catch(rejectDone);
   void child.exited.then((code) => {
     const error = signal.aborted
-      ? new CodexCancelledError()
+      ? new AgentCancelledError()
       : new Error(`Codex app-server exited with ${code}${stderr ? `: ${stderr}` : ""}`);
     for (const call of pending.values()) call.reject(error);
     pending.clear();
@@ -291,6 +276,7 @@ async function runCodexAppServerAttempt(
       cwd: config.repositoryPath,
       approvalPolicy: "never",
       sandbox: "danger-full-access",
+      developerInstructions: instructions,
     };
     const thread = await request(resumeThreadId ? "thread/resume" : "thread/start", {
       ...options,
@@ -310,7 +296,7 @@ async function runCodexAppServerAttempt(
       onReady({
         threadId,
         send: async (text, clientId) => {
-          if (signal.aborted) throw new CodexCancelledError();
+          if (signal.aborted) throw new AgentCancelledError();
           if (completed) throw new Error("Codex turn has completed");
           await request("turn/steer", {
             threadId,
@@ -322,7 +308,7 @@ async function runCodexAppServerAttempt(
       });
     await done;
     await notifications;
-    if (signal.aborted) throw new CodexCancelledError();
+    if (signal.aborted) throw new AgentCancelledError();
     if (!answer.trim()) throw new Error("Codex completed without an answer");
     return { answer, threadId, ...(usage ? { usage } : {}) };
   } finally {
@@ -341,15 +327,16 @@ async function runCodexAppServerAttempt(
 }
 
 export async function runCodexAppServer(
-  ...args: Parameters<typeof runCodexAppServerAttempt>
-): Promise<CodexRunResult> {
+  config: AgentConfig,
+  run: AgentRun,
+): Promise<AgentRunResult> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await runCodexAppServerAttempt(...args);
+      return await runCodexAppServerAttempt(config, run);
     } catch (error) {
-      if (!args[2] || !isThreadStoreConflict(error)) throw error;
+      if (!run.resumeThreadId || !isThreadStoreConflict(error)) throw error;
       const delays = [1000, 2000, 5000, 10000, 20000, 30000, 60000];
-      await waitForThreadWriter(delays[Math.min(attempt, delays.length - 1)] ?? 60000, args[4]);
+      await waitForThreadWriter(delays[Math.min(attempt, delays.length - 1)] ?? 60000, run.signal);
     }
   }
 }

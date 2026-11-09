@@ -3,18 +3,25 @@ import { join } from "node:path";
 import { unavailableAssessment } from "../shared/assessment.ts";
 import type { AgentJob } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
+import type { AgentProvider, AgentRun, AgentRunResult, SteerControl } from "./agent-run.ts";
 import { assessConversation } from "./assessment.ts";
 import { stageAttachments } from "./attachments.ts";
 import { loadBuckets } from "./buckets.ts";
-import { runCodexAppServer, type SteerControl } from "./codex-app-server.ts";
-import { loadAgentConfig } from "./config.ts";
+import { runClaudeCode } from "./claude-code.ts";
+import { runCodexAppServer } from "./codex-app-server.ts";
+import { type AgentConfig, loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
 import { newGeneratedImages, snapshotGeneratedImages } from "./generated-images.ts";
 import { assertTrustedInstructions } from "./instruction-integrity.ts";
-import { buildPrompt } from "./prompt.ts";
+import { agentInstructions, buildPrompt } from "./prompt.ts";
 import { isTransientNetworkError } from "./retry.ts";
+import { readThreadState, type ThreadState, writeThreadState } from "./thread-state.ts";
 
 const config = loadAgentConfig();
+const runners: Record<
+  AgentProvider,
+  (config: AgentConfig, run: AgentRun) => Promise<AgentRunResult>
+> = { codex: runCodexAppServer, claude: runClaudeCode };
 const gateway = new GatewayClient(config.bridgeUrl, config.bridgeToken);
 let stopping = false;
 const leaseHeartbeatIntervalMs = 20_000;
@@ -116,7 +123,6 @@ async function processJob(job: AgentJob): Promise<void> {
                   prompt: steer.prompt,
                   context: "",
                   attachments: [],
-                  resumeThreadId: steerControl.current.threadId,
                 },
                 "",
               );
@@ -139,39 +145,53 @@ async function processJob(job: AgentJob): Promise<void> {
   })();
   let stagedAttachments: Awaited<ReturnType<typeof stageAttachments>> | null = null;
   let usage: AgentTokenUsage | null = null;
-  let codexThreadId = job.resumeThreadId;
+  let threadId = job.resumeThreadId;
   try {
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
     stagedAttachments = await stageAttachments(gateway, job);
+    // A thread stays with the provider that created it; only new threads follow the switch.
+    const thread: ThreadState =
+      job.resumeThreadId === null
+        ? {
+            provider: config.claudeChatIds.has(job.chatId) ? "claude" : config.provider,
+            injectedBuckets: [],
+          }
+        : await readThreadState(config.statePath, job.resumeThreadId);
+    const injected = new Set(thread.injectedBuckets);
+    let rememberedThreadId: string | null = null;
+    const rememberThread = async (observedThreadId: string): Promise<void> => {
+      if (observedThreadId === rememberedThreadId) return;
+      rememberedThreadId = observedThreadId;
+      await writeThreadState(config.statePath, observedThreadId, thread);
+    };
     // Public group context must not pull private memory into a shared Telegram thread.
     const buckets =
       job.chatType === "private"
-        ? await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`)
-        : "";
-    const prompt = buildPrompt(job, buckets, stagedAttachments.files);
+        ? await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`, injected)
+        : { text: "", keys: [] };
+    const prompt = buildPrompt(job, buckets.text, stagedAttachments.files);
     const generatedImagesRoot = join(config.codexHome, "generated_images");
     const generatedImagesBefore = await snapshotGeneratedImages(generatedImagesRoot);
     let explicitMediaUpload = false;
-    const result = await runCodexAppServer(
-      config,
+    const result = await runners[thread.provider](config, {
+      instructions: agentInstructions(thread.provider),
       prompt,
-      job.resumeThreadId,
-      async (event) => {
+      resumeThreadId: job.resumeThreadId,
+      signal: cancellation.signal,
+      onEvent: async (event) => {
         explicitMediaUpload ||= isMediaUploadCommand(event);
         if (event.threadId) {
-          codexThreadId = event.threadId;
+          threadId = event.threadId;
+          await rememberThread(event.threadId);
         }
         await reportProgress(job.id, event);
       },
-      cancellation.signal,
-      async (observedUsage, observedThreadId) => {
+      onUsage: async (observedUsage, observedThreadId) => {
         usage = observedUsage;
-        if (observedThreadId) {
-          codexThreadId = observedThreadId;
-        }
-        await gateway.recordUsage(job.id, observedUsage, codexThreadId).catch((error) => {
+        threadId = observedThreadId;
+        await gateway.recordUsage(job.id, observedUsage, threadId).catch((error) => {
           console.error(
             JSON.stringify({
               level: "warn",
@@ -182,17 +202,21 @@ async function processJob(job: AgentJob): Promise<void> {
           );
         });
       },
-      (control) => {
+      onReady: (control) => {
         steerControl.current = control;
       },
-    );
+    });
     for (const steer of await gateway.pendingSteers(job.id).catch(() => [])) {
       await gateway
         .finishSteer(job.id, steer.id, deliveredSteers.get(steer.id) ?? false)
         .catch(() => {});
     }
     usage = result.usage ?? usage;
-    codexThreadId = result.threadId;
+    threadId = result.threadId;
+    await writeThreadState(config.statePath, threadId, {
+      provider: thread.provider,
+      injectedBuckets: [...injected, ...buckets.keys],
+    });
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
@@ -207,7 +231,7 @@ async function processJob(job: AgentJob): Promise<void> {
         await reportProgress(job.id, {
           kind: "commentary",
           text: "Изображение готово — отправляю его в Telegram.",
-          ...(codexThreadId ? { threadId: codexThreadId } : {}),
+          ...(threadId ? { threadId } : {}),
         });
         await gateway.uploadFile(job.chatId, generatedImage.path, {
           ...(job.chatType === "private" ? {} : { replyTo: job.messageId }),
@@ -249,7 +273,7 @@ async function processJob(job: AgentJob): Promise<void> {
     }
     const message = error instanceof Error ? error.message : String(error);
     console.error(JSON.stringify({ level: "error", jobId: job.id, message }));
-    await gateway.fail(job.id, message, usage, codexThreadId);
+    await gateway.fail(job.id, message, usage, threadId);
   } finally {
     await stagedAttachments?.cleanup();
     cancellation.abort();

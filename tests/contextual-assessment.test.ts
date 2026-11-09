@@ -6,6 +6,7 @@ import { assessConversation, assessmentPrompt } from "../src/agent/assessment.ts
 import type { AgentConfig } from "../src/agent/config.ts";
 import { isContextualAssessment, unavailableAssessment } from "../src/shared/assessment.ts";
 import type { AgentJob } from "../src/shared/types.ts";
+import { testAgentConfig } from "./fixtures/agent-config.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -55,19 +56,7 @@ async function fakeConfig(source: string): Promise<AgentConfig> {
   const binary = join(directory, "codex");
   await writeFile(binary, `#!/usr/bin/env bun\n${source}`);
   await chmod(binary, 0o700);
-  return {
-    codexBinary: binary,
-    codexHome: directory,
-    repositoryPath: directory,
-    model: "test",
-    reasoningEffort: "low",
-    serviceTier: "priority",
-    bridgeUrl: "unused",
-    bridgeToken: "unused",
-    memoryPath: directory,
-    pollIntervalMs: 1000,
-    maxConcurrentJobs: 1,
-  };
+  return testAgentConfig(directory, { codexBinary: binary, model: "test" });
 }
 
 test("accepts structured output without giving conversation data executable arguments", async () => {
