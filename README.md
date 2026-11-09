@@ -289,12 +289,12 @@ and Podman, so they change only during an explicit reviewed installer run.
 ## Host installation
 
 On Fedora 43/44, or on the existing Rocky Linux host using the pinned upstream PM3 RPM fallback,
-create three root-readable files containing the Telegram token, a random bridge secret, and
-the OpenAI API key the agent uses for OpenAI API tasks. From the freshly pulled `main` checkout,
-run this once:
+create four root-readable files containing the Telegram token, a random bridge secret,
+the OpenAI API key the agent uses for OpenAI API tasks, and a Claude Code token from
+`claude setup-token`. From the freshly pulled `main` checkout, run this once:
 
 ```bash
-sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token /root/loylex-openai-api-key
+sudo deploy/scripts/install-host.sh /root/loylex-telegram-token /root/loylex-bridge-token /root/loylex-openai-api-key /root/loylex-claude-oauth-token
 ```
 
 The installer creates the locked `loylex` host user, enables lingering rootless Podman, installs
@@ -323,7 +323,13 @@ The agent still needs:
    `loylex-worker-blue`, and `loylex-worker-green`. Only the active worker project is enabled;
    the supervisor uses the inactive one for the next rollover.
 
-Never commit either Telegram or Codex credentials.
+Never commit Telegram, Codex or Claude credentials.
+
+Jobs run on Codex or Claude Code. `LOYLEX_AGENT_PROVIDER` chooses the provider for new threads and
+`LOYLEX_CLAUDE_CHAT_IDS` moves listed chats to Claude first; a thread always resumes on the
+provider that created it, so switching or rolling back never breaks a conversation. Claude Code
+reaches Anthropic through the host proxy in [`deploy/host/squid.conf`](deploy/host/squid.conf);
+see [`deploy/host/claude-code-2.1.311-audit.md`](deploy/host/claude-code-2.1.311-audit.md).
 
 External GitHub operations are proposed with `loylex approve submit REQUEST.json`; see
 [`skills/github-approval/SKILL.md`](skills/github-approval/SKILL.md) for request shapes.

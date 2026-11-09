@@ -6,14 +6,15 @@ if [[ "$EUID" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ "$#" -ne 3 ]]; then
-  echo "Usage: install-host.sh TELEGRAM_TOKEN_FILE BRIDGE_TOKEN_FILE OPENAI_API_KEY_FILE" >&2
+if [[ "$#" -ne 4 ]]; then
+  echo "Usage: install-host.sh TELEGRAM_TOKEN_FILE BRIDGE_TOKEN_FILE OPENAI_API_KEY_FILE CLAUDE_CODE_OAUTH_TOKEN_FILE" >&2
   exit 1
 fi
 
 telegram_token_file="$(realpath "$1")"
 bridge_token_file="$(realpath "$2")"
 openai_api_key_file="$(realpath "$3")"
+claude_oauth_token_file="$(realpath "$4")"
 deploy_root="$(realpath "$(dirname "$0")/..")"
 versions_file="$deploy_root/host/versions.env"
 
@@ -117,6 +118,7 @@ fi
   shadow-utils \
   slirp4netns \
   sqlite \
+  squid \
   zstd
 if [[ -f /etc/fedora-release ]]; then
   fedora_release="$(awk -F= '$1 == "VERSION_ID" { gsub(/"/, "", $2); print $2 }' /etc/os-release)"
@@ -194,6 +196,11 @@ chown -R loylex:loylex /home/loylex
 systemctl enable --now firewalld
 firewall-cmd --permanent --add-service=ssh
 firewall-cmd --reload
+
+squid -k parse -f "$deploy_root"/host/squid.conf
+install -m 0640 -o root -g squid "$deploy_root"/host/squid.conf /etc/squid/squid.conf
+systemctl enable squid
+systemctl restart squid
 
 if [[ -z "$(swapon --show --noheadings)" && ! -e /swapfile ]]; then
   fallocate -l 4G /swapfile
@@ -339,6 +346,9 @@ if ! as_loylex podman secret inspect loylex-supervisor-token >/dev/null 2>&1; th
 fi
 if ! as_loylex podman secret inspect loylex-openai-api-key >/dev/null 2>&1; then
   as_loylex podman secret create loylex-openai-api-key - <"$openai_api_key_file"
+fi
+if ! as_loylex podman secret inspect loylex-claude-oauth-token >/dev/null 2>&1; then
+  as_loylex podman secret create loylex-claude-oauth-token - <"$claude_oauth_token_file"
 fi
 
 for volume in \

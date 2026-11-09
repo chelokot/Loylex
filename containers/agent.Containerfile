@@ -4,6 +4,9 @@ ARG BUN_VERSION=1.4.0
 ARG CODEX_VERSION=0.164.0
 ARG CODEX_WRAPPER_SHA256=afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30
 ARG CODEX_LINUX_X64_SHA256=62659fefd9a8efa21a496402fde3c11c025bbeee735a582968f8ffd14cb5f79c
+# Checked against the GPG-signed release manifest; see deploy/host/claude-code-2.1.311-audit.md.
+ARG CLAUDE_CODE_VERSION=2.1.311
+ARG CLAUDE_CODE_LINUX_X64_SHA256=86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada
 # Reviewed 2026-09-07 against Cloudflare's signed Fedora 44 RPM.
 ARG WARP_VERSION=2026.7.1377.0
 ARG WARP_RELEASE=1.fc44
@@ -79,6 +82,12 @@ RUN dnf install -y \
     && chmod 0755 /usr/local/lib/node_modules/@openai/codex/bin/codex.js \
     && ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
     && test "$(node /usr/local/bin/codex --version)" = "codex-cli ${CODEX_VERSION}" \
+    && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 \
+      -o /tmp/claude \
+      "https://downloads.claude.ai/claude-code-releases/${CLAUDE_CODE_VERSION}/linux-x64/claude" \
+    && printf '%s  %s\n' "${CLAUDE_CODE_LINUX_X64_SHA256}" /tmp/claude | sha256sum --check - \
+    && install -m 0755 /tmp/claude /usr/local/bin/claude \
+    && test "$(/usr/local/bin/claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)" \
     && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
       -o /tmp/cloudflare-warp.rpm \
       "https://pkg.cloudflareclient.com/rpm/44/x86_64/cloudflare-warp-${WARP_VERSION}-${WARP_RELEASE}.x86_64.rpm" \
@@ -96,7 +105,7 @@ RUN dnf install -y \
     && mkdir -p /memory /workspace /opt/loylex/app \
     && chown -R loylex:loylex /memory /workspace /opt/loylex \
     && dnf clean all \
-    && rm -rf /tmp/bun /tmp/bun.zip /tmp/codex-install /tmp/cloudflare-warp.rpm /tmp/cloudflare-warp-key.gpg /root/.npm
+    && rm -rf /tmp/bun /tmp/bun.zip /tmp/codex-install /tmp/claude /tmp/cloudflare-warp.rpm /tmp/cloudflare-warp-key.gpg /root/.npm
 
 RUN python3 -m pip install \
       --no-cache-dir \
