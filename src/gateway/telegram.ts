@@ -244,10 +244,11 @@ export class TelegramClient {
       if (
         error instanceof TelegramApiError &&
         error.errorCode === 400 &&
-        /message is not modified/i.test(error.message)
+        /message is not modified|canceled by new edit message request/i.test(error.message)
       ) {
-        // Telegram treats an idempotent edit as an error. The requested state is already live,
-        // so keep the job successful and return the edited message reference to the caller.
+        // Telegram treats an idempotent edit as an error, and cancels an edit that a newer edit of
+        // the same message replaced. The message already shows the requested or a newer state, so
+        // keep the job successful and return the edited message reference to the caller.
         return {
           message_id: messageId,
           date: Math.floor(Date.now() / 1_000),

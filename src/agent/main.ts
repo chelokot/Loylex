@@ -13,8 +13,8 @@ import { type AgentConfig, loadAgentConfig } from "./config.ts";
 import { GatewayClient } from "./gateway.ts";
 import { newGeneratedImages, snapshotGeneratedImages } from "./generated-images.ts";
 import { assertTrustedInstructions } from "./instruction-integrity.ts";
+import { reportProgress } from "./progress.ts";
 import { agentInstructions, buildPrompt } from "./prompt.ts";
-import { isTransientNetworkError } from "./retry.ts";
 import { readThreadState, type ThreadState, writeThreadState } from "./thread-state.ts";
 
 const config = loadAgentConfig();
@@ -68,28 +68,6 @@ async function cancellationRequested(jobId: number, controller: AbortController)
     return await gateway.isCancelled(jobId);
   } catch {
     return false;
-  }
-}
-
-async function reportProgress(
-  jobId: number,
-  event: Parameters<GatewayClient["event"]>[1],
-): Promise<void> {
-  try {
-    await gateway.event(jobId, event);
-  } catch (error) {
-    if (!isTransientNetworkError(error)) {
-      throw error;
-    }
-    console.error(
-      JSON.stringify({
-        level: "warn",
-        jobId,
-        event: "progress_report_unavailable",
-        kind: event.kind,
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
   }
 }
 
@@ -182,7 +160,7 @@ async function processJob(job: AgentJob): Promise<void> {
           threadId = event.threadId;
           await rememberThread(event.threadId);
         }
-        await reportProgress(job.id, event);
+        await reportProgress(gateway, job.id, event);
       },
       onUsage: async (observedUsage, observedThreadId) => {
         usage = observedUsage;
@@ -224,7 +202,7 @@ async function processJob(job: AgentJob): Promise<void> {
       );
       const generatedImage = generatedImages.at(-1);
       if (generatedImage) {
-        await reportProgress(job.id, {
+        await reportProgress(gateway, job.id, {
           kind: "commentary",
           text: "Изображение готово — отправляю его в Telegram.",
           ...(threadId ? { threadId } : {}),

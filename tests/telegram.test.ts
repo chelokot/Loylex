@@ -196,6 +196,24 @@ test("treats an idempotent rich edit as success", async () => {
   expect(result?.chat.id).toBe(42);
 });
 
+test("treats a rich edit superseded by a newer edit as delivered", async () => {
+  globalThis.fetch = (async (_input: string | URL | Request) =>
+    Response.json(
+      {
+        ok: false,
+        error_code: 400,
+        description: "Bad Request: canceled by new edit message request",
+      },
+      { status: 400 },
+    )) as unknown as typeof fetch;
+
+  const client = new TelegramClient("test-token");
+  const result = await client.editRich(42, 17, "<details>working</details>");
+
+  expect(result?.message_id).toBe(17);
+  expect(result?.chat.id).toBe(42);
+});
+
 test("reports a missing rich message without failing the job", async () => {
   globalThis.fetch = (async (_input: string | URL | Request) =>
     Response.json(
