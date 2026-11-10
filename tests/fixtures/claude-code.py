@@ -60,6 +60,10 @@ if request == "steer me":
     assistant(dict(type="tool_use", id="search-1", name="WebSearch", input=dict(query="Loylex")))
     assistant(dict(type="text", text=steer["message"]["content"]))
     result(steer["message"]["content"])
+elif request == "queue me":
+    queued = next(incoming)
+    result("first answer", queued=1)
+    result(queued["message"]["content"])
 elif request == "interrupt me":
     assistant(dict(type="tool_use", id="bash-1", name="Bash", input=dict(command="sleep 60")))
     control = next(incoming)

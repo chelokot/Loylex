@@ -196,15 +196,65 @@ export abstract class DatabaseJobProgress extends DatabaseJobs {
       .all(jobId);
   }
 
-  finishSteer(jobId: number, steerId: number, workerId: string, accepted: boolean): number | null {
-    if (!this.isJobOwned(jobId, workerId)) return null;
+  // A reply to a turn that is still running reaches it as steering input. Its own job stays
+  // queued as the fallback and is retired by finishSteer once the turn accepts the input.
+  queueFollowUpSteer(updateId: number, replyId: number): number | null {
     return (
       this.connection
-        .query<{ message_id: number }, [string, number, number]>(
-          "UPDATE job_steers SET state = ? WHERE id = ? AND job_id = ? AND state = 'pending' RETURNING message_id",
-        )
-        .get(accepted ? "accepted" : "failed", steerId, jobId)?.message_id ?? null
+        .query<{ job_id: number }, [number, number]>(`
+          INSERT OR IGNORE INTO job_steers (job_id, message_id, reply_message_id, user_id, prompt)
+          SELECT running.id, followUp.message_id, ?, followUp.user_id, followUp.prompt
+          FROM jobs AS followUp
+          JOIN jobs AS running
+            ON running.state = 'running'
+            AND running.chat_id = followUp.chat_id
+            AND followUp.resume_thread_id IN (running.resume_thread_id, running.codex_thread_id)
+          WHERE followUp.update_id = ?
+            AND followUp.state = 'pending'
+            AND followUp.user_id IS NOT NULL
+            AND followUp.attachments_json = '[]'
+            AND followUp.context_mode <> 'none'
+            AND NOT EXISTS (
+              SELECT 1 FROM jobs AS queued
+              WHERE queued.state = 'pending'
+                AND queued.id <> followUp.id
+                AND followUp.resume_thread_id IN (queued.resume_thread_id, queued.codex_thread_id)
+            )
+          RETURNING job_id
+        `)
+        .get(replyId, updateId)?.job_id ?? null
     );
+  }
+
+  private hasFollowUpJob(jobId: number, messageId: number): boolean {
+    return (
+      this.connection
+        .query<{ id: number }, [number, number]>(
+          "SELECT followUp.id FROM jobs AS followUp JOIN jobs AS steered ON steered.chat_id = followUp.chat_id WHERE steered.id = ? AND followUp.message_id = ?",
+        )
+        .get(jobId, messageId) !== null
+    );
+  }
+
+  finishSteer(jobId: number, steerId: number, workerId: string, accepted: boolean): number | null {
+    if (!this.isJobOwned(jobId, workerId)) return null;
+    return this.connection
+      .transaction(() => {
+        const messageId = this.connection
+          .query<{ message_id: number }, [string, number, number]>(
+            "UPDATE job_steers SET state = ? WHERE id = ? AND job_id = ? AND state = 'pending' RETURNING message_id",
+          )
+          .get(accepted ? "accepted" : "failed", steerId, jobId)?.message_id;
+        if (messageId === undefined) return null;
+        if (!accepted) return this.hasFollowUpJob(jobId, messageId) ? null : messageId;
+        this.connection
+          .query(
+            "UPDATE jobs SET state = 'cancelled', completed_at = ?, error = ? WHERE state = 'pending' AND message_id = ? AND chat_id = (SELECT chat_id FROM jobs WHERE id = ?)",
+          )
+          .run(Date.now(), "Передано уточнением в работающую задачу", messageId, jobId);
+        return messageId;
+      })
+      .immediate();
   }
 
   failPendingSteers(jobId: number): number[] {
@@ -213,7 +263,8 @@ export abstract class DatabaseJobProgress extends DatabaseJobs {
         "UPDATE job_steers SET state = 'failed' WHERE job_id = ? AND state = 'pending' AND EXISTS (SELECT 1 FROM jobs WHERE id = job_id AND state NOT IN ('pending', 'running')) RETURNING message_id",
       )
       .all(jobId)
-      .map((row) => row.message_id);
+      .map((row) => row.message_id)
+      .filter((messageId) => !this.hasFollowUpJob(jobId, messageId));
   }
 
   cancelJobsForMessage(chatId: number, messageId: number): number[] {

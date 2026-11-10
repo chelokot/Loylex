@@ -207,3 +207,39 @@ test("steering selects stop targets without cancelling, isolates workers, and de
   expect(database.queueSteer(-10042, 11, 14, 8, "finished")).toEqual([]);
   database.close();
 });
+
+test("a reply to a running turn steers it and keeps its own job only as the fallback", () => {
+  const database = setup();
+  database.registerWorker("worker");
+  database.enqueue(60, message(1, "long task"), "long task", null);
+  const running = database.claimNext(10, "worker")?.id ?? 0;
+  database.appendStatus(running, "working", "thread-live", "worker");
+  const reply = (id: number, text: string) => ({
+    ...message(id, text),
+    reply_to_message: message(1, "long task"),
+  });
+
+  database.enqueue(61, reply(2, "also check memory"), "also check memory", "thread-live");
+  expect(database.queueFollowUpSteer(61, 1)).toBe(running);
+  expect(database.claimNext(10, "worker")).toBeNull();
+  const accepted = database.pendingSteers(running, "worker");
+  expect(accepted).toMatchObject([
+    { messageId: 2, replyToMessageId: 1, userId: 7, prompt: "also check memory" },
+  ]);
+  expect(database.finishSteer(running, accepted[0]?.id ?? 0, "worker", true)).toBe(2);
+
+  database.enqueue(62, reply(3, "and disk"), "and disk", "thread-live");
+  expect(database.queueFollowUpSteer(62, 1)).toBe(running);
+  const rejected = database.pendingSteers(running, "worker");
+  expect(database.finishSteer(running, rejected[0]?.id ?? 0, "worker", false)).toBeNull();
+
+  database.enqueue(63, reply(4, "one more"), "one more", "thread-live");
+  expect(database.queueFollowUpSteer(63, 1)).toBeNull();
+  database.enqueue(64, reply(5, "unrelated"), "unrelated", null);
+  expect(database.queueFollowUpSteer(64, 1)).toBeNull();
+
+  database.complete(running, 20, "thread-live", "worker");
+  expect(database.failPendingSteers(running)).toEqual([]);
+  expect(database.claimNext(10, "worker")).toMatchObject({ messageId: 3, prompt: "and disk" });
+  database.close();
+});
