@@ -51,6 +51,16 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
             raise ApprovalError("Unknown approval")
         return row
 
+    def _discard_finished_histories(self) -> None:
+        # A finished request can never execute again, so its bounded git history is no longer needed.
+        # Pending and executing requests keep theirs until they reach a final state.
+        finished = self.database.execute(
+            "SELECT id FROM approvals WHERE state IN "
+            "('succeeded','failed','cancelled','expired','interrupted')"
+        ).fetchall()
+        for row in finished:
+            shutil.rmtree(self.root / row["id"] / "repository.git", ignore_errors=True)
+
     def status(self, identifier: str) -> dict[str, Any]:
         with self.lock:
             row = self._row(identifier)
@@ -94,6 +104,7 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                 "UPDATE approvals SET state='expired' WHERE state='pending' AND created<?",
                 (now - 3600,),
             )
+            self._discard_finished_histories()
             active = self.database.execute(
                 "SELECT chat_id FROM approvals WHERE state IN ('preparing','pending','executing')"
             ).fetchall()

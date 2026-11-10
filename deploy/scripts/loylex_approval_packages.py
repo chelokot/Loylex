@@ -15,6 +15,9 @@ from loylex_supervisor_errors import SupervisorError
 
 
 ZERO_SHA = "0" * 40
+# Contribution snapshots keep this much history below each tip for merge-base and log ranges.
+# Measured on telegramdesktop/tdesktop: about 38 MB, far below the 128 MiB per-file git limit.
+CONTRIBUTION_HISTORY_DEPTH = 1000
 GATEWAY_BASE_IMAGE = "docker.io/oven/bun:1.4.0-debian"
 INFRASTRUCTURE_FILES = (
     "loylex-supervisor",
@@ -122,15 +125,26 @@ class ApprovalPackages:
         matching = [line.split()[0] for line in output if line.split()[1] == ref]
         return matching[0] if matching else ZERO_SHA
 
-    def _fetch(self, directory: Path, repository: str, sha: str) -> None:
+    def _fetch(self, directory: Path, repository: str, sha: str, depth: int | None = None) -> None:
         if sha != ZERO_SHA:
+            if depth is not None and self._has_commit(directory, sha):
+                # Same object, already fetched with the same bounded history: nothing to transfer.
+                return
             self._git(
                 directory,
                 "fetch",
                 "--no-tags",
+                *(["--depth", str(depth)] if depth is not None else []),
                 f"https://github.com/{repository}.git",
                 sha,
             )
+
+    def _has_commit(self, directory: Path, sha: str) -> bool:
+        try:
+            self._git(directory, "cat-file", "-e", f"{sha}^{{commit}}")
+        except ApprovalError:
+            return False
+        return True
 
     def _fork_parent(self, repository: str) -> str | None:
         # Public metadata supplies comparison context, never authorization or a push target.
@@ -160,11 +174,11 @@ class ApprovalPackages:
         diff = b""
         if kind == "push":
             operation["oldSha"] = self._remote_sha(directory, repository, operation["ref"])
-            self._fetch(directory, repository, operation["oldSha"])
+            self._fetch(directory, repository, operation["oldSha"], CONTRIBUTION_HISTORY_DEPTH)
             review_base = operation["oldSha"]
             if review_base == ZERO_SHA:
                 review_base = self._remote_sha(directory, repository, "HEAD")
-                self._fetch(directory, repository, review_base)
+                self._fetch(directory, repository, review_base, CONTRIBUTION_HISTORY_DEPTH)
             parent_sha = ZERO_SHA
             if operation["oldSha"] == ZERO_SHA and operation["ref"].startswith("refs/heads/"):
                 parent = self._fork_parent(repository)
@@ -172,7 +186,7 @@ class ApprovalPackages:
                     parent_sha = self._remote_sha(directory, parent, "HEAD")
                     if parent_sha == ZERO_SHA:
                         raise ApprovalError("Fork parent has no published comparison base")
-                    self._fetch(directory, parent, parent_sha)
+                    self._fetch(directory, parent, parent_sha, CONTRIBUTION_HISTORY_DEPTH)
                     operation["reviewBaseRepository"] = parent
                     operation["upstreamSha"] = parent_sha
             bundle = base64.b64decode(operation.pop("bundle"), validate=True)
@@ -211,8 +225,8 @@ class ApprovalPackages:
             )
             if ZERO_SHA in (operation["headSha"], operation["baseSha"]):
                 raise ApprovalError("PR branches must already exist")
-            self._fetch(directory, repository, operation["baseSha"])
-            self._fetch(directory, operation["headRepository"], operation["headSha"])
+            self._fetch(directory, repository, operation["baseSha"], CONTRIBUTION_HISTORY_DEPTH)
+            self._fetch(directory, operation["headRepository"], operation["headSha"], CONTRIBUTION_HISTORY_DEPTH)
             base, head = operation["baseSha"], operation["headSha"]
         elif kind in {"gateway", "infrastructure"}:
             head = operation["commit"]

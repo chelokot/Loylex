@@ -5,6 +5,7 @@ import time
 from unittest import mock
 
 from approval_fixtures import ApprovalTestCase, LocalApprovals, broker
+import loylex_approval_packages as packages
 
 
 class ApprovalTest(ApprovalTestCase):
@@ -271,6 +272,29 @@ class ApprovalTest(ApprovalTestCase):
         self.assertEqual(
             self.git("--git-dir", str(self.remote), "rev-parse", "review"), self.new_sha
         )
+
+    def test_contribution_history_is_bounded_and_discarded_once_finished(self) -> None:
+        with mock.patch.object(self.approvals, "_git", side_effect=self.approvals._git) as git:
+            identifier = self.submit()
+        fetches = [call.args for call in git.call_args_list if call.args[1] == "fetch"]
+        self.assertTrue(fetches)
+        for arguments in fetches:
+            self.assertEqual(arguments[3:5], ("--depth", str(packages.CONTRIBUTION_HISTORY_DEPTH)))
+        repository = self.approvals.root / identifier / "repository.git"
+        self.assertTrue(self.callback(identifier)["accepted"])
+        self.assertEqual(self.wait_execution(identifier)["state"], "succeeded")
+        self.assertTrue(repository.exists())
+        pending = self.submit({**self.operation, "ref": "refs/heads/review"})
+        self.assertFalse(repository.exists())
+        self.assertTrue((self.approvals.root / pending / "repository.git").exists())
+
+    def test_bounded_fetch_transfers_nothing_for_commits_already_present(self) -> None:
+        directory = self.directory / "snapshot"
+        self.git("init", "--bare", str(directory / "repository.git"))
+        with mock.patch.object(self.approvals, "_git", side_effect=self.approvals._git) as git:
+            self.approvals._fetch(directory, "owner/repository", self.old_sha, 1000)
+            self.approvals._fetch(directory, "owner/repository", self.old_sha, 1000)
+        self.assertEqual([call.args[1] for call in git.call_args_list], ["cat-file", "fetch", "cat-file"])
 
     def test_approval_notice_is_concise_and_replies_to_package(self) -> None:
         identifier = self.submit()

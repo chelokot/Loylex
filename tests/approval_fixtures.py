@@ -23,7 +23,7 @@ class LocalApprovals(broker.Approvals):
 
     def _git(self, directory: Path, *arguments: str, privileged: bool = False) -> bytes:
         arguments = [
-            str(self.remotes.get(value, self.remote)) if value.startswith("https://github.com/") else value
+            f"file://{self.remotes.get(value, self.remote)}" if value.startswith("https://github.com/") else value
             for value in arguments
         ]
         return host.command(["git", "--git-dir", str(directory / "repository.git"), *arguments])
