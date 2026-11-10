@@ -229,7 +229,8 @@ export async function runClaudeCode(
       await onUsage(usage, threadId);
       pendingMessage = "";
       if (message.subtype === "success" && !message.is_error) {
-        answer = message.result ?? "";
+        // Input that arrives after the last tool call runs as a further turn of the same job.
+        answer = [answer, message.result ?? ""].filter((text) => text.trim()).join("\n\n");
         failure = null;
       } else {
         failure = [message.result, ...(message.errors ?? [])].filter(Boolean).join("\n");

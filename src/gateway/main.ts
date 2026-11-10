@@ -532,6 +532,8 @@ async function poll(): Promise<void> {
           );
         } else if (admission.kind === "queued") {
           acknowledgeQueuedWork(message);
+          if (message.reply_to_message)
+            database.queueFollowUpSteer(update.update_id, message.reply_to_message.message_id);
         }
       }
     } catch (error) {

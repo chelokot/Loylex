@@ -83,6 +83,22 @@ test("steers the running turn and reports its work and usage on the resumed sess
   });
 });
 
+test("answers input that arrives after the last tool call as a further turn of the same job", async () => {
+  await withConfig({}, async (config) => {
+    const result = await runClaudeCode(
+      config,
+      run({
+        prompt: "queue me",
+        onReady: (control) => {
+          if (control) void control.send("late answer", "telegram-2");
+        },
+      }),
+    );
+    expect(result.answer).toBe("first answer\n\nlate answer");
+    expect(result.usage?.totalTokens).toBe(84);
+  });
+});
+
 test("starts a new session under an ID chosen before the model answers", async () => {
   await withConfig({ claudeProxy: "http://host.containers.internal:3128" }, async (config) => {
     const result = await runClaudeCode(config, run({ prompt: "environment" }));
