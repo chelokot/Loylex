@@ -24,6 +24,10 @@ class OperationValidation:
         if kind == "t3":
             validate_t3(operation)
             return
+        if kind == "tailnet":
+            from loylex_tailnet_policy import validate_tailnet  # Lazy: installed separately.
+            validate_tailnet(operation)
+            return
         fields = {
             "push": {"kind", "repository", "ref", "newSha", "bundle"},
             "pull-request": {"kind", "repository", "head", "base", "title", "body"},

@@ -30,6 +30,8 @@ INFRASTRUCTURE_FILES = (
     "loylex_compose.py",
     "loylex_supervisor_errors.py",
     "loylex_supervisor_http.py",
+    "loylex_tailnet_policy.py",
+    "loylex_tailnet_serve.py",
 )
 # Host files that a host-config operation replaces, relative to the host user's home.
 HOST_CONFIG_SOURCES = {
@@ -255,6 +257,10 @@ class ApprovalPackages:
                     ).hexdigest()
                     for name in operation["files"]
                 }
+        elif kind == "tailnet":
+            from loylex_tailnet_policy import tailnet_manifest  # Lazy: installed separately.
+            base, head = ZERO_SHA, ZERO_SHA
+            diff = tailnet_manifest(operation)
         elif kind == "host-config":
             operation["oldCommit"] = self._installed_commit(kind)
             self._fetch(directory, repository, operation["commit"])

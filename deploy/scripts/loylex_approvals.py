@@ -21,7 +21,7 @@ OPERATOR_ID = 426043802
 
 
 class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalExecution):
-    def __init__(self, supervisor: Any, root: Path | None = None) -> None:
+    def __init__(self, supervisor: Any, root: Path | None = None, loopback: bool = False) -> None:
         self.supervisor = supervisor
         self.root = root or Path.home() / ".local/state/loylex-approvals"
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -41,6 +41,14 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
             "UPDATE approvals SET state='interrupted' WHERE state IN ('preparing','executing')"
         )
         self.database.commit()
+        self.tailnet_server = None
+        if loopback:
+            try:
+                from loylex_tailnet_serve import start_tailnet_loopback
+            except ImportError:
+                pass  # Approvals must start even before the tailnet modules are installed on the host.
+            else:
+                self.tailnet_server = start_tailnet_loopback()
 
     def _row(self, identifier: str) -> sqlite3.Row:
         with self.lock:
@@ -95,6 +103,9 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
             return t3_status({key: value for key, value in operation.items() if key != "kind"})
         if isinstance(operation, dict) and operation.get("kind") == "t3-connection":
             return t3_connection_status({key: value for key, value in operation.items() if key != "kind"})
+        if isinstance(operation, dict) and operation.get("kind") == "tailnet-status":
+            from loylex_tailnet_serve import tailnet_status  # Lazy: installed separately.
+            return tailnet_status()
         self._validate_operation(operation)
         with self.lock:
             if shutil.disk_usage(self.root).free < 2 * 1024 * 1024 * 1024:
@@ -182,10 +193,10 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                         "chat_id": row["chat_id"],
                         "caption": (
                             f"Проверка операции: {operation['kind']} · "
-                            f"{operation.get('machine', operation.get('repository', 'chelokot/Loylex'))}\n"
+                            f"{operation.get('machine', operation.get('repository', operation.get('name', 'chelokot/Loylex')))}\n"
                             + ("T3: точная операция в пакете. Задание выполняется с full-access; результат доступен агенту."
                                if operation["kind"] == "t3" else
-                               "Изменения относительно указанной в пакете базы сравнения.")
+                               "Тейлнет: в пакете точные файлы; маршрут меняется только после одобрения." if operation["kind"] == "tailnet" else "Изменения относительно указанной в пакете базы сравнения.")
                         ),
                         "reply_parameters": {
                             "message_id": row["reply_id"],

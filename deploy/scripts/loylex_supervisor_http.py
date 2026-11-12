@@ -146,7 +146,7 @@ def serve(supervisor: Any) -> None:
     GATEWAY_TOKEN = GATEWAY_TOKEN_PATH.read_text().strip()
     if not GATEWAY_TOKEN:
         raise SupervisorError("Gateway supervisor token is empty")
-    APPROVALS = Approvals(SUPERVISOR)
+    APPROVALS = Approvals(SUPERVISOR, loopback=True)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(GATEWAY_CERTIFICATE_PATH, GATEWAY_KEY_PATH)
     with ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler) as server, GatewayHTTPServer((LISTEN_HOST, 8791), RequestHandler) as gateway:

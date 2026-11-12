@@ -111,6 +111,9 @@ class ApprovalExecution:
                 if self._installed_commit(kind) != operation["oldCommit"]:
                     raise ApprovalError("Installed host configuration changed; submit a new request")
                 result = self._host_config(directory, operation)
+            elif kind == "tailnet":
+                from loylex_tailnet_serve import tailnet_execute  # Lazy: installed separately.
+                result = tailnet_execute(identifier, operation)
             else:
                 result = self._github(operation)
             self._update(

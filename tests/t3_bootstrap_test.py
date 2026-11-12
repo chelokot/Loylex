@@ -32,7 +32,9 @@ sys.path.insert(0, sys.argv[1])
 import loylex_supervisor_http
 from loylex_approvals import Approvals
 from loylex_approval_packages import INFRASTRUCTURE_FILES
-assert set(INFRASTRUCTURE_FILES) == set(sys.argv[2:])
+# Tailnet modules joined the set later; any other difference from the pre-T3 set is still a failure.
+assert set(sys.argv[2:]) <= set(INFRASTRUCTURE_FILES)
+assert set(INFRASTRUCTURE_FILES) - set(sys.argv[2:]) == {"loylex_tailnet_policy.py", "loylex_tailnet_serve.py"}
 Approvals._validate_operation({'kind': 't3', 'machine': 'home', 'action': 'read', 'arguments': {'threadId': 'mcp:t'}})
 """
             result = subprocess.run(

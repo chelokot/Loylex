@@ -8,6 +8,14 @@ from loylex_approval_host import ApprovalError, command, encoded
 
 class ApprovalReview:
     def _review(self, identifier: str, package: bytes) -> str:
+        try:
+            kind = json.loads(package.split(b"\n\n", 1)[0]).get("kind")
+        except (AttributeError, ValueError):
+            kind = None
+        if kind == "tailnet":
+            # Whole site files stay out of the reviewer model; the summary is fixed text.
+            from loylex_tailnet_policy import tailnet_package_operation, tailnet_review  # Lazy: installed separately.
+            return tailnet_review(tailnet_package_operation(package))
         with (
             self.review_lock,
             tempfile.TemporaryDirectory(prefix="loylex-review-") as temporary,
