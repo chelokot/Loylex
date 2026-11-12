@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Аниме-тудулист</title>
+  <meta name="description" content="Аниме-тудулист: добавляй задачи, отмечай готовое и включай музыку.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="scene" aria-hidden="true">
+    <span class="orb orb-a" data-depth="0.6"></span>
+    <span class="orb orb-b" data-depth="1.2"></span>
+    <span class="orb orb-c" data-depth="0.9"></span>
+  </div>
+
+  <main class="layout">
+    <header class="hero">
+      <div class="hero-text">
+        <p class="eyebrow">аниме-тудулист</p>
+        <h1>TODO<span>!</span></h1>
+        <p class="lead">Одна задача — один шаг. Добавляй дела, отмечай готовое и держи ритм.</p>
+        <button id="music" class="chip" type="button" aria-pressed="false">♪ Музыка: выкл</button>
+      </div>
+      <img class="hero-art" src="assets/girl.webp" width="560" height="473" data-depth="1.6"
+           alt="Аниме-персонаж в голубом купальнике и белой шляпе машет рукой">
+    </header>
+
+    <section class="card" aria-labelledby="list-title">
+      <h2 id="list-title" class="sr-only">Список задач</h2>
+
+      <form id="new-task" class="composer" autocomplete="off">
+        <input id="task-input" type="text" maxlength="200" placeholder="Что нужно сделать?" aria-label="Новая задача">
+        <button type="submit" class="btn-primary">Добавить</button>
+      </form>
+
+      <ul id="tasks" class="tasks"></ul>
+      <p id="empty" class="empty" hidden></p>
+
+      <footer class="toolbar">
+        <span id="count">Осталось: 0</span>
+        <div class="filters" role="group" aria-label="Фильтр задач">
+          <button type="button" class="filter is-active" data-filter="all" aria-pressed="true">Все</button>
+          <button type="button" class="filter" data-filter="active" aria-pressed="false">Активные</button>
+          <button type="button" class="filter" data-filter="done" aria-pressed="false">Готово</button>
+        </div>
+        <button id="clear-done" class="link" type="button" hidden>Очистить выполненные</button>
+      </footer>
+    </section>
+  </main>
+
+  <noscript><p class="noscript">Включи JavaScript, чтобы пользоваться тудулистом.</p></noscript>
+</body>
+</html>
