@@ -108,10 +108,17 @@ test("starts a new session under an ID chosen before the model answers", async (
     });
     expect(result.threadId).toMatch(/^[0-9a-f-]{36}$/);
   });
-  await withConfig({}, async (config) => {
-    const result = await runClaudeCode(config, run({ prompt: "environment" }));
-    expect(JSON.parse(result.answer).proxy).toBeNull();
-  });
+  // The child inherits the container's HTTPS_PROXY, so unset it to test the unconfigured case.
+  const inheritedProxy = process.env.HTTPS_PROXY;
+  Reflect.deleteProperty(process.env, "HTTPS_PROXY");
+  try {
+    await withConfig({}, async (config) => {
+      const result = await runClaudeCode(config, run({ prompt: "environment" }));
+      expect(JSON.parse(result.answer).proxy).toBeNull();
+    });
+  } finally {
+    if (inheritedProxy !== undefined) process.env.HTTPS_PROXY = inheritedProxy;
+  }
 });
 
 test("interrupts the active turn when the job is cancelled", async () => {
