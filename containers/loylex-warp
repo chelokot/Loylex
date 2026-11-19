@@ -2,7 +2,7 @@
 set -euo pipefail
 
 pid_path="${LOYLEX_WARP_PID_FILE:-/tmp/loylex-warp-svc.pid}"
-log_path="${LOYLEX_WARP_LOG_FILE:-/tmp/loylex-warp.log}"
+log_path="${LOYLEX_WARP_LOG_FILE:-${HOME:-/home/loylex}/.local/state/loylex/warp/loylex-warp.log}"
 proxy_port="${LOYLEX_WARP_PROXY_PORT:-40000}"
 cli_path=/bin/warp-cli
 

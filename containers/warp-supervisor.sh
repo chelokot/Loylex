@@ -2,11 +2,15 @@
 set -euo pipefail
 
 pid_path="${LOYLEX_WARP_PID_FILE:-/tmp/loylex-warp-svc.pid}"
-log_path="${LOYLEX_WARP_LOG_FILE:-/tmp/loylex-warp.log}"
+log_path="${LOYLEX_WARP_LOG_FILE:-${HOME:-/home/loylex}/.local/state/loylex/warp/loylex-warp.log}"
+log_archive_dir="$(dirname -- "$log_path")/archive"
+log_max_bytes="${LOYLEX_WARP_LOG_MAX_BYTES:-67108864}"
+log_check_seconds="${LOYLEX_WARP_LOG_CHECK_SECONDS:-600}"
 proxy_port="${LOYLEX_WARP_PROXY_PORT:-40000}"
 service_path=/bin/warp-svc
 cli_path=/bin/warp-cli
 child_pid=""
+rotate_pid=""
 stopping=0
 
 log() {
@@ -44,7 +48,8 @@ stop_child() {
 }
 
 prepare_directories() {
-  sudo -n install -d -m 0700 /var/lib/cloudflare-warp /var/log/cloudflare-warp
+  mkdir -p -m 0700 -- "$(dirname -- "$log_path")" \
+    && sudo -n install -d -m 0700 /var/lib/cloudflare-warp /var/log/cloudflare-warp
 }
 
 start_child() {
@@ -92,13 +97,59 @@ on_signal() {
   stop_child
 }
 
+# Copy the bytes written so far into a gzip archive, verify the copy, then empty the live file
+# in place. warp-svc appends through its inherited O_APPEND descriptor, so it continues from
+# offset 0. Writes that land between the copy and the truncate are lost (a few milliseconds).
+rotate_log() {
+  local size archive
+  size="$(stat -c %s -- "$log_path" 2>/dev/null || echo 0)"
+  if ((size <= log_max_bytes)); then
+    return 0
+  fi
+  mkdir -p -m 0700 -- "$log_archive_dir" || return 1
+  archive="$log_archive_dir/loylex-warp-$(date -u +%Y%m%dT%H%M%SZ).log.gz"
+  { head -c "$size" -- "$log_path"; tail -c +"$((size + 1))" -- "$log_path"; } \
+    | gzip -9 >"$archive.partial" || return 1
+  if ! gzip -t -- "$archive.partial" \
+    || ! cmp -s -- <(gzip -dc -- "$archive.partial" | head -c "$size") <(head -c "$size" -- "$log_path"); then
+    rm -f -- "$archive.partial"
+    return 1
+  fi
+  mv -f -- "$archive.partial" "$archive" || return 1
+  : >"$log_path" || return 1
+  log "rotated WARP log to $archive"
+}
+
+rotate_loop() {
+  while sleep "$log_check_seconds"; do
+    rotate_log || log "WARP log rotation failed; the live log was left in place"
+  done
+}
+
+cleanup() {
+  clear_pid
+  if [[ -n "$rotate_pid" ]]; then
+    kill "$rotate_pid" 2>/dev/null || true
+  fi
+}
+
+if [[ "${1:-}" == rotate-log ]]; then
+  rotate_log
+  exit
+fi
+
 trap on_signal INT TERM
-trap 'clear_pid' EXIT
+trap cleanup EXIT
 
 until prepare_directories; do
   log "WARP state directories are not writable; retrying"
   sleep 5
 done
+(
+  trap - EXIT INT TERM
+  rotate_loop
+) &
+rotate_pid=$!
 while ((stopping == 0)); do
   start_child
   configure_until_ready || true
