@@ -84,6 +84,8 @@ elif request == "fail":
     sys.exit(1)
 elif request == "environment":
     result(json.dumps(dict(proxy=os.environ.get("HTTPS_PROXY"), session=session)))
+elif request == "effort":
+    result(option("--effort"))
 
 for _ in incoming:
     pass

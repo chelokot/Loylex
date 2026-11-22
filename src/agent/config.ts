@@ -13,6 +13,7 @@ export type AgentConfig = {
   claudeBinary: string;
   claudeModel: string;
   claudeEffort: string;
+  claudeFollowUpEffort: string;
   claudeProxy: string | null;
   repositoryPath: string;
   memoryPath: string;
@@ -52,6 +53,8 @@ export function loadAgentConfig(): AgentConfig {
     claudeBinary: process.env.CLAUDE_BINARY ?? "claude",
     claudeModel: process.env.CLAUDE_MODEL ?? "claude-haiku-5-5",
     claudeEffort: process.env.CLAUDE_EFFORT ?? "max",
+    // A resumed session already holds its context; max effort makes each step think for minutes.
+    claudeFollowUpEffort: process.env.CLAUDE_FOLLOWUP_EFFORT ?? "high",
     claudeProxy: process.env.CLAUDE_HTTPS_PROXY ?? null,
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",

@@ -13,6 +13,7 @@ export function testAgentConfig(home: string, overrides: Partial<AgentConfig>): 
     claudeBinary: "claude",
     claudeModel: "test-claude-model",
     claudeEffort: "medium",
+    claudeFollowUpEffort: "high",
     claudeProxy: null,
     repositoryPath: home,
     memoryPath: home,

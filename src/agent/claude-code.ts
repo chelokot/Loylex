@@ -83,6 +83,7 @@ export async function runClaudeCode(
 ): Promise<AgentRunResult> {
   if (signal.aborted) throw new AgentCancelledError();
   const threadId = resumeThreadId ?? crypto.randomUUID();
+  const effort = resumeThreadId ? config.claudeFollowUpEffort : config.claudeEffort;
   const child = Bun.spawn(
     [
       config.claudeBinary,
@@ -95,7 +96,7 @@ export async function runClaudeCode(
       "--model",
       config.claudeModel,
       "--effort",
-      config.claudeEffort,
+      effort,
       "--permission-mode",
       "bypassPermissions",
       "--setting-sources",

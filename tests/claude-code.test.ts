@@ -140,6 +140,14 @@ test("interrupts the active turn when the job is cancelled", async () => {
   });
 });
 
+test("uses the follow-up effort only when a run resumes its session", async () => {
+  await withConfig({ claudeEffort: "max", claudeFollowUpEffort: "high" }, async (config) => {
+    const resumed = { prompt: "effort", resumeThreadId: "11111111-2222-3333-4444-555555555555" };
+    expect((await runClaudeCode(config, run({ prompt: "effort" }))).answer).toBe("max");
+    expect((await runClaudeCode(config, run(resumed))).answer).toBe("high");
+  });
+});
+
 test("fails closed on interactive requests and reports failed turns", async () => {
   await withConfig({}, async (config) => {
     expect((await runClaudeCode(config, run({ prompt: "ask me" }))).answer).toBe("denied: error");
