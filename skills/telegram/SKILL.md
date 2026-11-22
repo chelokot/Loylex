@@ -81,8 +81,26 @@ schema is needed; `loylex search` is intentionally a small, relevance-ranked FTS
 
 Rich Markdown supports GitHub-flavored Markdown, tables, `$$LaTeX$$`, arbitrary
 supported Rich HTML, `<details>`, `<tg-collage>`,
-`<tg-slideshow>`, and media URLs. Keep a rich message within 32,768 UTF-8
+`<tg-slideshow>`, and media URLs (see Photos in answers). Keep a rich message within 32,768 UTF-8
 characters and 500 blocks.
+
+## Photos in answers
+
+Telegram fetches remote image URLs itself. A URL that the container downloads fine can still fail
+there: on 2026-11-22 a wohnglueck.de JPEG (curl got `200 image/jpeg`) returned
+`RICH_MESSAGE_PHOTO_URL_INVALID`, and the whole rich message was rejected. Do not put external
+image links in a rich answer.
+
+To send photos from the web:
+
+1. Download each image into a new, empty directory with a browser User-Agent, and check the bytes
+   with `file`. Accept JPEG and PNG only.
+2. Look at each file before sending. Drop logos and placeholders, and say when a photo is only a
+   view, a staged render, or a broker's watermarked image.
+3. Send 2–10 files with `loylex upload-album CHAT_ID FILE... --caption TEXT`. The caption goes on
+   the first item. Wait for exit code 0 before you mention the photos.
+4. Keep the final answer text-only and point to the album ("фото выше"). Do not copy a raw tool
+   error into the answer; fix the cause or leave it out.
 
 Use `$$...$$` to render LaTeX in Telegram. A fenced `latex` code block displays
 the source instead of rendering it, so use one only when the user explicitly asks
