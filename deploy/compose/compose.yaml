@@ -94,6 +94,9 @@ services:
       CODEX_REASONING_EFFORT: low
       CODEX_SERVICE_TIER: priority
       CLAUDE_HTTPS_PROXY: http://host.containers.internal:3128
+      CLAUDE_MODEL: claude-sonnet-5-5
+      CLAUDE_EFFORT: medium
+      CLAUDE_FOLLOWUP_EFFORT: medium
       LOYLEX_MAX_CONCURRENT_JOBS: "12"
     cpus: 5.5
     mem_limit: 9g
@@ -148,6 +151,9 @@ services:
       CODEX_REASONING_EFFORT: low
       CODEX_SERVICE_TIER: priority
       CLAUDE_HTTPS_PROXY: http://host.containers.internal:3128
+      CLAUDE_MODEL: claude-sonnet-5-5
+      CLAUDE_EFFORT: medium
+      CLAUDE_FOLLOWUP_EFFORT: medium
       LOYLEX_MAX_CONCURRENT_JOBS: "12"
     cpus: 5.5
     mem_limit: 9g
