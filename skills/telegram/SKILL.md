@@ -63,11 +63,13 @@ call `loylex send` for that ordinary response. Use it only when the task explici
 a separate proactive message or another destination.
 
 `loylex query` never mounts or exposes the SQLite file to the agent. The gateway executes the
-statement on a separate SQLite read-only connection; only one `SELECT`, `VALUES`, read-only
-`WITH`, or read-only `EXPLAIN` statement is accepted. Writes, transactions, `PRAGMA`, `ATTACH`,
-and multiple statements are rejected. Results are capped at 10,000 rows and 8 MB, so a
-`truncated: true` response must be paginated before claiming completeness. Use parameter
-placeholders instead of interpolating Telegram text. For example:
+statement in a separate process on a read-only SQLite connection; only one `SELECT`, `VALUES`,
+read-only `WITH`, or read-only `EXPLAIN` statement is accepted. Writes, transactions, `PRAGMA`,
+`ATTACH`, and multiple statements are rejected. Results are capped at 10,000 rows and 8 MB, so a
+`truncated: true` response must be paginated before claiming completeness. A query is stopped
+after 60 seconds; split archive-wide scans and self-joins into `message_id` or `date` ranges
+within one `chat_id` instead of retrying them whole. Use parameter placeholders instead of
+interpolating Telegram text. For example:
 
 ```bash
 loylex query \

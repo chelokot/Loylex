@@ -127,9 +127,10 @@ loylex query \
 ```
 
 The gateway executes one parameterized `SELECT`, `VALUES`, read-only `WITH`, or read-only
-`EXPLAIN` statement on a separate SQLite read-only connection. Mutations, transactions, `PRAGMA`,
-`ATTACH`, and multiple statements are rejected. The JSON response contains `columns`, `rows`, and
-`truncated`; results are capped at 10,000 rows and 8 MB. Paginate with a deterministic keyset or
+`EXPLAIN` statement in a separate process on a read-only SQLite connection, so a slow query never
+blocks Telegram polling or the bridge. Mutations, transactions, `PRAGMA`, `ATTACH`, and multiple
+statements are rejected. The JSON response contains `columns`, `rows`, and `truncated`; results
+are capped at 10,000 rows and 8 MB, and a query is stopped after 60 seconds. Paginate with a deterministic keyset or
 `LIMIT`/`OFFSET`, and check `truncated` before treating a result as complete. `loylex search`
 remains useful for quick FTS relevance searches, but it is not a chronological or exhaustive query.
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readQuery } from "../src/gateway/read-query.ts";
 import type { JsonObject, TelegramMessage, TelegramUpdate } from "../src/shared/types.ts";
 
 import {
@@ -294,7 +295,7 @@ describe("LoylexDatabase", () => {
     const job = database.claimNext(10);
     expect(job?.replyContext).toContain("LTX-2.3 FP8");
     expect(
-      database.readQuery("SELECT text FROM messages WHERE message_id = ?", [2], 1).rows,
+      readQuery(database.connection, "SELECT text FROM messages WHERE message_id = ?", [2], 1).rows,
     ).toEqual([{ text: "Найди примеры LTX" }]);
     database.close();
   });

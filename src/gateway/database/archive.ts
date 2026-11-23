@@ -1,21 +1,11 @@
-import type { Database } from "bun:sqlite";
 import { messageText } from "../../shared/message-text.ts";
 import type { JsonValue, TelegramMessage, TelegramUpdate } from "../../shared/types.ts";
-import {
-  defaultReadQueryRows,
-  maxReadQueryResultBytes,
-  maxReadQueryRows,
-  ReadQueryError,
-  type ReadQueryParameters,
-  validateReadOnlyQuery,
-} from "../read-query.ts";
 import { archivedMessage, eventType, media, searchResult } from "./records.ts";
 import { DatabaseSchema } from "./schema.ts";
 import type {
   ArchivedMedia,
   ArchivedMessage,
   ArchivedMessageRow,
-  ReadQueryResult,
   SearchResult,
   SearchRow,
 } from "./types.ts";
@@ -196,56 +186,6 @@ export abstract class DatabaseArchive extends DatabaseSchema {
       `)
       .all(query, chatId, chatId, limit, offset);
     return rows.map(searchResult);
-  }
-
-  readQuery(
-    sql: string,
-    parameters: ReadQueryParameters = [],
-    maxRows = defaultReadQueryRows,
-  ): ReadQueryResult {
-    validateReadOnlyQuery(sql);
-    if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > maxReadQueryRows) {
-      throw new ReadQueryError(`maxRows must be an integer from 1 to ${maxReadQueryRows}`);
-    }
-
-    let statement: ReturnType<Database["query"]> | null = null;
-    try {
-      statement = this.readConnection.query(sql);
-      const rows: Record<string, unknown>[] = [];
-      let resultBytes = 0;
-      let truncated = false;
-      const rowsIterator = Array.isArray(parameters)
-        ? statement.iterate(...parameters)
-        : statement.iterate(parameters);
-      const encoder = new TextEncoder();
-      for (const row of rowsIterator) {
-        if (rows.length >= maxRows) {
-          truncated = true;
-          break;
-        }
-        const rowBytes = encoder.encode(JSON.stringify(row)).byteLength;
-        if (resultBytes + rowBytes > maxReadQueryResultBytes) {
-          if (rows.length === 0) {
-            throw new ReadQueryError(
-              `the first result row exceeds the ${maxReadQueryResultBytes}-byte result limit`,
-            );
-          }
-          truncated = true;
-          break;
-        }
-        rows.push(row as Record<string, unknown>);
-        resultBytes += rowBytes;
-      }
-      return { columns: statement.columnNames, rows, truncated };
-    } catch (error) {
-      if (error instanceof ReadQueryError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      throw new ReadQueryError(`read-only query failed: ${message}`);
-    } finally {
-      statement?.finalize();
-    }
   }
 
   recent(chatId: number, limit: number): SearchResult[] {

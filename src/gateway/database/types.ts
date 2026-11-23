@@ -273,12 +273,6 @@ export type ArchivedMessage = {
   forwardOrigin?: JsonObject;
 };
 
-export type ReadQueryResult = {
-  columns: string[];
-  rows: Record<string, unknown>[];
-  truncated: boolean;
-};
-
 export type SearchRow = {
   chat_id: number;
   message_id: number;
