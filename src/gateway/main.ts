@@ -4,7 +4,11 @@ import { ApprovalClient } from "./approvals.ts";
 import { InboundAuditLog } from "./audit.ts";
 import { loadGatewayConfig } from "./config.ts";
 import { type LeylobucksEnqueueResult, LoylexDatabase } from "./database.ts";
-import { editedInstructionPrompt, editedMessageForUpdate } from "./edited-message.ts";
+import {
+  editedInstructionPrompt,
+  editedMessageForUpdate,
+  editedSteerPrompt,
+} from "./edited-message.ts";
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
 import { LeylobucksActivity } from "./leylobucks-activity.ts";
 import { LeylobucksCommands } from "./leylobucks-commands.ts";
@@ -183,6 +187,28 @@ async function handleEditedMessage(updateId: number, message: TelegramMessage): 
   );
   if (resumeThreadId === null) {
     return;
+  }
+
+  if (currentUserId !== null) {
+    const steeredJobIds = database.queueEditSteer(
+      message.chat.id,
+      message.message_id,
+      currentUserId,
+      editedSteerPrompt(editedText),
+    );
+    if (steeredJobIds.length > 0) {
+      console.log(
+        JSON.stringify({
+          level: "info",
+          component: "poller",
+          event: "edited_instruction_steered",
+          updateId,
+          messageId: message.message_id,
+          jobIds: steeredJobIds,
+        }),
+      );
+      return;
+    }
   }
 
   const economyEnabled = leylobucksMode.isEnabled(currentUserId);

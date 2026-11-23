@@ -18,6 +18,10 @@ export function editedInstructionPrompt(text: string): string {
   ].join("\n");
 }
 
+export function editedSteerPrompt(text: string): string {
+  return `User edited initial request:\n${text}\n`;
+}
+
 export function editedMessageForUpdate(update: TelegramUpdate): TelegramMessage | null {
   const message = update.edited_message;
   const hasOtherUpdateFields = Object.keys(update).some(

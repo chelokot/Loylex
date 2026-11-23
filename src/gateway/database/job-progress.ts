@@ -181,6 +181,37 @@ export abstract class DatabaseJobProgress extends DatabaseJobs {
       .immediate();
   }
 
+  // An edit of the original request reaches a still-running turn as steering input. Returns the
+  // steered job ids; empty means no turn is running, so the caller restarts from the edit instead.
+  queueEditSteer(chatId: number, messageId: number, userId: number, prompt: string): number[] {
+    return this.connection
+      .transaction(() => {
+        const running = this.activeJobsForMessage(chatId, messageId).filter(
+          (job) =>
+            this.connection
+              .query<{ id: number }, [number]>(
+                "SELECT id FROM jobs WHERE id = ? AND state = 'running'",
+              )
+              .get(job.id) !== null,
+        );
+        for (const job of running) {
+          // A message can be edited repeatedly; each edit replaces its settled predecessor.
+          this.connection
+            .query(
+              "DELETE FROM job_steers WHERE job_id = ? AND message_id = ? AND state <> 'pending'",
+            )
+            .run(job.id, messageId);
+          this.connection
+            .query(
+              "INSERT OR REPLACE INTO job_steers (job_id, message_id, reply_message_id, user_id, prompt) VALUES (?, ?, ?, ?, ?)",
+            )
+            .run(job.id, messageId, messageId, userId, prompt);
+        }
+        return running.map((job) => job.id);
+      })
+      .immediate();
+  }
+
   pendingSteers(
     jobId: number,
     workerId: string,

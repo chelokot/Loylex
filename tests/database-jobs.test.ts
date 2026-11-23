@@ -243,3 +243,22 @@ test("a reply to a running turn steers it and keeps its own job only as the fall
   expect(database.claimNext(10, "worker")).toMatchObject({ messageId: 3, prompt: "and disk" });
   database.close();
 });
+
+test("editing the original request steers its running job, repeatedly, and skips finished jobs", () => {
+  const database = setup();
+  database.registerWorker("edit-worker");
+  database.enqueue(70, message(1, "long task"), "long task", null);
+  expect(database.queueEditSteer(-10042, 1, 8, "queued only")).toEqual([]);
+  const id = database.claimNext(10, "edit-worker")?.id ?? 0;
+  database.appendStatus(id, "working", "thread-edit", "edit-worker");
+  expect(database.queueEditSteer(-10043, 1, 8, "wrong chat")).toEqual([]);
+  expect(database.queueEditSteer(-10042, 1, 8, "first")).toEqual([id]);
+  const first = database.pendingSteers(id, "edit-worker")[0];
+  expect(first).toMatchObject({ messageId: 1, prompt: "first" });
+  database.finishSteer(id, first?.id ?? 0, "edit-worker", true);
+  expect(database.queueEditSteer(-10042, 1, 8, "second")).toEqual([id]);
+  expect(database.pendingSteers(id, "edit-worker")[0]).toMatchObject({ prompt: "second" });
+  database.complete(id, 20, "thread-edit", "edit-worker");
+  expect(database.queueEditSteer(-10042, 1, 8, "late")).toEqual([]);
+  database.close();
+});
