@@ -19,7 +19,7 @@ export function editedInstructionPrompt(text: string): string {
 }
 
 export function editedSteerPrompt(text: string): string {
-  return `User edited initial request:\n${text}\n`;
+  return `User edited previous request:\n${text}\n`;
 }
 
 export function editedMessageForUpdate(update: TelegramUpdate): TelegramMessage | null {

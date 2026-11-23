@@ -25,7 +25,7 @@ describe("edited Telegram messages", () => {
     expect(editedMessageText(update)).toBe("новая задача");
     expect(editedMessageForUpdate(update)).toEqual(update.edited_message ?? null);
     expect(editedInstructionPrompt("новая задача")).toContain("новая задача");
-    expect(editedSteerPrompt("новая задача")).toBe("User edited initial request:\nновая задача\n");
+    expect(editedSteerPrompt("новая задача")).toBe("User edited previous request:\nновая задача\n");
   });
 
   test("does not turn reactions, captions, or empty edits into requests", () => {
