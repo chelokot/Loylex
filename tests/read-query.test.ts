@@ -6,6 +6,7 @@ import { LoylexDatabase } from "../src/gateway/database.ts";
 import {
   maxReadQueryRows,
   ReadQueryError,
+  readQuery,
   validateReadOnlyQuery,
 } from "../src/gateway/read-query.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
@@ -40,7 +41,8 @@ test("runs parameterized archive queries with chronological results and a trunca
   database.archiveMessage(message(1, "лейло первое"), "bot_api");
   database.archiveMessage(message(2, "не совпадает"), "bot_api");
 
-  const result = database.readQuery(
+  const result = readQuery(
+    database.connection,
     `
       SELECT message_id, date, text
       FROM messages
@@ -62,7 +64,8 @@ test("supports read-only CTEs and rejects mutations, attachment, and extra state
   const database = setup();
   database.archiveMessage(message(1, "проверка"), "bot_api");
 
-  const result = database.readQuery(
+  const result = readQuery(
+    database.connection,
     "WITH selected AS (SELECT message_id FROM messages WHERE chat_id = ?) SELECT * FROM selected",
     [-10042],
   );
@@ -75,12 +78,12 @@ test("supports read-only CTEs and rejects mutations, attachment, and extra state
     "ATTACH DATABASE '/tmp/other.sqlite' AS other",
     "SELECT message_id FROM messages; DELETE FROM messages",
   ]) {
-    expect(() => database.readQuery(sql)).toThrow(ReadQueryError);
+    expect(() => readQuery(database.connection, sql)).toThrow(ReadQueryError);
   }
 
-  expect(database.readQuery("SELECT text FROM messages WHERE message_id = 1").rows).toEqual([
-    { text: "проверка" },
-  ]);
+  expect(
+    readQuery(database.connection, "SELECT text FROM messages WHERE message_id = 1").rows,
+  ).toEqual([{ text: "проверка" }]);
   database.close();
 });
 
@@ -91,7 +94,7 @@ test("validates query and result limits", () => {
   ).toThrow(ReadQueryError);
 
   const database = setup();
-  expect(() => database.readQuery("SELECT 1", [], maxReadQueryRows + 1)).toThrow(
+  expect(() => readQuery(database.connection, "SELECT 1", [], maxReadQueryRows + 1)).toThrow(
     `maxRows must be an integer from 1 to ${maxReadQueryRows}`,
   );
   database.close();

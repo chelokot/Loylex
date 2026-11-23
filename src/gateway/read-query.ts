@@ -1,10 +1,19 @@
+import type { Database } from "bun:sqlite";
+
 export const defaultReadQueryRows = 1_000;
 export const maxReadQueryRows = 10_000;
 export const maxReadQuerySqlLength = 100_000;
 export const maxReadQueryResultBytes = 8_000_000;
+export const readQueryTimeoutMs = 60_000;
 
 export type ReadQueryValue = string | number | null;
 export type ReadQueryParameters = ReadQueryValue[] | Record<string, ReadQueryValue>;
+
+export type ReadQueryResult = {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  truncated: boolean;
+};
 
 export class ReadQueryError extends Error {
   constructor(message: string) {
@@ -261,4 +270,55 @@ export function isReadQueryParameters(value: unknown): value is ReadQueryParamet
     const validName = /^(?:[$:@][A-Za-z_][A-Za-z0-9_]*|\?[0-9]+)$/.test(key);
     return validName && isReadQueryValue(parameter);
   });
+}
+
+export function readQuery(
+  connection: Database,
+  sql: string,
+  parameters: ReadQueryParameters = [],
+  maxRows = defaultReadQueryRows,
+): ReadQueryResult {
+  validateReadOnlyQuery(sql);
+  if (!Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > maxReadQueryRows) {
+    throw new ReadQueryError(`maxRows must be an integer from 1 to ${maxReadQueryRows}`);
+  }
+
+  let statement: ReturnType<Database["query"]> | null = null;
+  try {
+    statement = connection.query(sql);
+    const rows: Record<string, unknown>[] = [];
+    let resultBytes = 0;
+    let truncated = false;
+    const rowsIterator = Array.isArray(parameters)
+      ? statement.iterate(...parameters)
+      : statement.iterate(parameters);
+    const encoder = new TextEncoder();
+    for (const row of rowsIterator) {
+      if (rows.length >= maxRows) {
+        truncated = true;
+        break;
+      }
+      const rowBytes = encoder.encode(JSON.stringify(row)).byteLength;
+      if (resultBytes + rowBytes > maxReadQueryResultBytes) {
+        if (rows.length === 0) {
+          throw new ReadQueryError(
+            `the first result row exceeds the ${maxReadQueryResultBytes}-byte result limit`,
+          );
+        }
+        truncated = true;
+        break;
+      }
+      rows.push(row as Record<string, unknown>);
+      resultBytes += rowBytes;
+    }
+    return { columns: statement.columnNames, rows, truncated };
+  } catch (error) {
+    if (error instanceof ReadQueryError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ReadQueryError(`read-only query failed: ${message}`);
+  } finally {
+    statement?.finalize();
+  }
 }

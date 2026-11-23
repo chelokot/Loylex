@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LoylexDatabase } from "../src/gateway/database.ts";
 import { leylobucksQuizQuestions } from "../src/gateway/leylobucks.ts";
+import { readQuery } from "../src/gateway/read-query.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 
 const directories: string[] = [];
@@ -485,7 +486,8 @@ describe("LoylexDatabase Loylebucks", () => {
 
 test("recent context uses the ordered index without sorting the entire archive", () => {
   const database = setup();
-  const plan = database.readQuery(
+  const plan = readQuery(
+    database.connection,
     `EXPLAIN QUERY PLAN SELECT date, message_id FROM messages INDEXED BY messages_context_idx
      WHERE chat_id = ? AND message_id < ? ORDER BY date DESC, message_id DESC LIMIT ?`,
     [-10042, 100, 60],

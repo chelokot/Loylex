@@ -14,7 +14,6 @@ export {
   type LeylobucksQuizReview,
   type LeylobucksStatus,
   type LeylobucksTestBumpResult,
-  type ReadQueryResult,
   type SearchResult,
   type UsageCodexThreadBreakdown,
   type UsageDayBreakdown,
