@@ -145,6 +145,30 @@ class SupervisorTest(unittest.TestCase):
         unit = (SCRIPT_PATH.parents[1] / "systemd/loylex-supervisor.service").read_text()
         self.assertIn("KillMode=process", unit.splitlines())
 
+    def test_images_workflow_publishes_oci_metadata_labels(self) -> None:
+        workflow = (SCRIPT_PATH.parents[2] / ".github/workflows/images.yml").read_text()
+        self.assertIn("labels: ${{ steps.metadata.outputs.labels }}", workflow)
+
+    def test_run_pm3_retries_transient_database_lock(self) -> None:
+        supervisor = object.__new__(SUPERVISOR.Supervisor)
+        attempts = 0
+
+        def fake_run(command: list[str], timeout: int = 900, cwd: Path | None = None) -> str:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise SUPERVISOR.SupervisorError("pm3 failed: database is locked")
+            return "ok"
+
+        with (
+            mock.patch.object(Path, "is_file", return_value=True),
+            mock.patch.object(SUPERVISOR, "run_command", side_effect=fake_run),
+            mock.patch.object(SUPERVISOR.time, "sleep") as sleep_mock,
+        ):
+            self.assertEqual(supervisor._run_pm3(["enable", "loylex-worker-blue"]), "ok")
+        self.assertEqual(attempts, 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

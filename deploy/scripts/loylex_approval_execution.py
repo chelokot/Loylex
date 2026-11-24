@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from loylex_approval_host import ApprovalError, command, encoded, https_request, secret
+from loylex_approval_host import ApprovalError, command, encoded, https_request, installed_file_sha256, secret
 from loylex_approval_packages import (
     HOST_CONFIG_MODES,
     HOST_CONFIG_SOURCES,
@@ -228,10 +228,7 @@ class ApprovalExecution:
                 ):
                     raise ApprovalError(f"Missing regular infrastructure file: {name}")
                 installed = Path.home() / ".local/bin" / name
-                if (
-                    hashlib.sha256(installed.read_bytes()).hexdigest()
-                    != operation["installedFiles"][name]
-                ):
+                if installed_file_sha256(installed) != operation["installedFiles"][name]:
                     raise ApprovalError("Installed infrastructure file changed")
             for name in operation["files"]:
                 destination = Path.home() / ".local/bin" / name
@@ -269,6 +266,8 @@ class ApprovalExecution:
                 "--pull=never",
                 "--label",
                 f"org.opencontainers.image.revision={commit}",
+                "--label",
+                "org.opencontainers.image.source=https://github.com/chelokot/Loylex",
                 "--tag",
                 image,
                 "--file",
