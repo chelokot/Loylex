@@ -55,6 +55,11 @@ for line in sys.stdin:
             item=dict(type="agentMessage", id="final", phase="final_answer", text="Done"))))
         emit(dict(method="turn/completed", params=dict(threadId="thread-test",
             turn=dict(id="turn-test", status="completed"))))
+    elif method == "turn/start" and params["input"][0]["text"] == "usage-limit":
+        emit(dict(method="turn/completed", params=dict(threadId="thread-test",
+            turn=dict(id="turn-test", status="failed", error=dict(
+                message="You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 10:02 PM.",
+                codexErrorInfo="usageLimitExceeded")))))
     elif method == "turn/start":
         usage(100, 10)
         emit(dict(method="item/completed", params=dict(threadId="thread-test",

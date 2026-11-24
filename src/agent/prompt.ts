@@ -7,6 +7,8 @@ const imageGeneration: Record<AgentProvider, string> = {
     "The built-in image generation tool displays its result inside the agent session, but that does not deliver the image to Telegram. After generating or editing a static image, take the final file from $CODEX_HOME/generated_images.",
   claude:
     'Generate or edit images with the installed Codex CLI: run `codex exec --skip-git-repo-check "DETAILED IMAGE REQUEST. Use the built-in image generation tool, not code. Print only the absolute path of the final image."`, adding `--image PATH` for each input image to edit. It prints the path of the new file under $CODEX_HOME/generated_images; inspect the image before sending it.',
+  antigravity:
+    "Generate or edit static images with your built-in generate_image tool (which saves the output file to disk), inspect the saved image, and deliver it with `loylex upload CHAT_ID PATH [CAPTION]`.",
 };
 
 // Constant per provider, so every turn of a conversation shares one cached instruction prefix.

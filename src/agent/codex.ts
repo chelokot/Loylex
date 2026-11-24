@@ -82,3 +82,35 @@ export async function waitForThreadWriter(
     signal?.addEventListener("abort", abort, { once: true });
   });
 }
+
+const codexLimitMessagePatterns = [
+  /usage limit/i,
+  /rate[-\s]?limit/i,
+  /too many requests/i,
+  /\b429\b/,
+  /insufficient[\s_-]?quota/i,
+  /quota\s+(?:exceeded|reached|exhausted|limit)/i,
+  /purchase more credits|out of credits|credit balance/i,
+];
+
+export function isCodexLimitMessage(message: string): boolean {
+  return codexLimitMessagePatterns.some((pattern) => pattern.test(message));
+}
+
+export function isCodexLimitError(
+  error: { message?: string; codexErrorInfo?: unknown } | null | undefined,
+  message: string,
+): boolean {
+  if (isCodexLimitMessage(message)) return true;
+  const info = error?.codexErrorInfo;
+  if (typeof info === "string") {
+    return /usagelimit|ratelimit|quota|429/i.test(info);
+  }
+  if (info && typeof info === "object") {
+    const serialized = JSON.stringify(info);
+    if (/usagelimit|ratelimit|quota|httpStatusCode":429|status":429/i.test(serialized)) {
+      return true;
+    }
+  }
+  return false;
+}

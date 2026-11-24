@@ -1,7 +1,7 @@
 import type { AgentEvent } from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 
-export type AgentProvider = "codex" | "claude";
+export type AgentProvider = "codex" | "claude" | "antigravity";
 
 export type SteerControl = {
   threadId: string;

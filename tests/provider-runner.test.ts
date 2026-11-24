@@ -119,6 +119,16 @@ test("loadAgentConfig defaults to Claude Code and still allows explicit Codex ro
       expect(loadAgentConfig().provider).toBe("codex");
     },
   );
+  await withEnv(
+    {
+      LOYLEX_BRIDGE_TOKEN: "test-token",
+      LOYLEX_BRIDGE_TOKEN_FILE: undefined,
+      LOYLEX_AGENT_PROVIDER: "antigravity",
+    },
+    () => {
+      expect(loadAgentConfig().provider).toBe("antigravity");
+    },
+  );
 });
 
 test("ProviderLimitCooldown bounds reset windows, defaults unknown resets, and expires cleanly", () => {
@@ -185,6 +195,9 @@ test("falls back from Claude Code to Codex on limit, arms cooldown, and returns 
         await run.onEvent({ kind: "status", text: "Начинаю работу", threadId: "codex-1" });
         await run.onUsage(usage(200, 40), "codex-1");
         return { answer: "codex fallback answer", threadId: "codex-1", usage: usage(200, 40) };
+      },
+      antigravity: async () => {
+        throw new Error("unexpected antigravity call");
       },
     };
 
@@ -295,6 +308,9 @@ test("resumed Claude thread transfers full context, prior turns, private buckets
         codexRuns.push(run);
         return { answer: "continued on codex", threadId: "codex-continued-1" };
       },
+      antigravity: async () => {
+        throw new Error("unexpected antigravity call");
+      },
     };
 
     const result = await executeJobWithFallback({
@@ -355,6 +371,9 @@ test("does not fall back on non-limit errors or cancellation, and keeps Codex th
       codex: async () => {
         codexCalls += 1;
         return { answer: "codex", threadId: "codex-thread" };
+      },
+      antigravity: async () => {
+        throw new Error("unexpected antigravity call");
       },
     };
 
@@ -424,6 +443,9 @@ test("reports combined error and resets temporary Claude thread ID if Codex fall
       },
       codex: async () => {
         throw new Error("Codex app-server exited with 1");
+      },
+      antigravity: async () => {
+        throw new Error("unexpected antigravity call");
       },
     };
 

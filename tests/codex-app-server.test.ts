@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { AgentCancelledError, type AgentRun } from "../src/agent/agent-run.ts";
+import { AgentCancelledError, AgentLimitError, type AgentRun } from "../src/agent/agent-run.ts";
 import { runCodexAppServer } from "../src/agent/codex-app-server.ts";
 import type { AgentConfig } from "../src/agent/config.ts";
 import { workDocument } from "../src/gateway/presentation.ts";
@@ -99,6 +99,20 @@ test("passes a journal-only web search into Telegram work history", async () => 
     const tools = events.filter((event) => event.kind === "tool");
     expect(tools).toHaveLength(1);
     expect(workDocument(`tool: ${tools[0]?.text}`)).toContain("France M51.3");
+  } finally {
+    await rm(settings.codexHome, { recursive: true, force: true });
+  }
+});
+
+test("classifies Codex usage limit turns as AgentLimitError", async () => {
+  const settings = await config();
+  try {
+    const error = await runCodexAppServer(settings, run({ prompt: "usage-limit" })).catch(
+      (err: unknown) => err,
+    );
+    expect(error).toBeInstanceOf(AgentLimitError);
+    expect((error as AgentLimitError).provider).toBe("codex");
+    expect((error as AgentLimitError).message).toContain("usage limit");
   } finally {
     await rm(settings.codexHome, { recursive: true, force: true });
   }

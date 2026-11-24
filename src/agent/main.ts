@@ -4,6 +4,7 @@ import { unavailableAssessment } from "../shared/assessment.ts";
 import type { AgentJob } from "../shared/types.ts";
 import { type AgentTokenUsage, addAgentTokenUsage } from "../shared/usage.ts";
 import type { AgentProvider, AgentRun, AgentRunResult, SteerControl } from "./agent-run.ts";
+import { runAntigravity } from "./antigravity.ts";
 import { assessConversation } from "./assessment.ts";
 import { stageAttachments } from "./attachments.ts";
 import { runClaudeCode } from "./claude-code.ts";
@@ -14,13 +15,13 @@ import { newGeneratedImages, snapshotGeneratedImages } from "./generated-images.
 import { assertTrustedInstructions } from "./instruction-integrity.ts";
 import { reportProgress } from "./progress.ts";
 import { buildPrompt } from "./prompt.ts";
-import { executeJobWithFallback, ProviderLimitCooldown } from "./provider-runner.ts";
+import { executeJobWithFallback, ProviderLimitCooldown, providerLabel } from "./provider-runner.ts";
 
 const config = loadAgentConfig();
 const runners: Record<
   AgentProvider,
   (config: AgentConfig, run: AgentRun) => Promise<AgentRunResult>
-> = { codex: runCodexAppServer, claude: runClaudeCode };
+> = { codex: runCodexAppServer, claude: runClaudeCode, antigravity: runAntigravity };
 const providerCooldown = new ProviderLimitCooldown();
 const gateway = new GatewayClient(config.bridgeUrl, config.bridgeToken);
 let stopping = false;
@@ -186,7 +187,7 @@ async function processJob(job: AgentJob): Promise<void> {
         );
         await reportProgress(gateway, job.id, {
           kind: "status",
-          text: "Лимит Claude Code — переключаюсь на Codex",
+          text: `Лимит ${providerLabel(notice.from)} — переключаюсь на ${providerLabel(notice.to)}`,
         });
       },
     });

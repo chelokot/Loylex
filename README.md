@@ -321,16 +321,17 @@ The agent still needs:
    home volume; protected `main` rejects direct changes while personal branches remain
    writable;
 2. `$CODEX_HOME/auth.json` created with `codex login --device-auth` or copied
-   through a trusted channel, and a Claude Code login (`claude auth login`) in its home volume;
+   through a trusted channel, a Claude Code login (`claude auth login`), and an Antigravity CLI
+   login (`agy`, or `GEMINI_API_KEY`) in its home volume;
 3. the PM3 projects registered by the installer: `loylex-gateway`,
    `loylex-worker-blue`, and `loylex-worker-green`. Only the active worker project is enabled;
    the supervisor uses the inactive one for the next rollover.
 
-Never commit Telegram, Codex or Claude credentials.
+Never commit Telegram, Codex, Claude or Antigravity credentials.
 
-Jobs default to Claude Code (`LOYLEX_AGENT_PROVIDER=claude`, or `codex` to roll back), with
-automatic fallback to Codex when Claude Code hits rate/usage limits. Each thread otherwise
-resumes on the provider that created it. Claude Code
+Jobs default to Claude Code (`LOYLEX_AGENT_PROVIDER=claude`, or `codex`/`antigravity`), with
+automatic fallback from Claude Code to Codex and then to Antigravity (`agy`) when a provider hits
+rate/usage limits. Each thread otherwise resumes on the provider that created it. Claude Code
 reaches Anthropic through the host proxy in [`deploy/host/squid.conf`](deploy/host/squid.conf);
 see [`deploy/host/claude-code-2.1.311-audit.md`](deploy/host/claude-code-2.1.311-audit.md).
 
