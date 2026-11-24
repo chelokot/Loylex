@@ -328,9 +328,9 @@ The agent still needs:
 
 Never commit Telegram, Codex or Claude credentials.
 
-Jobs run on Codex or Claude Code. `LOYLEX_AGENT_PROVIDER` chooses the provider for new threads;
-a thread always resumes on the provider that created it, so switching or rolling back never
-breaks a conversation. Claude Code
+Jobs default to Claude Code (`LOYLEX_AGENT_PROVIDER=claude`, or `codex` to roll back), with
+automatic fallback to Codex when Claude Code hits rate/usage limits. Each thread otherwise
+resumes on the provider that created it. Claude Code
 reaches Anthropic through the host proxy in [`deploy/host/squid.conf`](deploy/host/squid.conf);
 see [`deploy/host/claude-code-2.1.311-audit.md`](deploy/host/claude-code-2.1.311-audit.md).
 

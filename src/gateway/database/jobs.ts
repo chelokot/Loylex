@@ -1,4 +1,10 @@
-import type { AgentContextMode, AgentJob, JsonValue, TelegramMessage } from "../../shared/types.ts";
+import type {
+  AgentContextMode,
+  AgentJob,
+  AgentJobFallbackContext,
+  JsonValue,
+  TelegramMessage,
+} from "../../shared/types.ts";
 import { DatabaseLeylobucks } from "./leylobucks.ts";
 import { jobMedia } from "./records.ts";
 import {
@@ -337,6 +343,47 @@ export abstract class DatabaseJobs extends DatabaseLeylobucks {
               catgirlMessagesLeft: row.catgirl_messages_left,
             },
           }),
+    };
+  }
+
+  fallbackContext(
+    jobId: number,
+    contextMessages: number,
+    workerId?: string,
+  ): AgentJobFallbackContext | null {
+    const row = this.connection
+      .query<
+        {
+          id: number;
+          chat_id: number;
+          message_id: number;
+          resume_thread_id: string | null;
+          context_mode: AgentContextMode;
+        },
+        [number, string | null, string | null]
+      >(`
+        SELECT id, chat_id, message_id, resume_thread_id, context_mode
+        FROM jobs
+        WHERE id = ? AND state = 'running' AND (? IS NULL OR worker_id = ?)
+      `)
+      .get(jobId, workerId ?? null, workerId ?? null);
+    if (!row) {
+      return null;
+    }
+    const contextMode: AgentContextMode = row.context_mode === "none" ? "none" : "full";
+    return {
+      contextMode,
+      context:
+        contextMode === "none"
+          ? ""
+          : this.recentContext(row.chat_id, row.message_id, contextMessages),
+      replyContext:
+        contextMode === "none" && row.resume_thread_id === null
+          ? null
+          : this.replyContext(row.chat_id, row.message_id, null),
+      priorThread: row.resume_thread_id
+        ? this.priorThreadTranscript(row.chat_id, row.resume_thread_id, row.id)
+        : "",
     };
   }
 

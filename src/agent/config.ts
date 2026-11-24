@@ -32,7 +32,7 @@ function secret(): string {
 }
 
 function provider(): AgentProvider {
-  const value = process.env.LOYLEX_AGENT_PROVIDER ?? "codex";
+  const value = process.env.LOYLEX_AGENT_PROVIDER ?? "claude";
   if (value !== "codex" && value !== "claude") {
     throw new Error("LOYLEX_AGENT_PROVIDER must be codex or claude");
   }

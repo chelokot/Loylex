@@ -30,3 +30,15 @@ export class AgentCancelledError extends Error {
     this.name = "AgentCancelledError";
   }
 }
+
+export class AgentLimitError extends Error {
+  readonly provider: AgentProvider;
+  readonly resetsAtMs: number | null;
+
+  constructor(provider: AgentProvider, message: string, resetsAtMs: number | null = null) {
+    super(message);
+    this.name = "AgentLimitError";
+    this.provider = provider;
+    this.resetsAtMs = resetsAtMs;
+  }
+}

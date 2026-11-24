@@ -346,4 +346,44 @@ describe("LoylexDatabase", () => {
     );
     database.close();
   });
+
+  test("builds full fallback context and prior thread turns when switching a resumed thread", () => {
+    const database = setup();
+    const first = message(1, "разбери логи nginx");
+    database.archiveMessage(first, "bot_api");
+    database.enqueue(55, first, "разбери логи nginx", null);
+    const firstJob = database.claimNext(10, "worker-1");
+    expect(firstJob).not.toBeNull();
+    expect(
+      database.complete(
+        firstJob?.id ?? 0,
+        2,
+        "claude-thread-1",
+        "worker-1",
+        null,
+        "Нашел 502 в upstream.",
+      ),
+    ).toBe(true);
+    database.recordOutboundMessage(firstJob?.id ?? 0, 2, "claude-thread-1");
+
+    const followUp = message(3, "почини это");
+    followUp.reply_to_message = botMessage(2, "Нашел 502 в upstream.");
+    database.archiveMessage(followUp, "bot_api");
+    database.enqueue(56, followUp, "почини это", database.resumeThread(-10042, 2));
+
+    const secondJob = database.claimNext(10, "worker-1");
+    expect(secondJob?.contextMode).toBe("delta");
+    expect(secondJob?.replyContext).toBe(
+      "Telegram reply target: #2, an earlier message of this conversation shown above.",
+    );
+
+    expect(database.fallbackContext(secondJob?.id ?? 0, 10, "wrong-worker")).toBeNull();
+    const fallback = database.fallbackContext(secondJob?.id ?? 0, 10, "worker-1");
+    expect(fallback?.contextMode).toBe("full");
+    expect(fallback?.context).toContain("разбери логи nginx");
+    expect(fallback?.replyContext).toContain("Нашел 502 в upstream.");
+    expect(fallback?.priorThread).toContain("User (#1):\nразбери логи nginx");
+    expect(fallback?.priorThread).toContain("Assistant:\nНашел 502 в upstream.");
+    database.close();
+  });
 });

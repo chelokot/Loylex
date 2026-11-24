@@ -2,7 +2,7 @@ import type { AgentConfig } from "../../src/agent/config.ts";
 
 export function testAgentConfig(home: string, overrides: Partial<AgentConfig>): AgentConfig {
   return {
-    provider: "codex",
+    provider: "claude",
     bridgeUrl: "",
     bridgeToken: "",
     codexBinary: "codex",

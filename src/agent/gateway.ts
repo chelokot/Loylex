@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import type { AgentCompletion, AgentEvent, AgentJob, WorkerRegistration } from "../shared/types.ts";
+import type {
+  AgentCompletion,
+  AgentEvent,
+  AgentJob,
+  AgentJobFallbackContext,
+  WorkerRegistration,
+} from "../shared/types.ts";
 import type { AgentTokenUsage } from "../shared/usage.ts";
 import { prepareAnimationFile } from "./animation.ts";
 import { retryTransient } from "./retry.ts";
@@ -214,6 +220,12 @@ export class GatewayClient {
     return this.request(`/v1/jobs/${jobId}/events`, {
       method: "POST",
       body: JSON.stringify(event),
+      headers: { "x-loylex-worker-id": this.workerId },
+    });
+  }
+
+  fallbackContext(jobId: number): Promise<AgentJobFallbackContext> {
+    return this.request(`/v1/jobs/${jobId}/fallback-context`, {
       headers: { "x-loylex-worker-id": this.workerId },
     });
   }

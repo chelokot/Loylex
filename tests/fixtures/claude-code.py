@@ -86,6 +86,27 @@ elif request == "environment":
     result(json.dumps(dict(proxy=os.environ.get("HTTPS_PROXY"), session=session)))
 elif request == "effort":
     result(option("--effort"))
+elif request == "rate limit event":
+    emit(dict(type="rate_limit_event", session_id=session,
+              rate_limit_info=dict(status="rejected", resetsAt=1800000000, rateLimitType="five_hour")))
+    emit(dict(type="assistant", parent_tool_use_id=None, session_id=session,
+              error="rate_limit", api_error_status=429, api_error_type="rate_limit_error",
+              message=dict(content=[dict(type="text", text="You've hit your limit")])))
+    emit(dict(type="result", subtype="success", is_error=True,
+              result="You've hit your limit · resets 5pm (UTC)", errors=[],
+              api_error_status=429, api_error_type="rate_limit_error",
+              session_id=session, queued_turn_count=0,
+              usage=dict(input_tokens=1, cache_creation_input_tokens=0,
+                         cache_read_input_tokens=0, output_tokens=0,
+                         output_tokens_details=dict(thinking_tokens=0))))
+    sys.exit(1)
+elif request == "rate limit warning":
+    emit(dict(type="rate_limit_event", session_id=session,
+              rate_limit_info=dict(status="allowed_warning", resetsAt=1800000000)))
+    result("still allowed")
+elif request == "non limit fail":
+    result(error="prompt is too long")
+    sys.exit(1)
 
 for _ in incoming:
     pass
