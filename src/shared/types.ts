@@ -134,6 +134,13 @@ export type AgentJobLeylobucks = {
   catgirlMessagesLeft: number;
 };
 
+export type AgentJobFallbackContext = {
+  context: string;
+  contextMode: AgentContextMode;
+  replyContext: string | null;
+  priorThread: string;
+};
+
 export type AgentJob = {
   id: number;
   updateId: number;

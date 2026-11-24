@@ -192,6 +192,16 @@ export class GatewayServer {
         });
       }
 
+      const fallbackMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/fallback-context$/);
+      if (request.method === "GET" && fallbackMatch?.[1]) {
+        const ctx = this.database.fallbackContext(
+          Number.parseInt(fallbackMatch[1], 10),
+          this.config.contextMessages,
+          workerId(request),
+        );
+        return ctx ? json(ctx) : json({ error: "job not found" }, 404);
+      }
+
       const heartbeatMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/heartbeat$/);
       if (request.method === "POST" && heartbeatMatch?.[1]) {
         const currentWorkerId = workerId(request);

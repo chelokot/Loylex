@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { AgentCancelledError, type AgentRun } from "../src/agent/agent-run.ts";
-import { runClaudeCode } from "../src/agent/claude-code.ts";
+import { AgentCancelledError, AgentLimitError, type AgentRun } from "../src/agent/agent-run.ts";
+import { isClaudeLimitMessage, runClaudeCode } from "../src/agent/claude-code.ts";
 import type { AgentConfig } from "../src/agent/config.ts";
 import type { AgentEvent } from "../src/shared/types.ts";
 import type { AgentTokenUsage } from "../src/shared/usage.ts";
@@ -155,4 +155,45 @@ test("fails closed on interactive requests and reports failed turns", async () =
       "Claude Code turn failed: You've hit your limit",
     );
   });
+});
+
+test("classifies structured and textual Claude Code rate/usage limits as AgentLimitError", async () => {
+  await withConfig({}, async (config) => {
+    const events: AgentEvent[] = [];
+    const limitError = await runClaudeCode(
+      config,
+      run({
+        prompt: "rate limit event",
+        onEvent: async (event) => {
+          events.push(event);
+        },
+      }),
+    ).catch((error: unknown) => error);
+    expect(limitError).toBeInstanceOf(AgentLimitError);
+    expect((limitError as AgentLimitError).provider).toBe("claude");
+    expect((limitError as AgentLimitError).resetsAtMs).toBe(1_800_000_000_000);
+    // API error text on assistant messages must not leak into Telegram commentary.
+    expect(events.filter((event) => event.kind === "commentary")).toEqual([]);
+
+    const warningResult = await runClaudeCode(config, run({ prompt: "rate limit warning" }));
+    expect(warningResult.answer).toBe("still allowed");
+
+    const nonLimit = await runClaudeCode(config, run({ prompt: "non limit fail" })).catch(
+      (error: unknown) => error,
+    );
+    expect(nonLimit).toBeInstanceOf(Error);
+    expect(nonLimit).not.toBeInstanceOf(AgentLimitError);
+    expect((nonLimit as Error).message).toBe("Claude Code turn failed: prompt is too long");
+  });
+
+  expect(isClaudeLimitMessage("You've hit your limit · resets 5pm (UTC)")).toBe(true);
+  expect(isClaudeLimitMessage("You've hit your 5-hour limit")).toBe(true);
+  expect(isClaudeLimitMessage("You've hit your extra usage limit")).toBe(true);
+  expect(isClaudeLimitMessage("API Error: 429 rate_limit_error")).toBe(true);
+  expect(isClaudeLimitMessage("spend limit reached")).toBe(true);
+  expect(isClaudeLimitMessage("Out of extra usage")).toBe(true);
+  expect(isClaudeLimitMessage("HTTP 429: Too Many Requests")).toBe(true);
+  expect(isClaudeLimitMessage("prompt is too long")).toBe(false);
+  expect(isClaudeLimitMessage("authentication_failed")).toBe(false);
+  expect(isClaudeLimitMessage("ENOENT: no such file")).toBe(false);
 });

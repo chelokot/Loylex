@@ -388,6 +388,51 @@ export abstract class DatabaseThreads extends DatabaseWorkers {
     return messageReference(target, "Telegram reply target:");
   }
 
+  protected priorThreadTranscript(
+    chatId: number,
+    threadId: string,
+    beforeJobId: number,
+    maxChars = 24_000,
+  ): string {
+    const rows = this.connection
+      .query<
+        { message_id: number; prompt: string; answer: string | null },
+        [number, string, string, number]
+      >(`
+        SELECT message_id, prompt, answer
+        FROM jobs
+        WHERE chat_id = ?
+          AND (codex_thread_id = ? OR resume_thread_id = ?)
+          AND id < ?
+          AND state = 'completed'
+        ORDER BY id ASC
+      `)
+      .all(chatId, threadId, threadId, beforeJobId);
+    const turns = rows.map((row) => {
+      const parts = [`User (#${row.message_id}):\n${row.prompt.trim()}`];
+      if (row.answer?.trim()) {
+        parts.push(`Assistant:\n${row.answer.trim()}`);
+      }
+      return parts.join("\n\n");
+    });
+    const kept: string[] = [];
+    let used = 0;
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index] ?? "";
+      const separator = kept.length > 0 ? 6 : 0;
+      if (used + separator + turn.length <= maxChars) {
+        kept.push(turn);
+        used += separator + turn.length;
+        continue;
+      }
+      if (kept.length === 0) {
+        kept.push(`${turn.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`);
+      }
+      break;
+    }
+    return kept.reverse().join("\n\n---\n\n");
+  }
+
   private threadContains(chatId: number, messageId: number, threadId: string): boolean {
     return (
       this.connection

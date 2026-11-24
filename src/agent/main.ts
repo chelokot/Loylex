@@ -2,11 +2,10 @@ import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { unavailableAssessment } from "../shared/assessment.ts";
 import type { AgentJob } from "../shared/types.ts";
-import type { AgentTokenUsage } from "../shared/usage.ts";
+import { type AgentTokenUsage, addAgentTokenUsage } from "../shared/usage.ts";
 import type { AgentProvider, AgentRun, AgentRunResult, SteerControl } from "./agent-run.ts";
 import { assessConversation } from "./assessment.ts";
 import { stageAttachments } from "./attachments.ts";
-import { loadBuckets } from "./buckets.ts";
 import { runClaudeCode } from "./claude-code.ts";
 import { runCodexAppServer } from "./codex-app-server.ts";
 import { type AgentConfig, loadAgentConfig } from "./config.ts";
@@ -14,14 +13,15 @@ import { GatewayClient } from "./gateway.ts";
 import { newGeneratedImages, snapshotGeneratedImages } from "./generated-images.ts";
 import { assertTrustedInstructions } from "./instruction-integrity.ts";
 import { reportProgress } from "./progress.ts";
-import { agentInstructions, buildPrompt } from "./prompt.ts";
-import { readThreadState, type ThreadState, writeThreadState } from "./thread-state.ts";
+import { buildPrompt } from "./prompt.ts";
+import { executeJobWithFallback, ProviderLimitCooldown } from "./provider-runner.ts";
 
 const config = loadAgentConfig();
 const runners: Record<
   AgentProvider,
   (config: AgentConfig, run: AgentRun) => Promise<AgentRunResult>
 > = { codex: runCodexAppServer, claude: runClaudeCode };
+const providerCooldown = new ProviderLimitCooldown();
 const gateway = new GatewayClient(config.bridgeUrl, config.bridgeToken);
 let stopping = false;
 const leaseHeartbeatIntervalMs = 20_000;
@@ -128,38 +128,31 @@ async function processJob(job: AgentJob): Promise<void> {
       return;
     }
     stagedAttachments = await stageAttachments(gateway, job);
-    // A thread stays with the provider that created it; only new threads follow the switch.
-    const thread: ThreadState =
-      job.resumeThreadId === null
-        ? { provider: config.provider, injectedBuckets: [] }
-        : await readThreadState(config.statePath, job.resumeThreadId);
-    const injected = new Set(thread.injectedBuckets);
-    let rememberedThreadId: string | null = null;
-    const rememberThread = async (observedThreadId: string): Promise<void> => {
-      if (observedThreadId === rememberedThreadId) return;
-      rememberedThreadId = observedThreadId;
-      await writeThreadState(config.statePath, observedThreadId, thread);
-    };
-    // Public group context must not pull private memory into a shared Telegram thread.
-    const buckets =
-      job.chatType === "private"
-        ? await loadBuckets(config.memoryPath, `${job.prompt}\n${job.context}`, injected)
-        : { text: "", keys: [] };
-    const prompt = buildPrompt(job, buckets.text, stagedAttachments.files);
     const generatedImagesRoot = join(config.codexHome, "generated_images");
     const generatedImagesBefore = await snapshotGeneratedImages(generatedImagesRoot);
     let explicitMediaUpload = false;
-    const result = await runners[thread.provider](config, {
-      instructions: agentInstructions(thread.provider),
-      prompt,
-      resumeThreadId: job.resumeThreadId,
+    const executed = await executeJobWithFallback({
+      config,
+      job,
+      stagedAttachments: stagedAttachments.files,
       signal: cancellation.signal,
+      cooldown: providerCooldown,
+      runners,
+      isCancelled: () => cancellationRequested(job.id, cancellation),
+      loadFallbackContext: () =>
+        gateway.fallbackContext(job.id).catch((error) => {
+          console.error(
+            JSON.stringify({
+              level: "warn",
+              jobId: job.id,
+              event: "fallback_context_unavailable",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          return null;
+        }),
       onEvent: async (event) => {
         explicitMediaUpload ||= isMediaUploadCommand(event);
-        if (event.threadId) {
-          threadId = event.threadId;
-          await rememberThread(event.threadId);
-        }
         await reportProgress(gateway, job.id, event);
       },
       onUsage: async (observedUsage, observedThreadId) => {
@@ -179,18 +172,32 @@ async function processJob(job: AgentJob): Promise<void> {
       onReady: (control) => {
         steerControl.current = control;
       },
+      onThreadId: (observedThreadId) => {
+        threadId = observedThreadId;
+      },
+      onFallback: async (notice) => {
+        console.error(
+          JSON.stringify({
+            level: "warn",
+            jobId: job.id,
+            event: "provider_fallback",
+            ...notice,
+          }),
+        );
+        await reportProgress(gateway, job.id, {
+          kind: "status",
+          text: "Лимит Claude Code — переключаюсь на Codex",
+        });
+      },
     });
+    const result = executed.result;
     for (const steer of await gateway.pendingSteers(job.id).catch(() => [])) {
       await gateway
         .finishSteer(job.id, steer.id, deliveredSteers.get(steer.id) ?? false)
         .catch(() => {});
     }
-    usage = result.usage ?? usage;
+    usage = executed.usage ?? usage;
     threadId = result.threadId;
-    await writeThreadState(config.statePath, threadId, {
-      provider: thread.provider,
-      injectedBuckets: [...injected, ...buckets.keys],
-    });
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
@@ -223,16 +230,7 @@ async function processJob(job: AgentJob): Promise<void> {
             usage = evaluationUsage;
             return;
           }
-          usage = {
-            inputTokens: answerUsage.inputTokens + evaluationUsage.inputTokens,
-            cachedInputTokens: answerUsage.cachedInputTokens + evaluationUsage.cachedInputTokens,
-            cacheWriteInputTokens:
-              answerUsage.cacheWriteInputTokens + evaluationUsage.cacheWriteInputTokens,
-            outputTokens: answerUsage.outputTokens + evaluationUsage.outputTokens,
-            reasoningOutputTokens:
-              answerUsage.reasoningOutputTokens + evaluationUsage.reasoningOutputTokens,
-            totalTokens: answerUsage.totalTokens + evaluationUsage.totalTokens,
-          };
+          usage = addAgentTokenUsage(answerUsage, evaluationUsage);
         }).catch(() => unavailableAssessment)
       : undefined;
     if (await cancellationRequested(job.id, cancellation)) return;

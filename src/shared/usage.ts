@@ -25,3 +25,14 @@ export function isAgentTokenUsage(value: unknown): value is AgentTokenUsage {
     nonNegativeInteger(usage.totalTokens)
   );
 }
+
+export function addAgentTokenUsage(left: AgentTokenUsage, right: AgentTokenUsage): AgentTokenUsage {
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    cachedInputTokens: left.cachedInputTokens + right.cachedInputTokens,
+    cacheWriteInputTokens: left.cacheWriteInputTokens + right.cacheWriteInputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    reasoningOutputTokens: left.reasoningOutputTokens + right.reasoningOutputTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}

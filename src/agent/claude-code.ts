@@ -1,7 +1,12 @@
 import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type { AgentEvent } from "../shared/types.ts";
-import type { AgentTokenUsage } from "../shared/usage.ts";
-import { AgentCancelledError, type AgentRun, type AgentRunResult } from "./agent-run.ts";
+import { type AgentTokenUsage, addAgentTokenUsage } from "../shared/usage.ts";
+import {
+  AgentCancelledError,
+  AgentLimitError,
+  type AgentRun,
+  type AgentRunResult,
+} from "./agent-run.ts";
 import type { AgentConfig } from "./config.ts";
 import { toolActivity } from "./tool-activity.ts";
 
@@ -17,24 +22,36 @@ type ResultUsage = {
   output_tokens: number;
   output_tokens_details: { thinking_tokens: number };
 };
+type RateLimitInfo = {
+  status?: string;
+  resetsAt?: number;
+};
+type StructuredApiError = {
+  error?: string;
+  api_error_status?: number | null;
+  api_error_type?: string;
+  api_error?: string;
+};
 type StreamMessage =
   | { type: "system"; subtype: string; session_id: string }
-  | {
+  | ({
       type: "assistant" | "user";
       parent_tool_use_id: string | null;
       message: { content: string | ContentBlock[] };
-    }
-  | {
+      api_error_params?: { rate_limit_info?: RateLimitInfo };
+    } & StructuredApiError)
+  | ({
       type: "result";
       subtype: string;
       is_error: boolean;
       result?: string;
       errors?: string[];
-      usage: ResultUsage;
+      usage?: ResultUsage;
       queued_turn_count?: number;
-    }
+    } & StructuredApiError)
   | { type: "control_request"; request_id: string }
-  | { type: "control_response" | "stream_event" | "rate_limit_event" };
+  | { type: "rate_limit_event"; rate_limit_info?: RateLimitInfo }
+  | { type: "control_response" | "stream_event" };
 
 // Tools that wait for a person at a terminal or schedule work inside the short-lived process.
 const unavailableTools = [
@@ -64,15 +81,37 @@ function tokenUsage(usage: ResultUsage): AgentTokenUsage {
   };
 }
 
-function addUsage(left: AgentTokenUsage, right: AgentTokenUsage): AgentTokenUsage {
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    cachedInputTokens: left.cachedInputTokens + right.cachedInputTokens,
-    cacheWriteInputTokens: left.cacheWriteInputTokens + right.cacheWriteInputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-    reasoningOutputTokens: left.reasoningOutputTokens + right.reasoningOutputTokens,
-    totalTokens: left.totalTokens + right.totalTokens,
-  };
+const limitErrorCodes = new Set(["rate_limit", "billing_error"]);
+const limitApiErrorTypes = new Set(["rate_limit_error", "billing_error"]);
+const limitApiErrors = new Set(["usage_limit_reached", "extra_usage_out_of_credits"]);
+
+function isStructuredLimitError(message: StructuredApiError): boolean {
+  return (
+    message.api_error_status === 429 ||
+    (typeof message.error === "string" && limitErrorCodes.has(message.error)) ||
+    (typeof message.api_error_type === "string" &&
+      limitApiErrorTypes.has(message.api_error_type)) ||
+    (typeof message.api_error === "string" && limitApiErrors.has(message.api_error))
+  );
+}
+
+function normalizeResetTimestampMs(value: number | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  return value < 1e12 ? Math.round(value * 1_000) : Math.round(value);
+}
+
+export function isClaudeLimitMessage(text: string): boolean {
+  return (
+    /hit your(?:\s+[\w-]+)*\s+limit/i.test(text) ||
+    /\brate[\s_-]?limit(?:ed|s|_error)?\b/i.test(text) ||
+    /\busage[\s_-]?limit(?:[\s_-]?reached)?\b/i.test(text) ||
+    /\bspend(?:ing)?\s+limit\b/i.test(text) ||
+    /\bout of extra usage\b|\bextra_usage_out_of_credits\b/i.test(text) ||
+    /\bquota\s+exceeded\b|\btoo\s+many\s+requests\b/i.test(text) ||
+    /(?:api\s+error|http|status)[:\s]+429\b|\b429\b[^\n]{0,80}(?:rate|limit|quota|too many)/i.test(
+      text,
+    )
+  );
 }
 
 // A private stream-json process per job: the session ID is chosen here, so every event,
@@ -135,9 +174,21 @@ export async function runClaudeCode(
   let completed = false;
   let answer = "";
   let failure: string | null = null;
+  let rateLimitRejected = false;
+  let apiLimitError = false;
+  let resetsAtMs: number | null = null;
   let pendingMessage = "";
   let usage: AgentTokenUsage | undefined;
   const commands = new Set<string>();
+
+  function recordRateLimitInfo(info: RateLimitInfo | undefined): void {
+    if (!info) return;
+    const normalizedReset = normalizeResetTimestampMs(info.resetsAt);
+    if (normalizedReset !== null) resetsAtMs = normalizedReset;
+    if (info.status === "rejected") rateLimitRejected = true;
+    else if (info.status === "allowed" || info.status === "allowed_warning")
+      rateLimitRejected = false;
+  }
 
   function write(value: unknown): void {
     child.stdin.write(`${JSON.stringify(value)}\n`);
@@ -186,6 +237,8 @@ export async function runClaudeCode(
   async function handle(message: StreamMessage): Promise<void> {
     if (message.type === "system" && message.subtype === "init") {
       await emit("status", "Начинаю работу");
+    } else if (message.type === "rate_limit_event") {
+      recordRateLimitInfo(message.rate_limit_info);
     } else if (message.type === "control_request") {
       // Never invent approval or tool answers. Unsupported interactive requests fail closed.
       write({
@@ -196,23 +249,27 @@ export async function runClaudeCode(
           error: "Interactive requests are unavailable in the Telegram worker",
         },
       });
-    } else if (message.type === "assistant" && Array.isArray(message.message.content)) {
-      const subagent = message.parent_tool_use_id !== null;
-      for (const block of message.message.content) {
-        if (block.type === "text" && !subagent) {
-          await flushMessage();
-          pendingMessage = block.text;
-        } else if (block.type === "thinking" && block.thinking.trim() && !subagent) {
-          await emit("reasoning", block.thinking.slice(0, 1_500));
-        } else if (block.type === "tool_use") {
-          await flushMessage();
-          const command = block.input.command;
-          if (block.name === "Bash" && typeof command === "string") {
-            commands.add(block.id);
-            await emit("command", visibleTerminalCommand(command).slice(0, 500));
-          } else {
-            const text = toolActivity(block);
-            if (text) await emit("tool", text, block.id);
+    } else if (message.type === "assistant") {
+      recordRateLimitInfo(message.api_error_params?.rate_limit_info);
+      if (isStructuredLimitError(message)) apiLimitError = true;
+      if (Array.isArray(message.message.content) && !message.error) {
+        const subagent = message.parent_tool_use_id !== null;
+        for (const block of message.message.content) {
+          if (block.type === "text" && !subagent) {
+            await flushMessage();
+            pendingMessage = block.text;
+          } else if (block.type === "thinking" && block.thinking.trim() && !subagent) {
+            await emit("reasoning", block.thinking.slice(0, 1_500));
+          } else if (block.type === "tool_use") {
+            await flushMessage();
+            const command = block.input.command;
+            if (block.name === "Bash" && typeof command === "string") {
+              commands.add(block.id);
+              await emit("command", visibleTerminalCommand(command).slice(0, 500));
+            } else {
+              const text = toolActivity(block);
+              if (text) await emit("tool", text, block.id);
+            }
           }
         }
       }
@@ -225,15 +282,19 @@ export async function runClaudeCode(
           );
       }
     } else if (message.type === "result") {
-      const turnUsage = tokenUsage(message.usage);
-      usage = usage ? addUsage(usage, turnUsage) : turnUsage;
-      await onUsage(usage, threadId);
+      if (message.usage) {
+        const turnUsage = tokenUsage(message.usage);
+        usage = usage ? addAgentTokenUsage(usage, turnUsage) : turnUsage;
+        await onUsage(usage, threadId);
+      }
       pendingMessage = "";
       if (message.subtype === "success" && !message.is_error) {
         // Input that arrives after the last tool call runs as a further turn of the same job.
         answer = [answer, message.result ?? ""].filter((text) => text.trim()).join("\n\n");
         failure = null;
+        apiLimitError = false;
       } else {
+        if (isStructuredLimitError(message)) apiLimitError = true;
         failure = [message.result, ...(message.errors ?? [])].filter(Boolean).join("\n");
       }
       if ((message.queued_turn_count ?? 0) === 0) finishInput();
@@ -260,9 +321,26 @@ export async function runClaudeCode(
     }
     const code = await child.exited;
     if (signal.aborted) throw new AgentCancelledError();
-    if (failure !== null) throw new Error(`Claude Code turn failed: ${failure || "unknown error"}`);
-    if (code !== 0)
-      throw new Error(`Claude Code exited with ${code}${stderr ? `: ${stderr}` : ""}`);
+    if (failure !== null) {
+      const detail = failure || "unknown error";
+      const message = `Claude Code turn failed: ${detail}`;
+      if (
+        apiLimitError ||
+        rateLimitRejected ||
+        isClaudeLimitMessage(detail) ||
+        isClaudeLimitMessage(stderr)
+      ) {
+        throw new AgentLimitError("claude", message, resetsAtMs);
+      }
+      throw new Error(message);
+    }
+    if (code !== 0) {
+      const message = `Claude Code exited with ${code}${stderr ? `: ${stderr}` : ""}`;
+      if (apiLimitError || rateLimitRejected || isClaudeLimitMessage(stderr)) {
+        throw new AgentLimitError("claude", message, resetsAtMs);
+      }
+      throw new Error(message);
+    }
     if (!answer.trim()) throw new Error("Claude Code completed without an answer");
     return { answer, threadId, ...(usage ? { usage } : {}) };
   } finally {
