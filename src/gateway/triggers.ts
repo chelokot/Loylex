@@ -75,7 +75,7 @@ export function isStopCommand(
   botUserId: number,
   botUsername?: string,
 ): boolean {
-  if (message.reply_to_message?.from?.id !== botUserId) {
+  if (message.reply_to_message && message.reply_to_message.from?.id !== botUserId) {
     return false;
   }
   const text = messageText(message).trim();

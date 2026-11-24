@@ -369,13 +369,7 @@ async function poll(): Promise<void> {
               }),
             );
           }
-          await telegram.sendRich(message.chat.id, stopResultMessage(cancelledJobIds.length), {
-            ...responseOptions(
-              message.chat.type,
-              message.message_id,
-              message.message_thread_id ?? null,
-            ),
-          });
+          await sendInlineResponse(telegram, message, stopResultMessage(cancelledJobIds.length));
           continue;
         }
         const steerText = steerCommandText(message, bot.id, bot.username);
@@ -404,7 +398,9 @@ async function poll(): Promise<void> {
         if (isStopCommand(message, bot.id, bot.username)) {
           const cancelledJobIds = message.reply_to_message
             ? database.cancelJobsForMessage(message.chat.id, message.reply_to_message.message_id)
-            : [];
+            : currentUserId === null
+              ? []
+              : database.cancelLatestJobForUser(message.chat.id, currentUserId);
           if (cancelledJobIds.length > 0) {
             console.log(
               JSON.stringify({

@@ -314,6 +314,21 @@ export abstract class DatabaseJobProgress extends DatabaseJobs {
     return transaction.immediate();
   }
 
+  cancelLatestJobForUser(chatId: number, userId: number): number[] {
+    return this.connection
+      .query<{ id: number }, [number, string, number, number]>(`
+        UPDATE jobs SET state = 'cancelled', completed_at = ?, error = ?,
+          worker_id = NULL, lease_expires_at = NULL
+        WHERE id = (
+          SELECT id FROM jobs WHERE chat_id = ? AND user_id = ?
+            AND state IN ('pending', 'running') ORDER BY id DESC LIMIT 1
+        ) AND state IN ('pending', 'running')
+        RETURNING id
+      `)
+      .all(Date.now(), "Остановлено пользователем", chatId, userId)
+      .map((row) => row.id);
+  }
+
   cancelJobsForDraft(chatId: number, draftId: number): number[] {
     const messageId = this.connection
       .query<{ message_id: number }, [number, number]>(

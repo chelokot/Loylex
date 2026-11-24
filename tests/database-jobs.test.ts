@@ -262,3 +262,35 @@ test("editing the original request steers its running job, repeatedly, and skips
   expect(database.queueEditSteer(-10042, 1, 8, "late")).toEqual([]);
   database.close();
 });
+
+test("standalone stop cancels only the sender's newest active job in this chat", () => {
+  const database = setup();
+  database.enqueue(100, message(100, "older"), "older", null);
+  const older = database.claimNext(10)?.id ?? 0;
+  database.enqueue(101, message(101, "latest"), "latest", null);
+  const latest = database.listRecentJobs(-10042)[0]?.id ?? 0;
+  database.enqueue(
+    102,
+    { ...message(102, "other user"), from: { id: 8, is_bot: false, first_name: "Other" } },
+    "other",
+    null,
+  );
+  database.enqueue(
+    103,
+    { ...message(103, "other chat"), chat: { id: -10043, type: "supergroup" } },
+    "other chat",
+    null,
+  );
+  database.enqueue(104, message(104, "finished"), "finished", null);
+  const finished = database.listRecentJobs(-10042)[0]?.id ?? 0;
+  database.cancelJobsForDraft(-10042, finished);
+  expect(database.cancelLatestJobForUser(-10042, 7)).toEqual([latest]);
+  expect(database.isJobCancelled(older)).toBe(false);
+  expect(database.listRecentJobs(-10042).find((job) => job.messageId === 102)?.state).toBe(
+    "pending",
+  );
+  expect(database.listRecentJobs(-10043)[0]?.state).toBe("pending");
+  expect(database.cancelLatestJobForUser(-10042, 7)).toEqual([older]);
+  expect(database.cancelLatestJobForUser(-10042, 7)).toEqual([]);
+  database.close();
+});

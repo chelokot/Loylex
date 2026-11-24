@@ -100,7 +100,7 @@ describe("detectTrigger", () => {
     expect(detectTrigger(input, 42)).toEqual({ kind: "reply", prompt: "продолжай" });
   });
 
-  test("recognizes /stop only as a reply to Loylex", () => {
+  test("recognizes /stop as a reply to Loylex", () => {
     const input = message("/stop@LoylexBot");
     input.reply_to_message = {
       message_id: 10,
@@ -117,8 +117,10 @@ describe("detectTrigger", () => {
     expect(isStopCommand(input, 42, "LoylexBot")).toBe(false);
   });
 
-  test("does not recognize /stop outside a bot reply", () => {
-    expect(isStopCommand(message("/stop"), 42, "LoylexBot")).toBe(false);
+  test("recognizes standalone /stop and rejects arguments or another bot", () => {
+    expect(isStopCommand(message("/stop"), 42, "LoylexBot")).toBe(true);
+    expect(isStopCommand(message("/stop@loylexbot"), 42, "LoylexBot")).toBe(true);
+    expect(isStopCommand(message("/stop@otherbot"), 42, "LoylexBot")).toBe(false);
     expect(isStopCommand(message("/stop now"), 42, "LoylexBot")).toBe(false);
   });
 
