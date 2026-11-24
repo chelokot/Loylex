@@ -23,43 +23,61 @@ export type FallbackNotice = {
   resumed: boolean;
   skippedPrimary: boolean;
   resetsAtMs: number | null;
-  cooldownUntilMs: number | null;
+  cooldownUntilMs: number;
 };
 
-export type ProviderCooldownOptions = {
+const providerLabels: Record<AgentProvider, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  antigravity: "Antigravity",
+};
+
+const fallbackChain: Record<AgentProvider, readonly AgentProvider[]> = {
+  claude: ["codex", "antigravity"],
+  codex: ["antigravity"],
+  antigravity: [],
+};
+
+export function providerLabel(provider: AgentProvider): string {
+  return providerLabels[provider];
+}
+
+const defaultCooldownMs = 5 * 60_000;
+const minCooldownMs = 5_000;
+const maxCooldownMs = 15 * 60_000;
+const maxInterruptedActivities = 15;
+
+export type CooldownOptions = {
   now?: () => number;
   defaultCooldownMs?: number;
-  maxCooldownMs?: number;
   minCooldownMs?: number;
+  maxCooldownMs?: number;
 };
 
-const defaultLimitCooldownMs = 5 * 60_000;
-const maxLimitCooldownMs = 15 * 60_000;
-const minLimitCooldownMs = 5_000;
-const maxInterruptedActivities = 12;
-
+// In-memory worker cooldown: after a provider hits a rate limit, subsequent jobs route straight to
+// the next provider until the reset timestamp (bounded) elapses, then probe primary again.
 export class ProviderLimitCooldown {
   private readonly until = new Map<AgentProvider, number>();
   private readonly now: () => number;
-  private readonly defaultCooldownMs: number;
-  private readonly maxCooldownMs: number;
-  private readonly minCooldownMs: number;
+  private readonly defaultMs: number;
+  private readonly minMs: number;
+  private readonly maxMs: number;
 
-  constructor(options: ProviderCooldownOptions = {}) {
-    this.now = options.now ?? Date.now;
-    this.defaultCooldownMs = options.defaultCooldownMs ?? defaultLimitCooldownMs;
-    this.maxCooldownMs = options.maxCooldownMs ?? maxLimitCooldownMs;
-    this.minCooldownMs = options.minCooldownMs ?? minLimitCooldownMs;
+  constructor(options: CooldownOptions = {}) {
+    this.now = options.now ?? (() => Date.now());
+    this.defaultMs = options.defaultCooldownMs ?? defaultCooldownMs;
+    this.minMs = options.minCooldownMs ?? minCooldownMs;
+    this.maxMs = options.maxCooldownMs ?? maxCooldownMs;
   }
 
   limitedUntil(provider: AgentProvider): number | null {
-    const deadline = this.until.get(provider);
-    if (deadline === undefined) return null;
-    if (this.now() >= deadline) {
+    const expiresAt = this.until.get(provider);
+    if (expiresAt === undefined) return null;
+    if (this.now() >= expiresAt) {
       this.until.delete(provider);
       return null;
     }
-    return deadline;
+    return expiresAt;
   }
 
   isLimited(provider: AgentProvider): boolean {
@@ -67,16 +85,16 @@ export class ProviderLimitCooldown {
   }
 
   recordLimit(provider: AgentProvider, resetsAtMs: number | null): number {
-    const current = this.now();
-    const durationMs =
-      resetsAtMs !== null && resetsAtMs > current
-        ? Math.min(Math.max(resetsAtMs - current, this.minCooldownMs), this.maxCooldownMs)
-        : this.defaultCooldownMs;
-    const deadline = current + durationMs;
-    const existing = this.until.get(provider);
-    const effective = existing !== undefined && existing > deadline ? existing : deadline;
-    this.until.set(provider, effective);
-    return effective;
+    const now = this.now();
+    const duration =
+      resetsAtMs !== null && Number.isFinite(resetsAtMs) && resetsAtMs > now
+        ? Math.min(this.maxMs, Math.max(this.minMs, resetsAtMs - now))
+        : this.defaultMs;
+    const expiresAt = now + duration;
+    const existing = this.until.get(provider) ?? 0;
+    const updated = Math.max(existing, expiresAt);
+    this.until.set(provider, updated);
+    return updated;
   }
 
   clear(provider: AgentProvider): void {
@@ -106,6 +124,11 @@ export type ExecuteJobResult = {
   usage: AgentTokenUsage | null;
 };
 
+type ProviderFailure = {
+  provider: AgentProvider;
+  message: string;
+};
+
 function combineUsage(
   base: AgentTokenUsage | null,
   observed: AgentTokenUsage | undefined,
@@ -118,6 +141,16 @@ function summarizeActivity(event: AgentEvent): string | null {
   if (event.kind === "command") return `- command: ${event.text.slice(0, 200)}`;
   if (event.kind === "tool") return `- tool: ${event.text.slice(0, 200)}`;
   return null;
+}
+
+function formatFailures(failures: ProviderFailure[]): string {
+  return failures
+    .map((failure, index) =>
+      index === 0
+        ? failure.message
+        : `${providerLabel(failure.provider)} fallback failed: ${failure.message}`,
+    )
+    .join("; ");
 }
 
 async function prepareFallbackJob(
@@ -146,13 +179,19 @@ export async function executeJobWithFallback(
   options: ExecuteJobOptions,
 ): Promise<ExecuteJobResult> {
   const { config, job, stagedAttachments, signal, cooldown, runners } = options;
-  // A thread stays with the provider that created it unless Claude Code hits a limit.
+  // A thread stays with the provider that created it unless that provider hits a limit.
   const initialThread: ThreadState =
     job.resumeThreadId === null
       ? { provider: config.provider, injectedBuckets: [] }
       : await readThreadState(config.statePath, job.resumeThreadId);
 
+  const startProvider = initialThread.provider;
+  const candidates: AgentProvider[] = [startProvider, ...fallbackChain[startProvider]];
   let accumulatedUsage: AgentTokenUsage | null = null;
+  let fallbackPrepared: { fallbackJob: AgentJob; priorThread: string } | null = null;
+  const interruptedActivities: string[] = [];
+  const failures: ProviderFailure[] = [];
+  let pendingFallback: Omit<FallbackNotice, "to"> | null = null;
 
   async function runAttempt(
     provider: AgentProvider,
@@ -233,75 +272,93 @@ export async function executeJobWithFallback(
     }
   }
 
-  async function runCodexFallback(
-    notice: FallbackNotice,
-    interruptedActivities: string[] = [],
-  ): Promise<ExecuteJobResult> {
-    options.onThreadId?.(job.resumeThreadId);
-    await options.onFallback?.(notice);
-    if (await options.isCancelled()) {
-      throw new AgentCancelledError();
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    if (!candidate) break;
+    const hasNext = index < candidates.length - 1;
+    const cooldownUntil = cooldown.limitedUntil(candidate);
+    if (hasNext && cooldownUntil !== null) {
+      if (!pendingFallback) {
+        pendingFallback = {
+          from: candidate,
+          reason: `${providerLabel(candidate)} limit cooldown active`,
+          resumed: job.resumeThreadId !== null,
+          skippedPrimary: candidate === startProvider,
+          resetsAtMs: null,
+          cooldownUntilMs: cooldownUntil,
+        };
+      }
+      continue;
     }
-    const { fallbackJob, priorThread } = await prepareFallbackJob(job, options.loadFallbackContext);
-    const interruptedWork = interruptedActivities.join("\n");
-    const fallbackPrompt: PromptFallbackContext | undefined =
-      priorThread || interruptedWork
-        ? {
-            ...(priorThread ? { priorThread } : {}),
-            ...(interruptedWork ? { interruptedWork } : {}),
-          }
-        : undefined;
-    const completed = await runAttempt("codex", fallbackJob, null, new Set(), fallbackPrompt);
-    return { result: completed.result, provider: "codex", usage: completed.usage };
-  }
 
-  const claudeCooldownUntil =
-    initialThread.provider === "claude" ? cooldown.limitedUntil("claude") : null;
-  if (claudeCooldownUntil !== null) {
-    return await runCodexFallback({
-      from: "claude",
-      to: "codex",
-      reason: "Claude Code limit cooldown active",
-      resumed: job.resumeThreadId !== null,
-      skippedPrimary: true,
-      resetsAtMs: null,
-      cooldownUntilMs: claudeCooldownUntil,
-    });
-  }
-
-  try {
-    const completed = await runAttempt(
-      initialThread.provider,
-      job,
-      job.resumeThreadId,
-      new Set(initialThread.injectedBuckets),
-    );
-    return { result: completed.result, provider: initialThread.provider, usage: completed.usage };
-  } catch (error) {
-    if (initialThread.provider !== "claude" || !(error instanceof AgentLimitError)) {
-      throw error;
+    if (pendingFallback) {
+      options.onThreadId?.(job.resumeThreadId);
+      await options.onFallback?.({ ...pendingFallback, to: candidate });
+      pendingFallback = null;
+      if (await options.isCancelled()) {
+        throw new AgentCancelledError();
+      }
     }
-    const cooldownUntilMs = cooldown.recordLimit("claude", error.resetsAtMs);
-    const interruptedActivities =
-      (error as AgentLimitError & { interruptedActivities?: string[] }).interruptedActivities ?? [];
+
     try {
-      return await runCodexFallback(
-        {
-          from: "claude",
-          to: "codex",
+      if (candidate === startProvider) {
+        const completed = await runAttempt(
+          startProvider,
+          job,
+          job.resumeThreadId,
+          new Set(initialThread.injectedBuckets),
+        );
+        return { result: completed.result, provider: startProvider, usage: completed.usage };
+      }
+      fallbackPrepared ??= await prepareFallbackJob(job, options.loadFallbackContext);
+      const interruptedWork = interruptedActivities.join("\n");
+      const fallbackPrompt: PromptFallbackContext | undefined =
+        fallbackPrepared.priorThread || interruptedWork
+          ? {
+              ...(fallbackPrepared.priorThread
+                ? { priorThread: fallbackPrepared.priorThread }
+                : {}),
+              ...(interruptedWork ? { interruptedWork } : {}),
+            }
+          : undefined;
+      const completed = await runAttempt(
+        candidate,
+        fallbackPrepared.fallbackJob,
+        null,
+        new Set(),
+        fallbackPrompt,
+      );
+      return { result: completed.result, provider: candidate, usage: completed.usage };
+    } catch (error) {
+      if (error instanceof AgentCancelledError) throw error;
+      if (error instanceof AgentLimitError && hasNext) {
+        const cooldownUntilMs = cooldown.recordLimit(candidate, error.resetsAtMs);
+        const added =
+          (error as AgentLimitError & { interruptedActivities?: string[] }).interruptedActivities ??
+          [];
+        for (const item of added) {
+          if (interruptedActivities.length < maxInterruptedActivities) {
+            interruptedActivities.push(item);
+          }
+        }
+        failures.push({ provider: candidate, message: error.message });
+        pendingFallback = {
+          from: candidate,
           reason: error.message,
           resumed: job.resumeThreadId !== null,
           skippedPrimary: false,
           resetsAtMs: error.resetsAtMs,
           cooldownUntilMs,
-        },
-        interruptedActivities,
-      );
-    } catch (fallbackError) {
-      if (fallbackError instanceof AgentCancelledError) throw fallbackError;
-      const fallbackMessage =
-        fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-      throw new Error(`${error.message}; Codex fallback failed: ${fallbackMessage}`);
+        };
+        continue;
+      }
+      if (failures.length === 0) throw error;
+      options.onThreadId?.(job.resumeThreadId);
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push({ provider: candidate, message });
+      throw new Error(formatFailures(failures));
     }
   }
+
+  throw new Error(formatFailures(failures) || "No agent provider available");
 }

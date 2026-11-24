@@ -15,6 +15,10 @@ export type AgentConfig = {
   claudeEffort: string;
   claudeFollowUpEffort: string;
   claudeProxy: string | null;
+  antigravityBinary: string;
+  antigravityModel: string;
+  antigravityEffort: string | null;
+  antigravityProxy: string | null;
   repositoryPath: string;
   memoryPath: string;
   statePath: string;
@@ -33,8 +37,8 @@ function secret(): string {
 
 function provider(): AgentProvider {
   const value = process.env.LOYLEX_AGENT_PROVIDER ?? "claude";
-  if (value !== "codex" && value !== "claude") {
-    throw new Error("LOYLEX_AGENT_PROVIDER must be codex or claude");
+  if (value !== "codex" && value !== "claude" && value !== "antigravity") {
+    throw new Error("LOYLEX_AGENT_PROVIDER must be claude, codex, or antigravity");
   }
   return value;
 }
@@ -56,6 +60,10 @@ export function loadAgentConfig(): AgentConfig {
     // A resumed session already holds its context; max effort makes each step think for minutes.
     claudeFollowUpEffort: process.env.CLAUDE_FOLLOWUP_EFFORT ?? "high",
     claudeProxy: process.env.CLAUDE_HTTPS_PROXY ?? null,
+    antigravityBinary: process.env.ANTIGRAVITY_BINARY ?? "agy",
+    antigravityModel: process.env.ANTIGRAVITY_MODEL ?? "gemini-4-neon-medium",
+    antigravityEffort: process.env.ANTIGRAVITY_EFFORT || null,
+    antigravityProxy: process.env.ANTIGRAVITY_HTTPS_PROXY ?? null,
     repositoryPath: process.env.LOYLEX_REPOSITORY_PATH ?? "/workspace/Loylex",
     memoryPath: process.env.LOYLEX_MEMORY_PATH ?? "/memory",
     statePath: process.env.LOYLEX_STATE_PATH ?? "/home/loylex/.local/state/loylex",

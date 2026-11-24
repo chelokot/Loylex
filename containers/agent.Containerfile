@@ -7,6 +7,9 @@ ARG CODEX_LINUX_X64_SHA256=48a5ee5dba98c7745a48b8d72af84f91880fec5856269627328fd
 # Checked against the GPG-signed release manifest; see deploy/host/claude-code-2.1.311-audit.md.
 ARG CLAUDE_CODE_VERSION=2.1.311
 ARG CLAUDE_CODE_LINUX_X64_SHA256=86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada
+ARG ANTIGRAVITY_VERSION=1.5.16
+ARG ANTIGRAVITY_BUILD=1.5.16-5250855658717184
+ARG ANTIGRAVITY_LINUX_X64_SHA512=3dee9f26e298156db673f6ce2a0f5dfed5b30006e04ceb9809c68070e7b717587b33a3da0f8bc2eda45af81a50bc8b14c82b28ae5832bcfe3e7fd49397117b31
 # Reviewed 2026-09-07 against Cloudflare's signed Fedora 44 RPM.
 ARG WARP_VERSION=2026.7.1377.0
 ARG WARP_RELEASE=1.fc44
@@ -88,6 +91,14 @@ RUN dnf install -y \
     && printf '%s  %s\n' "${CLAUDE_CODE_LINUX_X64_SHA256}" /tmp/claude | sha256sum --check - \
     && install -m 0755 /tmp/claude /usr/local/bin/claude \
     && test "$(/usr/local/bin/claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)" \
+    && mkdir -p /tmp/agy-install \
+    && curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 \
+      -o /tmp/agy-install/cli_linux_x64.tar.gz \
+      "https://storage.googleapis.com/antigravity-public/antigravity-cli/${ANTIGRAVITY_BUILD}/linux-x64/cli_linux_x64.tar.gz" \
+    && printf '%s  %s\n' "${ANTIGRAVITY_LINUX_X64_SHA512}" /tmp/agy-install/cli_linux_x64.tar.gz | sha512sum --check - \
+    && tar -xzf /tmp/agy-install/cli_linux_x64.tar.gz -C /tmp/agy-install antigravity \
+    && install -m 0755 /tmp/agy-install/antigravity /usr/local/bin/agy \
+    && test "$(/usr/local/bin/agy --version)" = "${ANTIGRAVITY_VERSION}" \
     && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
       -o /tmp/cloudflare-warp.rpm \
       "https://pkg.cloudflareclient.com/rpm/44/x86_64/cloudflare-warp-${WARP_VERSION}-${WARP_RELEASE}.x86_64.rpm" \
@@ -105,7 +116,7 @@ RUN dnf install -y \
     && mkdir -p /memory /workspace /opt/loylex/app \
     && chown -R loylex:loylex /memory /workspace /opt/loylex \
     && dnf clean all \
-    && rm -rf /tmp/bun /tmp/bun.zip /tmp/codex-install /tmp/claude /tmp/cloudflare-warp.rpm /tmp/cloudflare-warp-key.gpg /root/.npm
+    && rm -rf /tmp/bun /tmp/bun.zip /tmp/codex-install /tmp/claude /tmp/agy-install /tmp/cloudflare-warp.rpm /tmp/cloudflare-warp-key.gpg /root/.npm
 
 RUN python3 -m pip install \
       --no-cache-dir \

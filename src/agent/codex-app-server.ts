@@ -1,8 +1,18 @@
 import { visibleTerminalCommand } from "../shared/terminal-command.ts";
 import type { AgentEvent } from "../shared/types.ts";
 import { type AgentTokenUsage, isAgentTokenUsage } from "../shared/usage.ts";
-import { AgentCancelledError, type AgentRun, type AgentRunResult } from "./agent-run.ts";
-import { isThreadStoreConflict, waitForThreadWriter } from "./codex.ts";
+import {
+  AgentCancelledError,
+  AgentLimitError,
+  type AgentRun,
+  type AgentRunResult,
+} from "./agent-run.ts";
+import {
+  isCodexLimitError,
+  isCodexLimitMessage,
+  isThreadStoreConflict,
+  waitForThreadWriter,
+} from "./codex.ts";
 import { CodexSessionExtensions } from "./codex-session.ts";
 import type { AgentConfig } from "./config.ts";
 import { type ToolItem, toolActivity } from "./tool-activity.ts";
@@ -14,7 +24,8 @@ type RpcMessage = {
   result?: Record<string, unknown>;
   error?: { message: string };
 };
-type Turn = { id: string; status: string; error?: { message: string } | null };
+type TurnError = { message: string; codexErrorInfo?: unknown };
+type Turn = { id: string; status: string; error?: TurnError | null };
 // A private stdio server per job: no daemon, listening socket, or cross-job turn selection.
 async function runCodexAppServerAttempt(
   config: AgentConfig,
@@ -204,12 +215,16 @@ async function runCodexAppServerAttempt(
         answer ||= pendingMessage;
         pendingMessage = "";
         resolveDone();
-      } else
+      } else if (turn.status === "interrupted") {
+        rejectDone(new AgentCancelledError());
+      } else {
+        const message = turn.error?.message ?? "Codex turn failed";
         rejectDone(
-          turn.status === "interrupted"
-            ? new AgentCancelledError()
-            : new Error(turn.error?.message ?? "Codex turn failed"),
+          isCodexLimitError(turn.error, message)
+            ? new AgentLimitError("codex", message)
+            : new Error(message),
         );
+      }
     }
     if (threadId && message.method?.startsWith("item/")) {
       try {
@@ -235,8 +250,14 @@ async function runCodexAppServerAttempt(
         if (message.id !== undefined && !message.method) {
           const call = pending.get(Number(message.id));
           pending.delete(Number(message.id));
-          if (message.error) call?.reject(new Error(message.error.message));
-          else call?.resolve(message.result ?? {});
+          if (message.error) {
+            const errMsg = message.error.message;
+            call?.reject(
+              isCodexLimitMessage(errMsg)
+                ? new AgentLimitError("codex", errMsg)
+                : new Error(errMsg),
+            );
+          } else call?.resolve(message.result ?? {});
         } else if (message.id !== undefined) {
           // Never invent approval or tool answers. Unsupported interactive requests fail closed.
           write({
