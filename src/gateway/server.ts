@@ -6,6 +6,7 @@ import { type ApprovalClient, ApprovalDeniedError } from "./approvals.ts";
 import { archiveRoute } from "./archive-routes.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
+import { eventStatusLine } from "./event-status.ts";
 import { body, json } from "./http-json.ts";
 import { responseOptions } from "./message-options.ts";
 import {
@@ -25,26 +26,6 @@ function bearer(request: Request): string | null {
 function workerId(request: Request): string | undefined {
   const value = request.headers.get("x-loylex-worker-id")?.trim();
   return value || undefined;
-}
-
-function eventStatusLine(event: AgentEvent): string {
-  const text =
-    event.kind === "command" || event.kind === "tool"
-      ? event.text.replaceAll(/\s+/g, " ").trim()
-      : event.text.trim();
-  if (event.kind !== "tool" || !event.toolCallId) {
-    return `${event.kind}: ${text}`;
-  }
-  const toolCallId = Array.from(event.toolCallId)
-    .filter((character) => {
-      const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint >= 0x20 && codePoint !== 0x7f && character !== "[" && character !== "]";
-    })
-    .join("")
-    .replaceAll(/\s+/g, " ")
-    .trim()
-    .slice(0, 160);
-  return toolCallId ? `${event.kind}: ${text} [tool-call:${toolCallId}]` : `${event.kind}: ${text}`;
 }
 
 export class GatewayServer {
@@ -332,6 +313,7 @@ export class GatewayServer {
     const address = this.database.jobAddress(jobId);
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const now = Date.now();
+    if (this.database.progressEnabled?.(address.userId) === false) return;
     const document = workDocument(status);
     if (!document) {
       return;
@@ -425,7 +407,10 @@ export class GatewayServer {
     const answer = economy
       ? `${completion.answer}\n\n${leylobucksFooter(economy)}`
       : completion.answer;
-    const documents = completedDocuments(status, answer);
+    const documents = completedDocuments(
+      this.database.progressEnabled?.(address.userId) === false ? "" : status,
+      answer,
+    );
     let message: TelegramMessage;
     if (thinkingMessageId === null) {
       message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
@@ -478,7 +463,12 @@ export class GatewayServer {
     const address = this.database.jobAddress(jobId);
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const currentThreadId = threadId ?? this.database.jobThreadId(jobId);
-    const markdown = failedDocument(this.database.statusLog(jobId) ?? "", error);
+    const markdown = failedDocument(
+      this.database.progressEnabled?.(address.userId) === false
+        ? ""
+        : (this.database.statusLog(jobId) ?? ""),
+      error,
+    );
     let message: { message_id: number };
     if (thinkingMessageId === null) {
       message = await this.telegram.sendRich(address.chatId, markdown, {

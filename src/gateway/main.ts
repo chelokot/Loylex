@@ -22,6 +22,7 @@ import {
   resumeUnavailableMessage,
   stopResultMessage,
 } from "./presentation.ts";
+import { handleProgressCommand } from "./progress-command.ts";
 import { GatewayServer } from "./server.ts";
 import { sendTasks } from "./tasks.ts";
 import { TelegramClient } from "./telegram.ts";
@@ -344,6 +345,12 @@ async function poll(): Promise<void> {
         if (await mines.command(message, bot.username)) continue;
         acknowledgeNameMistake(message);
         const currentUserId = userId(message);
+        if (
+          await handleProgressCommand(database, message, bot.username, currentUserId, (text) =>
+            sendInlineResponse(telegram, message, text),
+          )
+        )
+          continue;
         if (await economyCommands.handle(message, currentUserId)) continue;
         const economyEnabled = leylobucksMode.isEnabled(currentUserId);
         const cancelledMessageId = cancelTaskMessageId(message, bot.username);
