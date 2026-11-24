@@ -6,7 +6,6 @@ import {
   isSlashCommand,
   isStopCommand,
   isTasksCommand,
-  isTemporaryLeyloAliasActive,
   newChatPrompt,
   parseLeylobucksCommand,
   parseQuizCallbackData,
@@ -54,32 +53,21 @@ describe("detectTrigger", () => {
     expect(detectTrigger(message("чмохов"), 42)).toBeNull();
   });
 
-  test("accepts the temporary Лейло alias only through the end of Sunday", () => {
-    const beforeWindow = Date.parse("2026-09-13T23:59:59.999Z");
-    const duringWindow = Date.parse("2026-09-14T12:00:00Z");
-    const justBeforeExpiry = Date.parse("2026-09-20T23:59:59.999Z");
-    const expiry = Date.parse("2026-09-21T00:00:00Z");
-
-    expect(isTemporaryLeyloAliasActive(beforeWindow)).toBe(false);
-    expect(isTemporaryLeyloAliasActive(duringWindow)).toBe(true);
-    expect(isTemporaryLeyloAliasActive(justBeforeExpiry)).toBe(true);
-    expect(isTemporaryLeyloAliasActive(expiry)).toBe(false);
-
-    expect(detectTrigger(message("Лейло это правда?"), 42, duringWindow)).toEqual({
+  test("accepts Лейло without an expiry and rejects longer words", () => {
+    expect(detectTrigger(message("Лейло это правда?"), 42)).toEqual({
       kind: "prefix",
       prompt: "это правда?",
     });
-    expect(detectTrigger(message("Лейло"), 42, duringWindow)).toEqual({
+    expect(detectTrigger(message("лейло"), 42)).toEqual({
       kind: "prefix",
       prompt: "Ответь на это сообщение.",
     });
-    expect(detectTrigger(message("Лейло это правда?"), 42, expiry)).toBeNull();
-  });
-
-  test("does not treat Лейло inside a larger word as a temporary alias", () => {
-    expect(
-      detectTrigger(message("Лейлон это правда?"), 42, Date.parse("2026-09-14T12:00:00Z")),
-    ).toBeNull();
+    expect(detectTrigger(message("ЛЕЙЛО: привет"), 42)).toEqual({
+      kind: "prefix",
+      prompt: "привет",
+    });
+    expect(detectTrigger(message("Лейлон это правда?"), 42)).toBeNull();
+    expect(detectTrigger(message("я сказал лейло"), 42)).toBeNull();
   });
 
   test("accepts plain messages in private chats", () => {
