@@ -320,6 +320,7 @@ export class TelegramClient {
         { command: "stop", description: "Остановить работу" },
         { command: "steer", description: "Уточнить активную задачу" },
         { command: "mines", description: "Сапёр: одинаковое поле для друзей" },
+        { command: "progress", description: "Включить или выключить ход работы для себя" },
         { command: "tasks", description: "Показать последние задачи" },
         { command: "resume", description: "Продолжить задачу по ID" },
         { command: "blind", description: "Запрос без истории чата" },
