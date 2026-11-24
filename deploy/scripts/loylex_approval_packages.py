@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from loylex_approval_host import MAX_PACKAGE_BYTES, ApprovalError, command, encoded, https_request, secret
+from loylex_approval_host import MAX_PACKAGE_BYTES, ApprovalError, command, encoded, https_request, installed_file_sha256, secret
 from loylex_approval_validation import MAX_BUNDLE_BYTES, REPOSITORY_PATTERN, SHA_PATTERN
 from loylex_approval_validation import snapshot_t3
 from loylex_compose import carry_deployed_images
@@ -234,8 +234,11 @@ class ApprovalPackages:
             head = operation["commit"]
             base = self._installed_commit(kind)
             operation["oldCommit"] = base
-            self._fetch(directory, repository, head)
-            self._fetch(directory, repository, base)
+            for stage, commit in (("target", head), ("installed", base)):
+                try:
+                    self._fetch(directory, repository, commit)
+                except ApprovalError as error:
+                    raise ApprovalError(f"Fetching {stage} commit {commit}: {error}") from error
             if kind == "gateway":
                 recipe = self._git(
                     directory, "show", f"{head}:containers/gateway.Containerfile"
@@ -252,9 +255,7 @@ class ApprovalPackages:
             else:
                 operation["files"] = list(INFRASTRUCTURE_FILES)
                 operation["installedFiles"] = {
-                    name: hashlib.sha256(
-                        (Path.home() / ".local/bin" / name).read_bytes()
-                    ).hexdigest()
+                    name: installed_file_sha256(Path.home() / ".local/bin" / name)
                     for name in operation["files"]
                 }
         elif kind == "tailnet":

@@ -190,7 +190,15 @@ class Supervisor:
     def _run_pm3(self, arguments: list[str], timeout: int = 900) -> str:
         if not COMPOSE_FILE.is_file():
             raise SupervisorError(f"Missing PM3 Compose file: {COMPOSE_FILE}")
-        return run_command([PM3_BINARY, *arguments], timeout=timeout, cwd=STACK_DIRECTORY)
+        delays = (0.5, 1.0, 2.0, 3.0)
+        for attempt in range(len(delays) + 1):
+            try:
+                return run_command([PM3_BINARY, *arguments], timeout=timeout, cwd=STACK_DIRECTORY)
+            except SupervisorError as error:
+                if "database is locked" not in str(error).lower() or attempt == len(delays):
+                    raise
+                time.sleep(delays[attempt])
+        raise SupervisorError("pm3 failed: database is locked")
 
     @staticmethod
     def _project(component: str) -> str:
