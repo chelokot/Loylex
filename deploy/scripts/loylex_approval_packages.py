@@ -234,8 +234,11 @@ class ApprovalPackages:
             head = operation["commit"]
             base = self._installed_commit(kind)
             operation["oldCommit"] = base
-            self._fetch(directory, repository, head)
-            self._fetch(directory, repository, base)
+            for stage, commit in (("target", head), ("installed", base)):
+                try:
+                    self._fetch(directory, repository, commit)
+                except ApprovalError as error:
+                    raise ApprovalError(f"Fetching {stage} commit {commit}: {error}") from error
             if kind == "gateway":
                 recipe = self._git(
                     directory, "show", f"{head}:containers/gateway.Containerfile"

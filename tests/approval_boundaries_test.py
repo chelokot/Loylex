@@ -34,6 +34,15 @@ class ApprovalBoundaryTest(ApprovalTestCase):
             (b"fatal: transport 'https' not allowed secret", "transport prohibited"),
             (b"fatal: bad object secret", "missing Git objects"),
             (b"remote: protected branch secret", "remote ref rejected"),
+            (b"fatal: unable to find remote helper for https secret", "Git HTTPS helper unavailable"),
+            (b"fatal: detected dubious ownership in repository secret", "Git ownership check rejected repository"),
+            (b"fatal: remote error: upload-pack: not our ref secret", "Git object unavailable on remote"),
+            (b"fatal: write error: No space left on device secret", "Git storage limit or disk exhaustion"),
+            (b"fatal: file size limit exceeded secret", "Git storage limit or disk exhaustion"),
+            (b"fatal: cannot allocate memory secret", "Git memory or process limit"),
+            (b"error: RPC failed; curl 92 HTTP/2 secret", "Git transport interrupted"),
+            (b"fatal: cannot open secret: Permission denied", "Git local permission denied"),
+            (b"fatal: fetch-pack: invalid index-pack output secret", "Git pack transfer failed"),
             (b"secret unknown error", "unclassified Git failure"),
         )
         for output, expected in cases:
@@ -52,6 +61,29 @@ class ApprovalBoundaryTest(ApprovalTestCase):
         with mock.patch.object(host.subprocess, "run", side_effect=fail):
             with self.assertRaisesRegex(host.ApprovalError, r"^git failed \(exit 128\): authentication rejected$"):
                 host.command(["git", "push"])
+
+    def test_git_timeout_and_launch_errors_do_not_leak_arguments(self) -> None:
+        import subprocess
+        for error, expected in (
+            (subprocess.TimeoutExpired(["git", "secret"], 7, stderr=b"secret"), "git timed out after 7s"),
+            (OSError(2, "secret"), "git could not start (errno 2)"),
+        ):
+            with mock.patch.object(host.subprocess, "run", side_effect=error):
+                with self.assertRaises(broker.ApprovalError) as raised:
+                    host.command(["git", "fetch", "secret"], timeout=7)
+                self.assertEqual(str(raised.exception), expected)
+
+    def test_fetch_errors_identify_target_or_installed_commit(self) -> None:
+        for stage, sha, effects in (
+            ("target", self.new_sha, [broker.ApprovalError("fixed failure")]),
+            ("installed", self.old_sha, [None, broker.ApprovalError("fixed failure")]),
+        ):
+            identifier = "fetch-" + stage
+            (self.approvals.root / identifier).mkdir()
+            with mock.patch.object(self.approvals, "_installed_commit", return_value=self.old_sha), mock.patch.object(self.approvals, "_fetch", side_effect=effects):
+                with self.assertRaises(broker.ApprovalError) as raised:
+                    self.approvals._snapshot(identifier, {"kind": "gateway", "commit": self.new_sha})
+            self.assertEqual(str(raised.exception), f"Fetching {stage} commit {sha}: fixed failure")
 
     def test_reviewer_auth_is_private_and_lifetime_is_independently_bounded(self) -> None:
         def execute(arguments: list[str], **options) -> bytes:
