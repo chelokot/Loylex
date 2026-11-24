@@ -46,7 +46,7 @@ export function loadAgentConfig(): AgentConfig {
     bridgeToken: secret(),
     codexBinary: process.env.CODEX_BINARY ?? "codex",
     codexHome: process.env.CODEX_HOME ?? "/home/loylex/.codex",
-    model: process.env.CODEX_MODEL ?? "gpt-6.1-sol",
+    model: process.env.CODEX_MODEL ?? "gpt-6.2-sol",
     reasoningEffort: process.env.CODEX_REASONING_EFFORT ?? "low",
     // Disable Fast, including priority retained by older host Compose environments.
     serviceTier: "default",
