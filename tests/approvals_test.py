@@ -135,11 +135,11 @@ class ApprovalTest(ApprovalTestCase):
                 message_id = self.approvals.status(identifier)["message_id"]
                 self.assertTrue(self.callback(identifier, message=message_id, action=action)["accepted"])
                 edits = [payload for method, payload, _ in self.approvals.messages
-                         if method == "editMessageText" and payload["message_id"] == message_id]
+                         if method == "editMessageCaption" and payload["message_id"] == message_id]
                 self.assertEqual(edits, [{
                     "chat_id": notice["chat_id"],
                     "message_id": message_id,
-                    "text": notice["text"] + "\n\n" + decision,
+                    "caption": notice["caption"] + "\n\n" + decision,
                     "reply_markup": {"inline_keyboard": []},
                 }])
                 self.assertFalse(self.callback(identifier, message=message_id, action=action)["accepted"])
@@ -164,7 +164,7 @@ class ApprovalTest(ApprovalTestCase):
         self.assertFalse(self.callback(identifier, message=103)["accepted"])
         self.assertFalse(self.callback(identifier, chat=-101)["accepted"])
         self.assertEqual(self.approvals.status(identifier)["state"], "pending")
-        self.assertFalse(any(method == "editMessageText" for method, _, _ in self.approvals.messages))
+        self.assertFalse(any(method in {"editMessageText", "editMessageCaption"} for method, _, _ in self.approvals.messages))
 
     def test_expired_and_cancelled_requests_do_not_execute(self) -> None:
         identifier = self.submit()
@@ -173,7 +173,7 @@ class ApprovalTest(ApprovalTestCase):
         self.assertEqual(self.approvals.status(identifier)["state"], "cancelled")
         second = self.submit()
         self.approvals._update(second, created=int(time.time()) - 3601)
-        self.assertFalse(self.callback(second, message=104)["accepted"])
+        self.assertFalse(self.callback(second)["accepted"])
         self.assertEqual(self.approvals.status(second)["state"], "expired")
         self.assertEqual(self.git("--git-dir", str(self.remote), "rev-parse", "main"), self.old_sha)
 
@@ -223,7 +223,7 @@ class ApprovalTest(ApprovalTestCase):
         self.approvals.database.close()
         self.approvals = LocalApprovals(self.directory / "broker", self.remote)
         self.assertFalse(
-            self.approvals.telegram_allowed("deleteMessage", {"chat_id": -100, "message_id": 102})
+            self.approvals.telegram_allowed("deleteMessage", {"chat_id": -100, "message_id": 101})
         )
 
     def test_stale_fork_new_branch_reviews_contribution_not_upstream_history(self) -> None:
@@ -295,19 +295,6 @@ class ApprovalTest(ApprovalTestCase):
             self.approvals._fetch(directory, "owner/repository", self.old_sha, 1000)
             self.approvals._fetch(directory, "owner/repository", self.old_sha, 1000)
         self.assertEqual([call.args[1] for call in git.call_args_list], ["cat-file", "fetch", "cat-file"])
-
-    def test_approval_notice_is_concise_and_replies_to_package(self) -> None:
-        identifier = self.submit()
-        document = self.approvals.messages[0][1]
-        notice = self.approvals.messages[1][1]
-        self.assertIn("Проверка операции: push", document["caption"])
-        self.assertEqual(notice["text"], "@Chelokot\n\nTLDR: Изменяется тестовый файл.")
-        self.assertEqual(notice["reply_parameters"], {"message_id": 101})
-        self.assertEqual(
-            notice["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
-            f"approve:{identifier}",
-        )
-        self.assertEqual(self.approvals.status(identifier)["state"], "pending")
 
     def test_review_failure_is_advisory(self) -> None:
         with mock.patch.object(self.approvals, "_review", side_effect=RuntimeError("offline")):

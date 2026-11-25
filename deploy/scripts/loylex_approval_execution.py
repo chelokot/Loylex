@@ -142,17 +142,7 @@ class ApprovalExecution:
                 except Exception:
                     pass  # URL remains available through the approved result, never rerun login automatically.
             return
-        try:
-            self._telegram(
-                "sendMessage",
-                {
-                    "chat_id": row["chat_id"],
-                    "text": f"{identifier}: {row['state']}\n{row['result']}",
-                    "reply_parameters": {"message_id": row["message_id"]},
-                },
-            )
-        except ApprovalError:
-            pass
+        self._notify_execution_failure(row)
 
     def _t3_connection_notice(self, identifier: str, machine: str, state: str, attempt: str) -> None:
         from loylex_approval_host import t3_read

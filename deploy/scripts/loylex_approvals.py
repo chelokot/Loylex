@@ -15,6 +15,7 @@ from loylex_approval_packages import ApprovalPackages
 from loylex_approval_review import ApprovalReview
 from loylex_approval_validation import OperationValidation
 from loylex_approval_validation import t3_status, t3_connection_status
+from loylex_supervisor_errors import BusyError
 
 
 OPERATOR_ID = 426043802
@@ -187,43 +188,15 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                 review = "TLDR недоступен."
             with self.lock:
                 row = self._row(identifier)
-                document = self._telegram(
+                message = self._telegram(
                     "sendDocument",
                     {
                         "chat_id": row["chat_id"],
-                        "caption": (
-                            f"Проверка операции: {operation['kind']} · "
-                            f"{operation.get('machine', operation.get('repository', operation.get('name', 'chelokot/Loylex')))}\n"
-                            + ("T3: точная операция в пакете. Задание выполняется с full-access; результат доступен агенту."
-                               if operation["kind"] == "t3" else
-                               "Тейлнет: в пакете точные файлы; маршрут меняется только после одобрения." if operation["kind"] == "tailnet" else "Изменения относительно указанной в пакете базы сравнения.")
-                        ),
+                        "caption": self._approval_caption(identifier, operation, review),
                         "reply_parameters": {
                             "message_id": row["reply_id"],
                             "allow_sending_without_reply": True,
                         },
-                        **(
-                            {"message_thread_id": row["thread_id"]}
-                            if row["thread_id"] is not None
-                            else {}
-                        ),
-                    },
-                    package,
-                )
-                self._update(identifier, document_id=document["message_id"])
-                text = f"@Chelokot\n\nTLDR: {review}"
-                if operation.get('kind') == 't3' and operation.get('action') == 'confirm-connect':
-                    target = json.loads((self.root / identifier / 'operation.json').read_bytes())['confirmation']
-                    text = ('Подключить T3: ' + str(target.get('computerLabel', ''))[:80] +
-                            '\nАккаунт: ' + str(target['accountEmail'])[:160] +
-                            '\nАдрес: ' + str(target['endpoint'])[:512] +
-                            '\nПроверь, что это твой аккаунт и нужный компьютер.\n\n' + text)
-                message = self._telegram(
-                    "sendMessage",
-                    {
-                        "chat_id": row["chat_id"],
-                        "text": text,
-                        "reply_parameters": {"message_id": document["message_id"]},
                         "reply_markup": {
                             "inline_keyboard": [
                                 [
@@ -244,11 +217,13 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
                             else {}
                         ),
                     },
+                    package,
                 )
                 self._update(
                     identifier,
                     digest=digest,
                     message_id=message["message_id"],
+                    document_id=message["message_id"],
                     review=review,
                     state="pending",
                 )
@@ -288,18 +263,70 @@ class Approvals(OperationValidation, ApprovalPackages, ApprovalReview, ApprovalE
             ).fetchall()
             return all(value not in ids for row in rows for value in row if value is not None)
 
+    def _notify_execution_failure(self, row: sqlite3.Row) -> None:
+        notice = f"{row['id']}: {row['state']}\n{row['result']}"
+        if row["result"] == BusyError.__name__:
+            notice += (
+                "\nСупервизор занят другой операцией. Когда она завершится, "
+                "попроси Loylex создать новую заявку и подтверди её."
+            )
+        try:
+            self._telegram(
+                "sendMessage",
+                {
+                    "chat_id": row["chat_id"],
+                    "text": notice,
+                    "reply_parameters": {"message_id": row["message_id"]},
+                },
+            )
+        except ApprovalError:
+            pass
+
+    def _approval_caption(
+        self, identifier: str, operation: dict[str, Any], review: str
+    ) -> str:
+        kind = operation["kind"]
+        target = operation.get("machine", operation.get("repository", operation.get("name", "chelokot/Loylex")))
+        header = f"@Chelokot\n\nПроверка операции: {kind} · {target}"
+        if kind == "t3":
+            header += "\nT3: операция в пакете. Задание выполняется с full-access, результат доступен агенту."
+            if operation.get("action") == "confirm-connect":
+                saved = json.loads((self.root / identifier / "operation.json").read_bytes())
+                confirmation = saved["confirmation"]
+                header += (
+                    f"\nКомпьютер: {confirmation.get('computerLabel', '')[:80]}"
+                    f"\nАккаунт: {confirmation['accountEmail'][:160]}"
+                    f"\nАдрес: {confirmation['endpoint'][:512]}"
+                    "\nПроверь аккаунт и компьютер."
+                )
+        elif kind == "tailnet":
+            header += "\nВ пакете точные файлы. Маршрут меняется после одобрения."
+        else:
+            header += "\nИзменения относительно базы сравнения из пакета."
+
+        caption = f"{header}\n\nTLDR: {review}"
+        # Telegram captions allow 1024 characters. Leave room for the decision.
+        units = caption.encode("utf-16-le")
+        if len(units) > 1960:
+            caption = units[:1958].decode("utf-16-le", errors="ignore") + "…"
+        return caption
+
     def _mark_decision(self, row: sqlite3.Row, approved: bool) -> None:
         decision = "✅ Одобрено" if approved else "❌ Не одобрено"
         try:
-            self._telegram(
-                "editMessageText",
-                {
-                    "chat_id": row["chat_id"],
-                    "message_id": row["message_id"],
-                    "text": f"@Chelokot\n\nTLDR: {row['review']}\n\n{decision}",
-                    "reply_markup": {"inline_keyboard": []},
-                },
-            )
+            payload = {
+                "chat_id": row["chat_id"],
+                "message_id": row["message_id"],
+                "reply_markup": {"inline_keyboard": []},
+            }
+            if row["document_id"] == row["message_id"]:
+                identifier = row["id"]
+                operation = json.loads((self.root / identifier / "request.json").read_bytes())
+                caption = self._approval_caption(identifier, operation, row["review"])
+                self._telegram("editMessageCaption", {**payload, "caption": f"{caption}\n\n{decision}"})
+            else:
+                text = f"@Chelokot\n\nTLDR: {row['review']}\n\n{decision}"
+                self._telegram("editMessageText", {**payload, "text": text})
         except Exception:
             # A Telegram edit must not undo a durable decision or prevent execution.
             pass

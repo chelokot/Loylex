@@ -108,10 +108,15 @@ class ApprovalTestCase(unittest.TestCase):
         self,
         identifier: str,
         user: int = broker.OPERATOR_ID,
-        message: int = 102,
+        message: int | None = None,
         action: str = "approve",
         chat: int = -100,
     ) -> dict:
+        if message is None:
+            try:
+                message = self.approvals.status(identifier)["message_id"]
+            except broker.ApprovalError:
+                message = 101
         return self.approvals.callback(
             {
                 "id": "live-callback",
