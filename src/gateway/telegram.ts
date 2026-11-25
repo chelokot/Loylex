@@ -156,11 +156,18 @@ export class TelegramClient {
       replyTo?: number;
       threadId?: number | null;
       disableLinkPreview?: boolean;
+      photo?: File;
     } = {},
   ): Promise<TelegramMessage> {
+    const photo = options.photo;
     const body: JsonObject = {
       chat_id: chatId,
-      rich_message: { markdown },
+      rich_message: photo
+        ? {
+            markdown: `${markdown}\n\n![](tg://photo?id=final_photo)`,
+            media: [{ id: "final_photo", media: { type: "photo", media: "attach://photo" } }],
+          }
+        : { markdown },
     };
     if (options.replyTo !== undefined) {
       body.reply_parameters = { message_id: options.replyTo, allow_sending_without_reply: true };
@@ -171,7 +178,11 @@ export class TelegramClient {
     if (options.disableLinkPreview) {
       body.link_preview_options = { is_disabled: true };
     }
-    return this.call<TelegramMessage>("sendRichMessage", body);
+    return photo
+      ? this.callMultipart<TelegramMessage>("sendRichMessage", body, [
+          { field: "photo", file: photo },
+        ])
+      : this.call<TelegramMessage>("sendRichMessage", body);
   }
 
   answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> {

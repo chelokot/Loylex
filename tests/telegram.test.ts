@@ -473,3 +473,25 @@ test("sends a voice message in the requested Telegram thread and reply", async (
   });
   expect(requestBody?.get("message_thread_id")).toBe("12");
 });
+
+test("sends a final photo and text in a single Rich Message", async () => {
+  let calls = 0;
+  globalThis.fetch = (async (input, init) => {
+    calls++;
+    expect(String(input)).toEndWith("/sendRichMessage");
+    const form = init?.body as FormData;
+    expect(form.get("message_thread_id")).toBe("7");
+    expect(JSON.parse(String(form.get("rich_message")))).toEqual({
+      markdown: "Summary\n\n![](tg://photo?id=final_photo)",
+      media: [{ id: "final_photo", media: { type: "photo", media: "attach://photo" } }],
+    });
+    expect((form.get("photo") as File).name).toBe("chart.png");
+    return Response.json({ ok: true, result: { message_id: 9 } });
+  }) as typeof fetch;
+  const client = new TelegramClient("test-token");
+  const photo = new File(["test bytes"], "chart.png", { type: "image/png" });
+  await expect(client.sendRich(42, "Summary", { photo, threadId: 7 })).resolves.toMatchObject({
+    message_id: 9,
+  });
+  expect(calls).toBe(1);
+});

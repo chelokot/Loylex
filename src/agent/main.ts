@@ -1,4 +1,5 @@
-import { unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, rmdir, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unavailableAssessment } from "../shared/assessment.ts";
 import type { AgentJob } from "../shared/types.ts";
@@ -124,6 +125,7 @@ async function processJob(job: AgentJob): Promise<void> {
   let stagedAttachments: Awaited<ReturnType<typeof stageAttachments>> | null = null;
   let usage: AgentTokenUsage | null = null;
   let threadId = job.resumeThreadId;
+  let finalPhotoPath: string | undefined;
   try {
     if (await cancellationRequested(job.id, cancellation)) {
       return;
@@ -131,10 +133,12 @@ async function processJob(job: AgentJob): Promise<void> {
     stagedAttachments = await stageAttachments(gateway, job);
     const generatedImagesRoot = join(config.codexHome, "generated_images");
     const generatedImagesBefore = await snapshotGeneratedImages(generatedImagesRoot);
+    const finalPhotoDirectory = await mkdtemp(join(tmpdir(), "loylex-final-"));
+    finalPhotoPath = join(finalPhotoDirectory, "image.png");
     let explicitMediaUpload = false;
     const executed = await executeJobWithFallback({
       config,
-      job,
+      job: { ...job, finalPhotoPath },
       stagedAttachments: stagedAttachments.files,
       signal: cancellation.signal,
       cooldown: providerCooldown,
@@ -202,14 +206,20 @@ async function processJob(job: AgentJob): Promise<void> {
     if (await cancellationRequested(job.id, cancellation)) {
       return;
     }
-    if (!explicitMediaUpload) {
+    let finalPhoto: ReturnType<typeof Bun.file> | undefined;
+    const stagedPhoto = await lstat(finalPhotoPath).catch(() => null);
+    if (!explicitMediaUpload && stagedPhoto?.isFile()) {
+      finalPhoto = Bun.file(finalPhotoPath);
+    } else if (!explicitMediaUpload) {
       const generatedImages = await newGeneratedImages(
         generatedImagesRoot,
         generatedImagesBefore,
         result.threadId,
       );
       const generatedImage = generatedImages.at(-1);
-      if (generatedImage) {
+      if (generatedImage && /\.(?:png|jpe?g)$/i.test(generatedImage.filename)) {
+        finalPhoto = Bun.file(generatedImage.path);
+      } else if (generatedImage) {
         await reportProgress(gateway, job.id, {
           kind: "commentary",
           text: "Изображение готово — отправляю его в Telegram.",
@@ -235,11 +245,15 @@ async function processJob(job: AgentJob): Promise<void> {
         }).catch(() => unavailableAssessment)
       : undefined;
     if (await cancellationRequested(job.id, cancellation)) return;
-    await gateway.complete(job.id, {
-      ...result,
-      ...(usage ? { usage } : {}),
-      ...(assessment ? { assessment } : {}),
-    });
+    await gateway.complete(
+      job.id,
+      {
+        ...result,
+        ...(usage ? { usage } : {}),
+        ...(assessment ? { assessment } : {}),
+      },
+      finalPhoto,
+    );
   } catch (error) {
     if (await cancellationRequested(job.id, cancellation)) {
       return;
@@ -248,6 +262,10 @@ async function processJob(job: AgentJob): Promise<void> {
     console.error(JSON.stringify({ level: "error", jobId: job.id, message }));
     await gateway.fail(job.id, message, usage, threadId);
   } finally {
+    if (finalPhotoPath) {
+      await unlink(finalPhotoPath).catch(() => {});
+      await rmdir(join(finalPhotoPath, "..")).catch(() => {});
+    }
     await stagedAttachments?.cleanup();
     cancellation.abort();
     await Promise.all([cancellationMonitor, steeringMonitor]);

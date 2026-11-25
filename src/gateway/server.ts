@@ -1,6 +1,6 @@
 import type { Server } from "bun";
 import { isContextualAssessment, unavailableAssessment } from "../shared/assessment.ts";
-import type { AgentCompletion, AgentEvent, TelegramMessage } from "../shared/types.ts";
+import type { AgentCompletion, AgentEvent } from "../shared/types.ts";
 import { isAgentTokenUsage } from "../shared/usage.ts";
 import { type ApprovalClient, ApprovalDeniedError } from "./approvals.ts";
 import { archiveRoute } from "./archive-routes.ts";
@@ -225,14 +225,37 @@ export class GatewayServer {
 
       const completionMatch = url.pathname.match(/^\/v1\/jobs\/(\d+)\/complete$/);
       if (request.method === "POST" && completionMatch?.[1]) {
-        const payload = await body<AgentCompletion>(request);
+        const form = request.headers.get("content-type")?.startsWith("multipart/form-data;")
+          ? await request.formData()
+          : undefined;
+        const photo = form?.get("photo");
+        const data = form?.get("completion");
+        if (
+          form &&
+          (!(photo instanceof File) ||
+            photo.size === 0 ||
+            photo.size > 10_000_000 ||
+            !["image/png", "image/jpeg"].includes(photo.type) ||
+            typeof data !== "string")
+        ) {
+          return json({ error: "completion requires a PNG or JPEG photo up to 10 MB" }, 400);
+        }
+        const payload =
+          typeof data === "string"
+            ? (JSON.parse(data) as AgentCompletion)
+            : await body<AgentCompletion>(request);
         if (payload.assessment !== undefined && !isContextualAssessment(payload.assessment)) {
           return json({ error: "invalid contextual assessment" }, 400);
         }
         if (payload.usage !== undefined && !isAgentTokenUsage(payload.usage)) {
           return json({ error: "usage must contain non-negative integer token counts" }, 400);
         }
-        await this.complete(Number.parseInt(completionMatch[1], 10), payload, workerId(request));
+        await this.complete(
+          Number.parseInt(completionMatch[1], 10),
+          payload,
+          workerId(request),
+          photo instanceof File ? photo : undefined,
+        );
         return json({ ok: true });
       }
 
@@ -374,6 +397,7 @@ export class GatewayServer {
     jobId: number,
     completion: AgentCompletion,
     workerId?: string,
+    photo?: File,
   ): Promise<void> {
     if (this.database.isJobCancelled(jobId)) {
       return;
@@ -411,18 +435,11 @@ export class GatewayServer {
       this.database.progressEnabled?.(address.userId) === false ? "" : status,
       answer,
     );
-    let message: TelegramMessage;
-    if (thinkingMessageId === null) {
-      message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
-      });
-    } else {
-      // Keep the final answer at the bottom of the chat. In groups it replies to the user's
-      // request even when other messages arrived while Codex was working; private chats omit
-      // reply markers by design.
-      message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
-        ...responseOptions(address.chatType, address.messageId, address.threadId),
-      });
+    const message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
+      ...responseOptions(address.chatType, address.messageId, address.threadId),
+      ...(photo ? { photo } : {}),
+    });
+    if (thinkingMessageId !== null) {
       await this.telegram.deleteMessage(address.chatId, thinkingMessageId);
     }
     this.database.recordOutboundMessage(jobId, message.message_id, completion.threadId);

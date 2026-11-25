@@ -63,6 +63,7 @@ export function buildPrompt(
     telegram_reply_to_message_id: job.replyToMessageId ?? null,
     telegram_user_id: job.userId,
     attachments: job.attachments,
+    ...(job.finalPhotoPath ? { final_response_png_path: job.finalPhotoPath } : {}),
   };
   const leylobucksInstructions = job.leylobucks?.catgirlMode
     ? [
