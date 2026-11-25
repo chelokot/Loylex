@@ -132,6 +132,25 @@ test("renders concrete tool activity in the work dropdown", () => {
   expect(workDocument(status)).not.toContain("Использованные инструменты");
 });
 
+test("uses the latest visible activity as the live title", () => {
+  const status = [
+    "commentary: Проверяю код",
+    "command: /bin/bash -lc 'ls'",
+    "tool: Used 'apply_patch' [tool-call:one]",
+  ].join("\n\n");
+
+  expect(workDocument(status, true)).toContain("<summary>Used 'apply_patch'</summary>");
+  expect(workDocument(`${status}\n\ncommentary:   Проверяю   <код> & тесты  `, true)).toContain(
+    "<summary>Проверяю &lt;код&gt; &amp; тесты</summary>",
+  );
+  expect(workDocument(`${status}\n\ncommand: git status`, true)).toContain(
+    "<summary>Run 'git status'</summary>",
+  );
+  expect(workDocument(`${status}\n\ncommentary: ${"🙂".repeat(90)}`, true)).toContain(
+    `<summary>${"🙂".repeat(79)}…</summary>`,
+  );
+});
+
 test("removes shell quoting from a command with quoted arguments", () => {
   const status = `command: ${String.raw`/bin/bash -lc 'printf '\''%s'\'' hello'`}`;
 

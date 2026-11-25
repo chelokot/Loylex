@@ -314,10 +314,7 @@ export class GatewayServer {
     const thinkingMessageId = this.database.thinkingMessage(jobId);
     const now = Date.now();
     if (this.database.progressEnabled?.(address.userId) === false) return;
-    const document = workDocument(status);
-    if (!document) {
-      return;
-    }
+    const document = workDocument(status, true);
     if (address.chatType === "private") {
       if (this.#lastStreamDocument.get(jobId) === document) {
         return;

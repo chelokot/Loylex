@@ -5,10 +5,6 @@ import { GatewayServer } from "../src/gateway/server.ts";
 import type { TelegramClient } from "../src/gateway/telegram.ts";
 import type { AgentCompletion, TelegramMessage } from "../src/shared/types.ts";
 
-function normalizeWorkSummary(value: string): string {
-  return value.replace(/<summary>.*<\/summary>/, "<summary>WORK</summary>");
-}
-
 function botMessage(id: number): TelegramMessage {
   return {
     message_id: id,
@@ -74,15 +70,15 @@ test("starts progress as a persistent rich details message", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
 
   expect(sent).toHaveLength(1);
-  expect({ ...sent[0], markdown: normalizeWorkSummary(sent[0]?.markdown ?? "") }).toEqual({
+  expect(sent[0]).toEqual({
     chatId: -10042,
-    markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>",
+    markdown: "<details><summary>Проверяю код</summary>\n\n- Проверяю код\n\n</details>",
     options: { replyTo: 10, threadId: null },
   });
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
-test("does not render an empty progress message", async () => {
+test("uses the default title when there is no visible progress", async () => {
   const sent: string[] = [];
   const database = {
     jobAddress: () => ({
@@ -93,7 +89,8 @@ test("does not render an empty progress message", async () => {
     }),
     thinkingMessage: () => null,
     isJobCancelled: () => false,
-    appendStatus: () => "status: Готово",
+    appendStatus: () => "status: Начинаю работу",
+    setThinkingMessage: () => {},
   } as unknown as LoylexDatabase;
   const telegram = {
     sendRich: async (_chatId: number, markdown: string) => {
@@ -108,9 +105,9 @@ test("does not render an empty progress message", async () => {
     }
   ).event;
 
-  await event.call(server, 7, { kind: "status", text: "Готово" });
+  await event.call(server, 7, { kind: "status", text: "Начинаю работу" });
 
-  expect(sent).toEqual([]);
+  expect(sent).toEqual(["Ход работы"]);
 });
 
 test("keeps repeated tool calls distinct in the job status", async () => {
@@ -406,20 +403,16 @@ test("uses ephemeral rich drafts in private chats", async () => {
   await event.call(server, 7, { kind: "commentary", text: "Проверяю код" });
   await complete.call(server, 7, { answer: "Ответ", threadId: "thread-1" });
 
-  expect(
-    drafts.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
-  ).toEqual([
+  expect(drafts).toEqual([
     {
       chatId: 42,
-      markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>",
+      markdown: "<details><summary>Проверяю код</summary>\n\n- Проверяю код\n\n</details>",
       options: { draftId: 7, threadId: null, canStop: true },
     },
   ]);
-  expect(
-    sent.map((entry) => ({ ...entry, markdown: normalizeWorkSummary(entry.markdown) })),
-  ).toEqual([
+  expect(sent).toEqual([
     {
-      markdown: "<details><summary>WORK</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
+      markdown: "<details><summary>Ход работы</summary>\n\n- Проверяю код\n\n</details>\n\nОтвет",
       options: { threadId: null },
     },
   ]);

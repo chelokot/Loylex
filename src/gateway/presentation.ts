@@ -8,13 +8,21 @@ function escapeHtml(value: string): string {
 
 const maxCommandActivityCharacters = 160;
 const maxToolActivityCharacters = 160;
+const maxWorkTitleCharacters = 80;
+const workTitle = "Ход работы";
 
 function compactActivityText(value: string, limit = 600): string {
   const compact = value.replaceAll(/\s+/g, " ").trim();
   if (compact.length <= limit) {
     return compact;
   }
-  return `${compact.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
+  const characters = Array.from(compact);
+  return characters.length <= limit
+    ? compact
+    : `${characters
+        .slice(0, limit - 1)
+        .join("")
+        .trimEnd()}…`;
 }
 
 function commandActivity(command: string): string {
@@ -111,10 +119,17 @@ function formattedActivityLine(entry: ActivityEntry): string {
   return `- ${escapeHtml(entry.text)}`;
 }
 
-export function workDocument(status: string): string {
+export function workDocument(status: string, live = false): string {
   const activity = visibleActivityEntries(status);
+  const latest = activity.at(-1);
+  if (!latest) {
+    return live ? workTitle : "";
+  }
+  const title = live
+    ? compactActivityText(activityText(latest), maxWorkTitleCharacters)
+    : workTitle;
   const history = activity.map(formattedActivityLine).join("\n");
-  return history ? `<details><summary>Ход работы</summary>\n\n${history}\n\n</details>` : "";
+  return `<details><summary>${escapeHtml(title)}</summary>\n\n${history}\n\n</details>`;
 }
 
 function visibleActivityEntries(status: string): ActivityEntry[] {
