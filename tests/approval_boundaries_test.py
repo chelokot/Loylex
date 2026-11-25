@@ -63,6 +63,8 @@ class ApprovalBoundaryTest(ApprovalTestCase):
                 host.command(["git", "push"])
 
     def test_reviewer_auth_is_private_and_lifetime_is_independently_bounded(self) -> None:
+        answer = "Обновит файлы супервизора."
+
         def execute(arguments: list[str], **options) -> bytes:
             if arguments[:2] == ["podman", "exec"]:
                 return b'{"tokens":{"access_token":"test-only"}}'
@@ -77,16 +79,20 @@ class ApprovalBoundaryTest(ApprovalTestCase):
                 self.assertEqual(auth_path.parent.stat().st_mode & 0o777, 0o700)
                 self.assertIn(":ro,Z", volume)
                 self.assertNotIn("--secret", arguments)
-                return (
-                    b'{"type":"item.completed","item":{"type":"agent_message","text":"Reviewed"}}'
-                )
+                return json.dumps({
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": answer},
+                }).encode()
             if arguments[:2] == ["podman", "rm"]:
                 return b""
             self.fail(f"Unexpected command: {arguments[0]}")
 
         with mock.patch.object(review, "command", side_effect=execute):
             result = broker.Approvals._review(self.approvals, "private-auth-test", b"Operation")
-        self.assertEqual(result, "Reviewed")
+            self.assertEqual(result, answer)
+            answer = "слово " * 51
+            result = broker.Approvals._review(self.approvals, "oversized-review", b"Operation")
+            self.assertEqual(result, "TLDR недоступен.")
 
     def test_gateway_deployment_pins_the_built_artifact(self) -> None:
         identifier = self.submit()
