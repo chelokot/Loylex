@@ -18,6 +18,31 @@ import {
 } from "./types.ts";
 
 export abstract class DatabaseJobs extends DatabaseLeylobucks {
+  protected ownSteerTargets(
+    chatId: number,
+    topicId: number | null,
+    replyId: number,
+    userId: number,
+  ): { id: number }[] {
+    return this.connection
+      .query<{ id: number }, [number, number | null, number, number, number, number]>(`
+        SELECT j.id FROM jobs AS j
+        WHERE j.chat_id = ? AND j.message_thread_id IS ?
+          AND j.state IN ('pending', 'running')
+          AND (
+            (j.message_id = ? AND j.user_id = ?)
+            OR EXISTS (
+              SELECT 1 FROM job_steers AS s
+              WHERE s.job_id = j.id AND s.message_id = ?
+                AND s.user_id = ? AND s.state IN ('pending', 'accepted')
+            )
+          )
+        ORDER BY j.id DESC
+        LIMIT 1
+      `)
+      .all(chatId, topicId, replyId, userId, replyId, userId);
+  }
+
   enqueueWithLeylobucks(
     updateId: number,
     message: TelegramMessage,

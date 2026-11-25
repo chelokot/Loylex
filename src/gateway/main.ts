@@ -24,6 +24,7 @@ import {
 } from "./presentation.ts";
 import { handleProgressCommand } from "./progress-command.ts";
 import { GatewayServer } from "./server.ts";
+import { handleSteerCommand, queueOwnReplySteer } from "./steering.ts";
 import { sendTasks } from "./tasks.ts";
 import { TelegramClient } from "./telegram.ts";
 import {
@@ -39,7 +40,6 @@ import {
   parseQuizCallbackData,
   promptWithQuote,
   resumeTaskMessageId,
-  steerCommandText,
 } from "./triggers.ts";
 
 const config = loadGatewayConfig();
@@ -372,29 +372,12 @@ async function poll(): Promise<void> {
           await sendInlineResponse(telegram, message, stopResultMessage(cancelledJobIds.length));
           continue;
         }
-        const steerText = steerCommandText(message, bot.id, bot.username);
-        if (steerText !== null) {
-          const jobs =
-            steerText && currentUserId !== null && message.reply_to_message
-              ? database.queueSteer(
-                  message.chat.id,
-                  message.reply_to_message.message_id,
-                  message.message_id,
-                  currentUserId,
-                  steerText,
-                )
-              : [];
-          await sendInlineResponse(
-            telegram,
-            message,
-            !steerText
-              ? "Используй `/steer текст уточнения` в ответ на рабочее сообщение бота."
-              : jobs.length
-                ? "Передаю уточнение в задачу…"
-                : "Для этого сообщения нет активной задачи.",
-          );
+        if (
+          await handleSteerCommand(database, message, currentUserId, bot, (text) =>
+            sendInlineResponse(telegram, message, text),
+          )
+        )
           continue;
-        }
         if (isStopCommand(message, bot.id, bot.username)) {
           const cancelledJobIds = message.reply_to_message
             ? database.cancelJobsForMessage(message.chat.id, message.reply_to_message.message_id)
@@ -520,6 +503,10 @@ async function poll(): Promise<void> {
           continue;
         }
         const trigger = blind ?? detectTrigger(message, bot.id);
+        if (!blind && queueOwnReplySteer(database, message, currentUserId, trigger?.prompt)) {
+          clearEarlyThinkingReaction(message, earlyAcknowledgement);
+          continue;
+        }
         if (!trigger) {
           continue;
         }

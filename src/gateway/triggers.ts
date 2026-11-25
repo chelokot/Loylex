@@ -80,12 +80,17 @@ export function isStopCommand(
   return mention.slice(1).toLocaleLowerCase() === botUsername.toLocaleLowerCase();
 }
 
+export function isOwnReply(message: TelegramMessage): boolean {
+  const repliedUserId = message.reply_to_message?.from?.id;
+  return repliedUserId !== undefined && repliedUserId === message.from?.id;
+}
+
 export function steerCommandText(
   message: TelegramMessage,
   botUserId: number,
   botUsername?: string,
 ): string | null {
-  if (message.reply_to_message?.from?.id !== botUserId) return null;
+  if (message.reply_to_message?.from?.id !== botUserId && !isOwnReply(message)) return null;
   const match = messageText(message)
     .trim()
     .match(/^\/steer(?:@([a-z0-9_]+))?(?:\s+([\s\S]*))?$/iu);

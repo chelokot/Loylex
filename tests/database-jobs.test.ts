@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { queueOwnReplySteer } from "../src/gateway/steering.ts";
 import type { TelegramMessage } from "../src/shared/types.ts";
 import type { AgentTokenUsage } from "../src/shared/usage.ts";
 
@@ -205,6 +206,43 @@ test("steering selects stop targets without cancelling, isolates workers, and de
   expect(database.failPendingSteers(id)).toEqual([13]);
   expect(database.failPendingSteers(id)).toEqual([]);
   expect(database.queueSteer(-10042, 11, 14, 8, "finished")).toEqual([]);
+  database.close();
+});
+
+test("self replies target the author's active request or earlier steering in the same topic", () => {
+  const database = setup();
+  database.registerWorker("worker");
+  database.enqueue(55, { ...message(1, "long task"), message_thread_id: 42 }, "long task", null);
+  const id = database.claimNext(10, "worker")?.id ?? 0;
+  const topic = { topicId: 42 };
+  expect(database.queueSteer(-10042, 1, 2, 8, "another author", topic)).toEqual([]);
+  expect(database.queueSteer(-10043, 1, 2, 7, "another chat", topic)).toEqual([]);
+  expect(database.queueSteer(-10042, 1, 2, 7, "another topic", { topicId: 43 })).toEqual([]);
+  const original = { ...message(1, "long task"), message_thread_id: 42 };
+  const followUp = {
+    ...message(2, "first follow-up"),
+    message_thread_id: 42,
+    reply_to_message: original,
+  };
+  expect(queueOwnReplySteer(database, followUp, 7)).toBe(true);
+  const first = database.pendingSteers(id, "worker")[0];
+  expect(database.finishSteer(id, first?.id ?? 0, "worker", true)).toBe(2);
+  expect(
+    queueOwnReplySteer(
+      database,
+      {
+        ...message(3, "second follow-up"),
+        message_thread_id: 42,
+        reply_to_message: followUp,
+      },
+      7,
+    ),
+  ).toBe(true);
+  expect(database.pendingSteers(id, "worker")).toMatchObject([
+    { messageId: 3, replyToMessageId: 2, userId: 7, prompt: "second follow-up" },
+  ]);
+  database.complete(id, 20, "thread-live", "worker");
+  expect(database.queueSteer(-10042, 2, 4, 7, "finished", topic)).toEqual([]);
   database.close();
 });
 

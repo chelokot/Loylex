@@ -242,8 +242,15 @@ describe("blindTrigger", () => {
   });
 });
 
-test("steer requires a bot reply, respects bot mention and preserves multiline input", () => {
+test("steer requires a bot or self reply, respects bot mention and preserves multiline input", () => {
   const input = message("/steer@LoylexBot change this\nthen that");
+  expect(steerCommandText(input, 42, "LoylexBot")).toBeNull();
+  input.reply_to_message = message("original request");
+  expect(steerCommandText(input, 42, "LoylexBot")).toBe("change this\nthen that");
+  input.reply_to_message = {
+    ...message("someone else's request"),
+    from: { id: 8, is_bot: false, first_name: "Other user" },
+  };
   expect(steerCommandText(input, 42, "LoylexBot")).toBeNull();
   input.reply_to_message = {
     ...message("working"),

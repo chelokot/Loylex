@@ -165,10 +165,13 @@ export abstract class DatabaseJobProgress extends DatabaseJobs {
     messageId: number,
     userId: number,
     prompt: string,
+    ownReply?: { topicId: number | null },
   ): number[] {
     return this.connection
       .transaction(() => {
-        const jobs = this.activeJobsForMessage(chatId, replyId);
+        const jobs = ownReply
+          ? this.ownSteerTargets(chatId, ownReply.topicId, replyId, userId)
+          : this.activeJobsForMessage(chatId, replyId);
         for (const job of jobs) {
           this.connection
             .query(
