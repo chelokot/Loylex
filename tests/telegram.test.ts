@@ -113,6 +113,7 @@ test("does not publish the quiz as a Telegram command", async () => {
       { command: "stop", description: "Остановить работу" },
       { command: "steer", description: "Уточнить активную задачу" },
       { command: "mines", description: "Сапёр: одинаковое поле для друзей" },
+      { command: "emoji_pack", description: "Настроить эмодзипак для своих ответов" },
       { command: "progress", description: "Включить или выключить ход работы для себя" },
       { command: "tasks", description: "Показать последние задачи" },
       { command: "resume", description: "Продолжить задачу по ID" },

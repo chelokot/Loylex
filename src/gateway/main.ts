@@ -9,6 +9,7 @@ import {
   editedMessageForUpdate,
   editedSteerPrompt,
 } from "./edited-message.ts";
+import { handleEmojiPackCommand } from "./emoji-packs.ts";
 import { feedbackAcknowledgement, isOperatorDislikeReaction } from "./feedback.ts";
 import { LeylobucksActivity } from "./leylobucks-activity.ts";
 import { LeylobucksCommands } from "./leylobucks-commands.ts";
@@ -348,6 +349,17 @@ async function poll(): Promise<void> {
         if (
           await handleProgressCommand(database, message, bot.username, currentUserId, (text) =>
             sendInlineResponse(telegram, message, text),
+          )
+        )
+          continue;
+        if (
+          await handleEmojiPackCommand(
+            database,
+            telegram,
+            message,
+            bot.username,
+            currentUserId,
+            (text) => sendInlineResponse(telegram, message, text),
           )
         )
           continue;

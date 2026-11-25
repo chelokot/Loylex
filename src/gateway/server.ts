@@ -6,6 +6,7 @@ import { type ApprovalClient, ApprovalDeniedError } from "./approvals.ts";
 import { archiveRoute } from "./archive-routes.ts";
 import type { GatewayConfig } from "./config.ts";
 import type { LoylexDatabase } from "./database.ts";
+import { finalReplySender } from "./emoji-packs.ts";
 import { eventStatusLine } from "./event-status.ts";
 import { body, json } from "./http-json.ts";
 import { responseOptions } from "./message-options.ts";
@@ -432,7 +433,8 @@ export class GatewayServer {
       this.database.progressEnabled?.(address.userId) === false ? "" : status,
       answer,
     );
-    const message = await this.telegram.sendRich(address.chatId, documents[0] ?? "", {
+    const sendDocument = await finalReplySender(this.database, this.telegram, address);
+    const message = await sendDocument(documents[0] ?? "", {
       ...responseOptions(address.chatType, address.messageId, address.threadId),
       ...(photo ? { photo } : {}),
     });
@@ -442,7 +444,7 @@ export class GatewayServer {
     this.database.recordOutboundMessage(jobId, message.message_id, completion.threadId);
     let replyTo = message.message_id;
     for (const document of documents.slice(1)) {
-      const followUp = await this.telegram.sendRich(address.chatId, document, {
+      const followUp = await sendDocument(document, {
         ...responseOptions(address.chatType, replyTo, address.threadId),
       });
       this.database.recordOutboundMessage(jobId, followUp.message_id, completion.threadId);

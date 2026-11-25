@@ -3,6 +3,11 @@ import { DatabaseMessageSchema } from "./message-schema.ts";
 export abstract class DatabaseSchema extends DatabaseMessageSchema {
   protected migrate(): void {
     this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS user_emoji_packs (
+        user_id INTEGER PRIMARY KEY,
+        pack TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS user_progress (
         user_id INTEGER PRIMARY KEY,
         enabled INTEGER NOT NULL CHECK (enabled IN (0, 1))
