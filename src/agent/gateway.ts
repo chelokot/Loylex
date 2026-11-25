@@ -238,12 +238,22 @@ export class GatewayClient {
     return result.owned;
   }
 
-  complete(jobId: number, completion: AgentCompletion): Promise<{ ok: true }> {
-    return this.request(`/v1/jobs/${jobId}/complete`, {
-      method: "POST",
-      body: JSON.stringify(completion),
-      headers: { "x-loylex-worker-id": this.workerId },
-    });
+  complete(jobId: number, completion: AgentCompletion, photo?: Blob): Promise<{ ok: true }> {
+    const data = JSON.stringify(completion);
+    const form = photo ? new FormData() : undefined;
+    if (form && photo) {
+      form.set("completion", data);
+      form.set("photo", photo, photo.type === "image/jpeg" ? "image.jpg" : "image.png");
+    }
+    return this.request(
+      `/v1/jobs/${jobId}/complete`,
+      {
+        method: "POST",
+        body: form ?? data,
+        headers: { "x-loylex-worker-id": this.workerId },
+      },
+      photo ? 125_000 : undefined,
+    );
   }
 
   recordUsage(

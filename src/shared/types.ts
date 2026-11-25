@@ -142,6 +142,7 @@ export type AgentJobFallbackContext = {
 };
 
 export type AgentJob = {
+  finalPhotoPath?: string;
   id: number;
   updateId: number;
   chatId: number;
