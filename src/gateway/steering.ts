@@ -1,4 +1,4 @@
-import { messageText } from "../shared/message-text.ts";
+import { messageText, withTelegramFormatting } from "../shared/message-text.ts";
 import type { TelegramMessage } from "../shared/types.ts";
 import { media } from "./database/records.ts";
 import type { LoylexDatabase } from "./database.ts";
@@ -20,7 +20,7 @@ export async function handleSteerCommand(
             message.reply_to_message.message_id,
             message.message_id,
             currentUserId,
-            steerText,
+            withTelegramFormatting(steerText, message),
             isOwnReply(message) ? { topicId: message.message_thread_id ?? null } : undefined,
           )
         : [];

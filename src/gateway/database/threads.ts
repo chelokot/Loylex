@@ -1,4 +1,4 @@
-import { messageText } from "../../shared/message-text.ts";
+import { messageText, withTelegramFormatting } from "../../shared/message-text.ts";
 import type { AgentContextMode, JsonValue, TelegramUpdate } from "../../shared/types.ts";
 import { feedbackPrompt, isOperatorDislikeReaction } from "../feedback.ts";
 import { messageReference, numberField, object, parseObject, rawRelations } from "./records.ts";
@@ -323,7 +323,8 @@ export abstract class DatabaseThreads extends DatabaseWorkers {
         ].filter(Boolean);
         const relationText = relations.length > 0 ? ` ${relations.join(" ")}` : "";
         const edited = row.edit_date === null ? "" : " (edited)";
-        return `[${timestamp}] #${row.message_id} ${author}${userId}${edited}: ${row.text || messageText(parseObject(row.raw_json))}${attachmentText}${relationText}`;
+        const raw = parseObject(row.raw_json);
+        return `[${timestamp}] #${row.message_id} ${author}${userId}${edited}: ${withTelegramFormatting(row.text || messageText(raw), raw)}${attachmentText}${relationText}`;
       })
       .join("\n");
   }

@@ -1,4 +1,4 @@
-import { messageText } from "../../shared/message-text.ts";
+import { messageText, withTelegramFormatting } from "../../shared/message-text.ts";
 import type {
   JsonObject,
   JsonValue,
@@ -117,7 +117,7 @@ export function messageReference(message: UnknownRecord, label: string): string 
   if (messageId === null) {
     return null;
   }
-  const text = messageText(message);
+  const text = withTelegramFormatting(messageText(message), message);
   const attachments: JsonValue[] = [];
   for (const key of ["photo", "document", "audio", "video", "voice", "animation"]) {
     const value = message[key];

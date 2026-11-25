@@ -61,3 +61,41 @@ export function messageText(message: {
   if (typeof message.caption === "string" && message.caption.length) return message.caption;
   return richBlocks(record(message.rich_message)?.blocks);
 }
+
+export function withTelegramFormatting(text: string, source: Record<string, unknown>): string {
+  const original = source.text || source.caption;
+  const entities = source.text ? source.entities : source.caption_entities;
+  if (typeof original !== "string" || !Array.isArray(entities)) return text;
+
+  const spans = entities.flatMap((value) => {
+    const entity = record(value);
+    if (!entity) return [];
+    const { type, offset, length, url, language, custom_emoji_id: customEmojiId } = entity;
+    if (
+      typeof type !== "string" ||
+      typeof offset !== "number" ||
+      typeof length !== "number" ||
+      !Number.isSafeInteger(offset) ||
+      !Number.isSafeInteger(length) ||
+      offset < 0 ||
+      length <= 0 ||
+      offset + length > original.length
+    )
+      return [];
+
+    // Telegram offsets and JavaScript string indices both count UTF-16 code units.
+    return [
+      {
+        type,
+        offset,
+        text: original.slice(offset, offset + length),
+        ...(typeof url === "string" ? { url } : {}),
+        ...(typeof language === "string" ? { language } : {}),
+        ...(typeof customEmojiId === "string" ? { customEmojiId } : {}),
+      },
+    ];
+  });
+  return spans.length
+    ? `${text}\n[Telegram formatting in original text: ${JSON.stringify(spans)}]`
+    : text;
+}

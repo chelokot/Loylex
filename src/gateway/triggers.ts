@@ -1,4 +1,4 @@
-import { messageText } from "../shared/message-text.ts";
+import { messageText, withTelegramFormatting } from "../shared/message-text.ts";
 import type { TelegramMessage } from "../shared/types.ts";
 
 const prefixPattern =
@@ -33,9 +33,14 @@ export type TriggerDecision = {
   kind: "prefix" | "private" | "reply";
 };
 
-export function promptWithQuote(message: TelegramMessage, prompt: string): string {
-  const quote = message.quote?.text.trim();
-  return quote ? `> In reply to: ${JSON.stringify(quote)}\n${prompt}` : prompt;
+export function promptWithQuote(
+  message: TelegramMessage,
+  prompt: string,
+  includeQuote = true,
+): string {
+  const quote = includeQuote ? message.quote?.text.trim() : undefined;
+  const formatted = withTelegramFormatting(prompt, message);
+  return quote ? `> In reply to: ${JSON.stringify(quote)}\n${formatted}` : formatted;
 }
 
 export function isSlashCommand(message: TelegramMessage): boolean {

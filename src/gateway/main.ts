@@ -528,7 +528,7 @@ async function poll(): Promise<void> {
           (message.chat.type === "private"
             ? database.latestContinuableThread(message.chat.id)
             : null);
-        const prompt = blind ? trigger.prompt : promptWithQuote(message, trigger.prompt);
+        const prompt = promptWithQuote(message, trigger.prompt, !blind);
         const admission = enqueueRequest(
           database,
           update.update_id,
