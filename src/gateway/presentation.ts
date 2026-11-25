@@ -52,7 +52,7 @@ type ActivityEntry = {
   text: string;
 };
 
-function activityEntries(status: string): ActivityEntry[] {
+function activityEntries(status: string, includeStatus = false): ActivityEntry[] {
   const entries: ActivityEntry[] = [];
   const add = (entry: ActivityEntry): void => {
     const previous = entries.at(-1);
@@ -81,7 +81,11 @@ function activityEntries(status: string): ActivityEntry[] {
       if (visible) {
         add({ kind: "tool", text: visible });
       }
-    } else if (kind === "reasoning" || kind === "commentary") {
+    } else if (
+      kind === "reasoning" ||
+      kind === "commentary" ||
+      (includeStatus && kind === "status")
+    ) {
       const visible = compactActivityText(text);
       if (visible) {
         add({ kind: "narrative", text: visible });
@@ -120,7 +124,7 @@ function formattedActivityLine(entry: ActivityEntry): string {
 }
 
 export function workDocument(status: string, live = false): string {
-  const activity = visibleActivityEntries(status);
+  const activity = visibleActivityEntries(status, live);
   const latest = activity.at(-1);
   if (!latest) {
     return live ? workTitle : "";
@@ -132,8 +136,8 @@ export function workDocument(status: string, live = false): string {
   return `<details><summary>${escapeHtml(title)}</summary>\n\n${history}\n\n</details>`;
 }
 
-function visibleActivityEntries(status: string): ActivityEntry[] {
-  return activityEntries(status).slice(-8);
+function visibleActivityEntries(status: string, includeStatus = false): ActivityEntry[] {
+  return activityEntries(status, includeStatus).slice(-8);
 }
 
 export const richMessageLimitBytes = 30_000;

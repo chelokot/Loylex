@@ -78,7 +78,7 @@ test("starts progress as a persistent rich details message", async () => {
   expect(sent[0]?.markdown).not.toContain("tg-spoiler");
 });
 
-test("uses the default title when there is no visible progress", async () => {
+test("uses the reported status when it is the only live progress", async () => {
   const sent: string[] = [];
   const database = {
     jobAddress: () => ({
@@ -107,7 +107,7 @@ test("uses the default title when there is no visible progress", async () => {
 
   await event.call(server, 7, { kind: "status", text: "Начинаю работу" });
 
-  expect(sent).toEqual(["Ход работы"]);
+  expect(sent[0]).toContain("<summary>Начинаю работу</summary>");
 });
 
 test("keeps repeated tool calls distinct in the job status", async () => {
