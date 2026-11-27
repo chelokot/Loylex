@@ -43,6 +43,13 @@ if exact identification is required; never present it as the found image.
 - `loylex upload-voice CHAT_ID FILE [CAPTION]` uploads a local OGG/Opus file as a Telegram
   voice message.
 
+## Images must arrive as photos
+
+`loylex upload` sends a static image as a document (a bare `file.png` attachment, no preview), which
+users repeatedly report as "не вижу". For pictures, send a photo album with `loylex upload-album`
+(2–10 files, e.g. two variants or the image plus a second angle). Only use `upload` for files that are
+meant to be downloaded. A single-photo `sendPhoto` route needs a gateway change and approval.
+
 ## Reliable animation delivery
 
 Treat transport success and a usable Telegram preview as separate outcomes. For a GIF, use
